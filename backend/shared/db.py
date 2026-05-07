@@ -58,9 +58,24 @@ class CanonicalMixin:
 
 def make_engine(database_url: str, *, echo: bool = False) -> Engine:
     connect_args: dict = {}
+    poolclass = None
     if database_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
-    engine = create_engine(database_url, echo=echo, future=True, connect_args=connect_args)
+        # In-memory SQLite databases are per-connection by default. Tests
+        # (and the API layer sharing a session via dependency overrides)
+        # need every connection to see the same data, so pin a single
+        # shared connection via StaticPool.
+        if ":memory:" in database_url or database_url == "sqlite://":
+            from sqlalchemy.pool import StaticPool
+
+            poolclass = StaticPool
+    engine = create_engine(
+        database_url,
+        echo=echo,
+        future=True,
+        connect_args=connect_args,
+        **({"poolclass": poolclass} if poolclass is not None else {}),
+    )
     if database_url.startswith("sqlite"):
         # SQLite ignores FOREIGN KEY constraints unless explicitly enabled per
         # connection. Match the behavior of a real RDBMS.

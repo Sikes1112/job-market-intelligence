@@ -5,6 +5,10 @@ import pytest
 BACKEND_PACKAGES = [
     "backend",
     "backend.api",
+    "backend.api.app",
+    "backend.api.dependencies",
+    "backend.api.envelope",
+    "backend.api.routes",
     "backend.audit",
     "backend.companies",
     "backend.companies.classification",
