@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     app_env: str = Field(default="dev")
     log_level: str = Field(default="INFO")
     service_name: str = Field(default="jmi-backend")
+    database_url: str = Field(default="sqlite:///./jmi.db")
 
 
 @lru_cache
