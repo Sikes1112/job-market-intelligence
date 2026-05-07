@@ -24,6 +24,10 @@ BACKEND_PACKAGES = [
     "backend.presence",
     "backend.scoring",
     "backend.shared",
+    "backend.shared.confidence",
+    "backend.shared.freshness",
+    "backend.shared.state",
+    "backend.shared.versioning",
 ]
 
 

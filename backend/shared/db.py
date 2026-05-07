@@ -9,7 +9,10 @@ from sqlalchemy.orm import (
     Session,
     mapped_column,
     sessionmaker,
+    validates,
 )
+
+from backend.shared.state import ObjectState
 
 
 class Base(DeclarativeBase):
@@ -19,12 +22,18 @@ class Base(DeclarativeBase):
 class CanonicalMixin:
     """Shared metadata fields carried by every canonical truth and output object.
 
-    State is a plain string here. Transition validation belongs to Slice 3.
+    State strings are validated against :class:`ObjectState` (Slice 3). Transition
+    validation between states still belongs in calling code via
+    :func:`backend.shared.state.validate_transition` — the column validator only
+    rejects values outside the MVP enum.
+
     Version is a monotonically increasing integer; rendering as ``v{n}`` is a
-    presentation detail.
+    presentation detail (see :mod:`backend.shared.versioning`).
     """
 
-    state: Mapped[str] = mapped_column(String(32), nullable=False, default="new")
+    state: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=ObjectState.NEW.value
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -37,6 +46,14 @@ class CanonicalMixin:
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+    @validates("state")
+    def _validate_state(self, _key: str, value: ObjectState | str) -> str:
+        if isinstance(value, ObjectState):
+            return value.value
+        if not isinstance(value, str) or value not in ObjectState.values():
+            raise ValueError(f"invalid object state: {value!r}")
+        return value
 
 
 def make_engine(database_url: str, *, echo: bool = False) -> Engine:
