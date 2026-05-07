@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from sqlalchemy import Engine
 
+from backend.api.personalized import router as personalized_router
 from backend.api.routes import router as read_router
 from backend.config.settings import get_settings
 from backend.shared.db import make_engine, make_session_factory
@@ -37,6 +38,7 @@ def create_app(*, engine: Engine | None = None) -> FastAPI:
         }
 
     app.include_router(read_router)
+    app.include_router(personalized_router)
 
     return app
 
