@@ -75,11 +75,14 @@ class HiringSnapshot(BaseModel):
         "posting_count_30d",
         "posting_count_90d",
         "hiring_program_count",
+        mode="before",
     )
     @classmethod
-    def _counts_non_negative(cls, value: int | None) -> int | None:
+    def _counts_non_negative(cls, value: object) -> int | None:
         if value is None:
             return None
+        # ``mode="before"`` lets us see the raw type before Pydantic v2 coerces
+        # ``bool → int``. Booleans must be rejected explicitly.
         if isinstance(value, bool) or not isinstance(value, int):
             raise ValueError(f"count must be an int, got {type(value).__name__}")
         if value < 0:

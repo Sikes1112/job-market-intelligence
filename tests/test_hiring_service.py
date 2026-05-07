@@ -104,6 +104,24 @@ def test_snapshot_rejects_negative_program_count() -> None:
         HiringSnapshot(currently_hiring_flag=False, hiring_program_count=-3)
 
 
+_COUNT_FIELDS = (
+    "active_posting_count_now",
+    "posting_count_30d",
+    "posting_count_90d",
+    "hiring_program_count",
+)
+
+
+@pytest.mark.parametrize("field", _COUNT_FIELDS)
+@pytest.mark.parametrize("bool_value", [True, False])
+def test_snapshot_rejects_bool_for_count_field(field: str, bool_value: bool) -> None:
+    """Pydantic v2 coerces ``bool → int`` for ``int | None`` fields unless the
+    validator runs in ``mode="before"``. This test pins that booleans are
+    rejected at raw-type stage for every hiring count field."""
+    with pytest.raises(ValidationError):
+        HiringSnapshot(currently_hiring_flag=False, **{field: bool_value})
+
+
 def test_snapshot_rejects_unknown_trend_signal() -> None:
     with pytest.raises(ValidationError):
         HiringSnapshot.model_validate(
