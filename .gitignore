@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+node_modules/
 
 # Env
 .env
@@ -28,3 +29,7 @@ logs/
 # Local data
 data/
 tmp/
+/demo.db
+/demo.db-*
+/jmi.db
+/jmi.db-*

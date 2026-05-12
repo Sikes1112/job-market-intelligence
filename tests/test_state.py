@@ -47,6 +47,7 @@ def test_can_transition_allows_documented_paths() -> None:
     assert can_transition("new", "building")
     assert can_transition("building", "fresh")
     assert can_transition("fresh", "stale")
+    assert can_transition("fresh", "rebuilding")
     assert can_transition("stale", "rebuilding")
     assert can_transition("rebuilding", "fresh")
     assert can_transition("blocked", "rebuilding")

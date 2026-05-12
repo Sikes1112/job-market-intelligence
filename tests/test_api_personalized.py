@@ -84,6 +84,36 @@ def test_discover_endpoint_returns_envelope(api_client, session) -> None:
     assert body["error"] is None
 
 
+def test_discover_endpoint_warning_metadata_uses_standard_shape(
+    api_client,
+    session,
+) -> None:
+    session.add(
+        Region(
+            region_id="empty_region",
+            region_name="empty_region",
+            display_name="Empty Region",
+            region_type="greater_region",
+        )
+    )
+    session.flush()
+
+    response = api_client.post(
+        "/discover/personalized",
+        json={"region_ids": ["empty_region"]},
+    )
+
+    assert response.status_code == 200
+    warnings = response.json()["metadata"]["warnings"]
+    assert warnings
+    for warning in warnings:
+        assert {"warning_code", "severity", "message"}.issubset(warning)
+        assert isinstance(warning["warning_code"], str)
+        assert warning["severity"] in {"low", "medium", "high", "critical"}
+        assert isinstance(warning["message"], str)
+        assert warning["message"]
+
+
 def test_discover_endpoint_requires_region_ids(api_client) -> None:
     response = api_client.post(
         "/discover/personalized", json={"role_targets": ["product"]}

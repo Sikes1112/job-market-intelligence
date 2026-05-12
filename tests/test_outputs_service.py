@@ -578,6 +578,159 @@ def test_first_region_build_partial_walks_to_partial(session: Session) -> None:
     assert result.metadata.state == "partial"
 
 
+def test_changed_region_build_fresh_to_stale_updates_state(session: Session) -> None:
+    _seed_region(session)
+    _seed_company(session, company_id="comp_a")
+    _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+    hiring = _seed_hiring(
+        session,
+        company_id="comp_a",
+        region_id="greater_boston",
+        freshness_expires_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+    _seed_score(session, region_id="greater_boston")
+
+    svc = _service(session)
+    first = svc.build_region(
+        "greater_boston", now=_fixed_clock(datetime(2026, 5, 1, tzinfo=UTC))
+    )
+    assert first.metadata.state == "fresh"
+
+    hiring.freshness_expires_at = datetime(2026, 4, 1, tzinfo=UTC)
+    session.flush()
+    second = svc.build_region(
+        "greater_boston", now=_fixed_clock(datetime(2026, 5, 1, tzinfo=UTC))
+    )
+
+    assert second.action == "updated"
+    assert second.metadata.state == "stale"
+    assert second.payload.metadata.state == "stale"
+
+
+def test_changed_region_build_stale_to_fresh_updates_state(session: Session) -> None:
+    _seed_region(session)
+    _seed_company(session, company_id="comp_a")
+    _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+    hiring = _seed_hiring(
+        session,
+        company_id="comp_a",
+        region_id="greater_boston",
+        freshness_expires_at=datetime(2026, 4, 1, tzinfo=UTC),
+    )
+    _seed_score(session, region_id="greater_boston")
+
+    svc = _service(session)
+    first = svc.build_region(
+        "greater_boston", now=_fixed_clock(datetime(2026, 5, 1, tzinfo=UTC))
+    )
+    assert first.metadata.state == "stale"
+
+    hiring.freshness_expires_at = datetime(2026, 6, 1, tzinfo=UTC)
+    session.flush()
+    second = svc.build_region(
+        "greater_boston", now=_fixed_clock(datetime(2026, 5, 1, tzinfo=UTC))
+    )
+
+    assert second.action == "updated"
+    assert second.metadata.state == "fresh"
+    assert second.payload.metadata.state == "fresh"
+
+
+def test_changed_region_build_partial_to_fresh_updates_state(session: Session) -> None:
+    _seed_region(session)
+    _seed_company(session, company_id="comp_a")
+    _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+
+    svc = _service(session)
+    first = svc.build_region("greater_boston")
+    assert first.metadata.state == "partial"
+
+    _seed_score(session, region_id="greater_boston")
+    second = svc.build_region("greater_boston")
+
+    assert second.action == "updated"
+    assert second.metadata.state == "fresh"
+    assert second.payload.metadata.state == "fresh"
+
+
+def test_changed_region_build_fresh_to_partial_updates_state(
+    session: Session,
+) -> None:
+    _seed_region(session)
+    _seed_company(session, company_id="comp_a")
+    _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+    score = _seed_score(session, region_id="greater_boston")
+
+    svc = _service(session)
+    first = svc.build_region("greater_boston")
+    assert first.metadata.state == "fresh"
+
+    session.delete(score)
+    session.flush()
+    second = svc.build_region("greater_boston")
+
+    assert second.action == "updated"
+    assert second.payload.metadata.state == "partial"
+    assert second.metadata.state == "partial"
+
+
+def test_changed_region_build_stale_to_partial_updates_state(session: Session) -> None:
+    _seed_region(session)
+    _seed_company(session, company_id="comp_a")
+    _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+    hiring = _seed_hiring(
+        session,
+        company_id="comp_a",
+        region_id="greater_boston",
+        freshness_expires_at=datetime(2026, 4, 1, tzinfo=UTC),
+    )
+    score = _seed_score(session, region_id="greater_boston")
+
+    svc = _service(session)
+    first = svc.build_region(
+        "greater_boston", now=_fixed_clock(datetime(2026, 5, 1, tzinfo=UTC))
+    )
+    assert first.metadata.state == "stale"
+
+    hiring.freshness_expires_at = datetime(2026, 6, 1, tzinfo=UTC)
+    session.delete(score)
+    session.flush()
+    second = svc.build_region(
+        "greater_boston", now=_fixed_clock(datetime(2026, 5, 1, tzinfo=UTC))
+    )
+
+    assert second.action == "updated"
+    assert second.metadata.state == "partial"
+    assert second.payload.metadata.state == "partial"
+
+
+def test_changed_region_build_partial_to_stale_updates_state(session: Session) -> None:
+    _seed_region(session)
+    _seed_company(session, company_id="comp_a")
+    _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+
+    svc = _service(session)
+    first = svc.build_region(
+        "greater_boston", now=_fixed_clock(datetime(2026, 5, 1, tzinfo=UTC))
+    )
+    assert first.metadata.state == "partial"
+
+    _seed_score(session, region_id="greater_boston")
+    _seed_hiring(
+        session,
+        company_id="comp_a",
+        region_id="greater_boston",
+        freshness_expires_at=datetime(2026, 4, 1, tzinfo=UTC),
+    )
+    second = svc.build_region(
+        "greater_boston", now=_fixed_clock(datetime(2026, 5, 1, tzinfo=UTC))
+    )
+
+    assert second.action == "updated"
+    assert second.metadata.state == "stale"
+    assert second.payload.metadata.state == "stale"
+
+
 def test_freshness_expires_at_is_min_across_inputs(session: Session) -> None:
     _seed_region(session)
     _seed_company(session, company_id="comp_a")

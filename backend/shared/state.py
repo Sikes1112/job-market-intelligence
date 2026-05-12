@@ -46,6 +46,7 @@ ALLOWED_TRANSITIONS: frozenset[tuple[ObjectState, ObjectState]] = frozenset(
         # Time decay
         (ObjectState.FRESH, ObjectState.STALE),
         # Rebuild a usable older version
+        (ObjectState.FRESH, ObjectState.REBUILDING),
         (ObjectState.STALE, ObjectState.REBUILDING),
         # Partial outcomes
         (ObjectState.BUILDING, ObjectState.PARTIAL),

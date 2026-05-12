@@ -281,6 +281,13 @@ def _company_classification_corrected(event: Event) -> list[InvalidationDirectiv
             reason="classification corrected — rebuild region output",
         )
     )
+    directives.extend(
+        _per_region(
+            InvalidationTarget.COMPARISON_OUTPUT,
+            region_ids,
+            reason="classification corrected — invalidate comparisons involving region",
+        )
+    )
     return directives
 
 
@@ -309,6 +316,11 @@ def _company_presence_updated(event: Event) -> list[InvalidationDirective]:
                 InvalidationTarget.REGION_OUTPUT,
                 affected_regions,
                 reason="presence updated — rebuild region output",
+            ),
+            _per_region(
+                InvalidationTarget.COMPARISON_OUTPUT,
+                affected_regions,
+                reason="presence updated — invalidate comparisons involving region",
             ),
             [
                 InvalidationDirective(
@@ -343,6 +355,11 @@ def _hiring_data_updated(event: Event) -> list[InvalidationDirective]:
                 affected_regions,
                 reason="hiring updated — rebuild region output",
             ),
+            _per_region(
+                InvalidationTarget.COMPARISON_OUTPUT,
+                affected_regions,
+                reason="hiring updated — invalidate comparisons involving region",
+            ),
             [
                 InvalidationDirective(
                     target=InvalidationTarget.COMPANY_OUTPUT,
@@ -371,6 +388,11 @@ def _entry_level_signal_updated(event: Event) -> list[InvalidationDirective]:
                 affected_regions,
                 reason="entry-level updated — rebuild region output",
             ),
+            _per_region(
+                InvalidationTarget.COMPARISON_OUTPUT,
+                affected_regions,
+                reason="entry-level updated — invalidate comparisons involving region",
+            ),
             [
                 InvalidationDirective(
                     target=InvalidationTarget.COMPANY_OUTPUT,
@@ -396,6 +418,11 @@ def _normalization_inputs_updated(event: Event) -> list[InvalidationDirective]:
                 InvalidationTarget.REGION_OUTPUT,
                 region_ids,
                 reason="normalization inputs updated — rebuild region output",
+            ),
+            _per_region(
+                InvalidationTarget.COMPARISON_OUTPUT,
+                region_ids,
+                reason="normalization inputs updated — invalidate comparisons involving region",
             ),
         ]
     )

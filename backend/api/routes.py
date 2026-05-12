@@ -70,7 +70,7 @@ def get_region(
     service: OutputAssemblyService = Depends(get_output_service),
 ):
     try:
-        result = service.build_region(region_id)
+        result = service.read_region(region_id)
     except MissingRegionForOutput:
         return JSONResponse(
             status_code=404,
@@ -97,7 +97,7 @@ def get_company(
     service: OutputAssemblyService = Depends(get_output_service),
 ):
     try:
-        result = service.build_company(company_id)
+        result = service.read_company(company_id)
     except MissingCompanyForOutput:
         return JSONResponse(
             status_code=404,
@@ -136,7 +136,7 @@ def get_comparison(
         )
 
     try:
-        result = service.build_comparison(region_a, region_b)
+        result = service.read_comparison(region_a, region_b)
     except InvalidComparisonInput as e:
         return JSONResponse(
             status_code=400,
@@ -155,5 +155,4 @@ def get_comparison(
         output_metadata_row=result.metadata,
         payload_metadata=payload.metadata,
     )
-
 

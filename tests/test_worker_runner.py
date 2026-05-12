@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.companies.models import Company
 from backend.geography.models import Region
+from backend.orchestration.dependencies.checks import database_dependency_resolver
 from backend.orchestration.jobs.envelopes import JobRequest, JobResponse
 from backend.orchestration.jobs.errors import ErrorCode
 from backend.orchestration.jobs.models import Job
@@ -236,6 +237,57 @@ def test_run_one_with_satisfied_dependency_runs_handler(session: Session) -> Non
     job = _enqueue(session, _request(dependency_refs=["geo_v1"]))
     response = _runner(session).run_one(job.job_id)
     assert response.status is JobStatus.SUCCEEDED
+
+
+def test_run_one_blocks_on_missing_database_dependency_ref(session: Session) -> None:
+    job = _enqueue(
+        session,
+        _request(
+            job_id="job_missing_dep",
+            dependency_refs=["region:missing_region@v1"],
+        ),
+    )
+    runner = WorkerRunner(
+        default_registry(),
+        session=session,
+        dependency_resolver=database_dependency_resolver(session),
+    )
+
+    response = runner.run_one(job.job_id)
+
+    assert response.status is JobStatus.FAILED
+    assert response.error_code is ErrorCode.DEPENDENCY_MISSING
+    assert "region:missing_region@v1" in (response.error_message or "")
+
+
+def test_run_one_blocks_on_stale_database_dependency_ref(session: Session) -> None:
+    session.add(
+        Region(
+            region_id="greater_boston",
+            region_name="greater_boston",
+            display_name="Greater Boston",
+            region_type="greater_region",
+        )
+    )
+    session.flush()
+    job = _enqueue(
+        session,
+        _request(
+            job_id="job_stale_dep",
+            dependency_refs=["region:greater_boston@v2"],
+        ),
+    )
+    runner = WorkerRunner(
+        default_registry(),
+        session=session,
+        dependency_resolver=database_dependency_resolver(session),
+    )
+
+    response = runner.run_one(job.job_id)
+
+    assert response.status is JobStatus.FAILED
+    assert response.error_code is ErrorCode.DEPENDENCY_MISSING
+    assert "region:greater_boston@v2" in (response.error_message or "")
 
 
 # --- response application ------------------------------------------------

@@ -1,5 +1,9 @@
+from sqlalchemy.orm import Session
+
+from backend.geography.models import Region
 from backend.orchestration.dependencies.checks import (
     check_dependencies,
+    database_dependency_resolver,
     default_dependency_resolver,
 )
 
@@ -44,3 +48,50 @@ def test_custom_resolver_can_be_injected() -> None:
         return [r for r in refs if not r.startswith("v")]
 
     assert check_dependencies(["v1", "x"], resolver=strict_resolver) == ["x"]
+
+
+def test_database_dependency_resolver_accepts_matching_version(
+    session: Session,
+) -> None:
+    session.add(
+        Region(
+            region_id="greater_boston",
+            region_name="greater_boston",
+            display_name="Greater Boston",
+            region_type="greater_region",
+        )
+    )
+    session.flush()
+
+    resolver = database_dependency_resolver(session)
+
+    assert check_dependencies(["region:greater_boston@v1"], resolver=resolver) == []
+
+
+def test_database_dependency_resolver_reports_missing_or_stale_refs(
+    session: Session,
+) -> None:
+    session.add(
+        Region(
+            region_id="greater_boston",
+            region_name="greater_boston",
+            display_name="Greater Boston",
+            region_type="greater_region",
+        )
+    )
+    session.flush()
+
+    resolver = database_dependency_resolver(session)
+
+    assert check_dependencies(
+        ["region:missing@v1", "region:greater_boston@v2"],
+        resolver=resolver,
+    ) == ["region:missing@v1", "region:greater_boston@v2"]
+
+
+def test_database_dependency_resolver_keeps_opaque_refs_structural(
+    session: Session,
+) -> None:
+    resolver = database_dependency_resolver(session)
+
+    assert check_dependencies(["legacy_presence_v33"], resolver=resolver) == []

@@ -178,12 +178,16 @@ def test_slice15_does_not_mutate_canonical_truth() -> None:
             assert sub not in text, f"{path.name}: imports {sub}"
 
 
-def test_invalidation_module_does_not_import_output_metadata_writer() -> None:
-    """Slice 15 returns directives only; it must not mark OutputMetadata stale."""
+def test_invalidation_rules_stay_pure_and_service_only_marks_output_metadata() -> None:
+    """Rules stay pure; the service may apply scoped OutputMetadata stale marking."""
     rules_path = BACKEND / "orchestration" / "invalidation" / "rules.py"
     service_path = BACKEND / "orchestration" / "invalidation" / "service.py"
-    for path in (rules_path, service_path):
-        text = path.read_text()
-        assert "OutputMetadataRepository" not in text
-        assert "mark_stale" not in text
-        assert "delete" not in text or path.name == ""
+    rules_text = rules_path.read_text()
+    assert "OutputMetadata" not in rules_text
+    assert "mark_stale" not in rules_text
+
+    service_text = service_path.read_text()
+    assert "OutputMetadataRepository" not in service_text
+    assert ".delete(" not in service_text
+    assert "run_one(" not in service_text
+    assert "run_next(" not in service_text

@@ -1,7 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from backend.orchestration.dependencies.refs import DependencyRef
+from backend.orchestration.dependencies.refs import (
+    DependencyRef,
+    make_versioned_dependency_ref,
+    parse_versioned_dependency_ref,
+)
 
 
 def test_dependency_ref_accepts_minimal_form() -> None:
@@ -42,7 +46,25 @@ def test_dependency_ref_forbids_extra_fields() -> None:
 
 
 def test_dependency_ref_does_not_resolve_anything() -> None:
-    """Slice 4 contract: structural only. The ref is opaque to this layer."""
+    """The model is structural. Runtime DB resolution lives in checks.py."""
     ref = DependencyRef(ref="totally_made_up_v99")
     assert ref.ref == "totally_made_up_v99"
-    # No exception, no DB lookup, no version check. Resolution lives in Slices 14+.
+    # No exception, no DB lookup, no version check here.
+
+
+def test_versioned_dependency_ref_round_trip() -> None:
+    ref = make_versioned_dependency_ref("region", "greater_boston", version=3)
+    parsed = parse_versioned_dependency_ref(ref)
+    assert ref == "region:greater_boston@v3"
+    assert parsed is not None
+    assert parsed.kind == "region"
+    assert parsed.object_id == "greater_boston"
+    assert parsed.version == 3
+
+
+def test_versioned_dependency_ref_allows_existence_only_form() -> None:
+    parsed = parse_versioned_dependency_ref("company:comp_a")
+    assert parsed is not None
+    assert parsed.kind == "company"
+    assert parsed.object_id == "comp_a"
+    assert parsed.version is None

@@ -1,94 +1,35 @@
-# API_SURFACES.md
+# API Surfaces
 
-## Purpose
+This file documents the MVP API surface that is currently implemented. It is intentionally narrow: the local demo reads seeded backend data and does not expose auth, accounts, scraping, admin tooling, maps, or production deployment controls. Current status is an internal-production baseline for local/single-process operation, not external-production readiness.
 
-This file defines the MVP API surface for the job-market intelligence platform backend.
+## Response Envelope
 
-It exists to prevent endpoint drift during implementation.
-
-Claude Code must treat this file as the source of truth for MVP API boundaries unless a later prompt explicitly updates it.
-
----
-
-## API Design Principle
-
-The API layer should be thin.
-
-Public/user-facing endpoints should mostly:
-
-1. read prepared canonical or derived objects
-2. apply lightweight filters/sorting where appropriate
-3. return state/freshness metadata
-4. avoid heavy truth-building work during request time
-
-Do not put orchestration-heavy logic inside route handlers.
-
----
-
-## Layer Separation Rule
-
-The API must preserve the system’s three-layer structure:
-
-### 1. Canonical market truth
-Examples:
-- companies
-- regions
-- company-region presence
-- hiring
-- entry-level records
-- region scores
-
-### 2. Derived app outputs
-Examples:
-- region output object
-- company output object
-- comparison output object
-
-### 3. User-specific overlays
-Examples:
-- personalized rankings
-- personalized company targets
-- role/industry filtered views
-
-Public APIs may read from all three, but must not collapse them into one mutable object.
-
----
-
-# 1. API Categories
-
-MVP V1 should include these API categories:
-
-1. Health / system status
-2. Region read APIs
-3. Company read APIs
-4. Comparison APIs
-5. Search/filter APIs
-6. Personalized discovery APIs
-7. Minimal admin/internal refresh APIs
-
----
-
-# 2. General Response Envelope
-
-All API responses should follow a consistent shape where practical.
+Most successful responses use:
 
 ```json
 {
-  "status": "success | partial | error",
+  "status": "success",
   "data": {},
   "metadata": {
-    "state": "fresh | stale | partial | failed | blocked | rebuilding | unknown",
+    "state": "fresh",
     "freshness": {
       "last_updated_at": "ISO-8601 timestamp or null",
       "freshness_expires_at": "ISO-8601 timestamp or null",
-      "is_stale": false
+      "is_stale": false,
+      "freshness_status": "fresh | stale | unknown"
     },
     "source_versions": {},
     "warnings": []
   },
   "error": null
 }
-For errors:
+```
+
+Lightweight endpoints may omit `freshness` and `source_versions` from `metadata`. When `freshness_expires_at` is `null`, `freshness_status` is `unknown`; do not interpret `is_stale: false` by itself as proof of tracked freshness.
+
+Errors use:
+
+```json
 {
   "status": "error",
   "data": null,
@@ -101,462 +42,176 @@ For errors:
     "message": "Region not found."
   }
 }
+```
 
-⸻
+Warnings are structured objects when available:
 
-3. Health Endpoints
-GET /health
-Purpose
-Basic backend health check.
-Request
-No body.
-Response
+```json
 {
-  "status": "success",
-  "data": {
-    "service": "ok"
-  },
-  "metadata": {
-    "state": "fresh",
-    "warnings": []
-  },
-  "error": null
+  "warning_code": "region_score_missing",
+  "severity": "medium",
+  "message": "no region_market_scores row for 'greater_boston'",
+  "scope_type": "region",
+  "scope_ref": "greater_boston"
 }
-Scope
-In MVP, this can be simple.
-Must not do
-* run DB migrations
-* trigger refresh jobs
-* perform heavy dependency checks
+```
 
-⸻
+## Implemented Public Endpoints
 
-4. Region APIs
-GET /regions
-Purpose
-Return supported regions.
-Query params
-Optional:
-* region_type
-* parent_region_id
-* labor_market_group
-Response data
+For the local MVP, full output endpoints assemble response payloads on read through the output assembly service without creating or updating `OutputMetadata` cache metadata. They do not run foundational ingestion, external refreshes, scraping, or scoring recomputation during request handling.
+
+### `GET /health`
+
+Basic health check. It does not touch the database.
+
+Response `data`:
+
+```json
+{
+  "service": "ok"
+}
+```
+
+### `GET /regions`
+
+Lightweight region list. This reads region identity rows only and does not return full region output sections.
+
+Response `data`:
+
+```json
 {
   "regions": [
     {
       "region_id": "greater_boston",
       "display_name": "Greater Boston",
       "region_type": "greater_region",
-      "parent_region_id": "massachusetts",
+      "parent_region_id": null,
       "labor_market_group": "boston_labor_market",
-      "state": "fresh"
+      "state": "fresh",
+      "version": 1
     }
   ]
 }
-Reads from
-* regions
-Must not do
-* build new region objects
-* infer custom geographies live
+```
 
-⸻
+### `GET /regions/{region_id}`
 
-GET /regions/{region_id}
-Purpose
-Return the assembled region output object if available.
-This is the main region page endpoint.
-Response data
+Returns the assembled region output in a flattened `data` body. The response does not wrap the body in a `region` key.
+
+Response `data`:
+
+```json
 {
-  "region": {
+  "region_id": "greater_boston",
+  "display_name": "Greater Boston",
+  "region_type": "greater_region",
+  "parent_region_id": null,
+  "labor_market_group": "boston_labor_market",
+  "summary": {
+    "eligible_company_count": 6,
+    "major_tech_count": 2,
+    "mag7_count": 2,
+    "present_company_count": 5,
+    "currently_hiring_company_count": 4
+  },
+  "scores": {
+    "structural_ecosystem_score": 0.72,
+    "live_market_score": 0.68,
+    "objective_opportunity_score": 0.74,
+    "raw_total_score": 0.71,
+    "general_density_score": 0.76,
+    "tech_market_density_score": 0.73,
+    "early_career_accessibility_score": 0.79,
+    "score_ruleset_version": "marketscore_v1"
+  },
+  "top_companies_present": [],
+  "top_companies_hiring": [],
+  "entry_level_summary": {
+    "internship_count_total": 25,
+    "coop_count_total": 15,
+    "entry_level_full_time_count_total": 28,
+    "formal_early_career_program_count": 2,
+    "average_entry_level_access_score": 0.71,
+    "pairs_with_entry_level_access": 5
+  },
+  "major_tech_summary": {
+    "count": 2,
+    "company_ids": ["comp_alphabet", "comp_microsoft"]
+  },
+  "mag7_summary": {
+    "count": 2,
+    "company_ids": ["comp_alphabet", "comp_microsoft"]
+  }
+}
+```
+
+### `GET /companies/{company_id}`
+
+Returns the assembled company output in a flattened `data` body. The response does not wrap the body in a `company` key.
+
+Response `data`:
+
+```json
+{
+  "company_id": "comp_alphabet",
+  "company_name": "Alphabet",
+  "normalized_company_name": "alphabet",
+  "sector_primary": "ai",
+  "sector_secondary": "cloud",
+  "eligibility_status": "eligible",
+  "eligibility_override_flag": false,
+  "classification_confidence": "high_confidence",
+  "is_major_tech": true,
+  "is_mag7": true,
+  "prestige_score": 0.95,
+  "regions_present": [],
+  "regions_hiring": [],
+  "entry_level_regions": []
+}
+```
+
+### `GET /compare`
+
+Query parameters:
+
+- `region_a`: required region id
+- `region_b`: required region id
+
+Returns the comparison output in a flattened `data` body. The backend canonicalizes comparison ordering by region id, so `region_a` and `region_b` in the response may be sorted rather than matching request order.
+
+Response `data`:
+
+```json
+{
+  "comparison_id": "greater_boston__greater_sf",
+  "region_a": {
     "region_id": "greater_boston",
     "display_name": "Greater Boston",
-    "summary": {},
-    "scores": {
-      "structural_ecosystem_score": 0.72,
-      "live_market_score": 0.68,
-      "objective_opportunity_score": 0.74,
-      "raw_total_score": 0.71,
-      "general_density_score": 0.76,
-      "tech_market_density_score": 0.73,
-      "early_career_accessibility_score": 0.79
-    },
-    "top_companies_present": [],
-    "top_companies_hiring": [],
-    "entry_level_summary": {},
-    "major_tech_summary": {},
-    "mag7_summary": {}
-  }
-}
-Reads from
-Preferred:
-* region_outputs
-Fallback:
-* regions
-* region_market_scores
-* relevant company-region records, if route supports degraded output
-State behavior
-If region output is:
-* fresh: return normally
-* stale: return with freshness warning
-* partial: return available sections and warnings
-* failed/blocked: return error or degraded fallback if available
-Must not do
-* run full region build synchronously
-* run company universe intake
-* run broad presence mapping
-
-⸻
-
-GET /regions/{region_id}/companies
-Purpose
-Return companies present in a region.
-Query params
-Optional:
-* eligible_only=true|false
-* major_tech=true|false
-* mag7=true|false
-* currently_hiring=true|false
-* entry_level=true|false
-* sector=software|ai|cloud|data|hardware|cybersecurity
-* limit
-* offset
-Response data
-{
-  "region_id": "greater_boston",
-  "companies": [
-    {
-      "company_id": "comp_101",
-      "company_name": "Example AI",
-      "sector_primary": "ai",
-      "eligibility_status": "eligible",
-      "is_major_tech": true,
-      "is_mag7": false,
-      "presence_status": "present",
-      "presence_basis": "office_plus_hiring",
-      "currently_hiring_flag": true,
-      "entry_level_access_score": 0.81
-    }
-  ]
-}
-Reads from
-* companies
-* company_region_presence
-* company_region_hiring
-* company_region_entry_level
-Must not do
-* mutate company truth
-* run classification live
-
-⸻
-
-GET /regions/{region_id}/hiring
-Purpose
-Return hiring summary for a region.
-Query params
-Optional:
-* role_family
-* entry_level=true|false
-* major_tech=true|false
-* limit
-* offset
-Response data
-{
-  "region_id": "greater_boston",
-  "hiring_summary": {
-    "actively_hiring_company_count": 42,
-    "active_posting_count_now": 214,
-    "posting_count_30d": 480,
-    "posting_count_90d": 1200
+    "scores": {}
   },
-  "companies": []
-}
-Reads from
-* company_region_hiring
-* company_region_entry_level
-* companies
-Must not do
-* fetch live job postings synchronously
-* perform external source ingestion
-
-⸻
-
-GET /regions/{region_id}/entry-level
-Purpose
-Return early-career opportunity summary for a region.
-Query params
-Optional:
-* role_family
-* major_tech=true|false
-* limit
-* offset
-Response data
-{
-  "region_id": "greater_boston",
-  "entry_level_summary": {
-    "internship_count": 25,
-    "coop_count": 18,
-    "entry_level_full_time_count": 34,
-    "formal_early_career_program_count": 12,
-    "early_career_accessibility_score": 0.79
+  "region_b": {
+    "region_id": "greater_sf",
+    "display_name": "Greater San Francisco / Silicon Valley",
+    "scores": {}
   },
-  "companies": []
+  "category_winners": {
+    "structural_ecosystem_score": "greater_sf",
+    "early_career_accessibility_score": "greater_boston",
+    "objective_opportunity_score": "greater_boston"
+  },
+  "notes": []
 }
-Reads from
-* company_region_entry_level
-* company_region_hiring
-* companies
-* region_market_scores
-Must not do
-* treat unknown role metadata as zero
-* run job parsing live
+```
 
-⸻
+`category_winners` maps score field name to winning `region_id`. A value of `null` means an honest tie. Categories with missing score values are omitted.
 
-5. Company APIs
-GET /companies/{company_id}
-Purpose
-Return assembled company output object.
-Response data
+### `POST /discover/personalized`
+
+Request body:
+
+```json
 {
-  "company": {
-    "company_id": "comp_101",
-    "company_name": "Example AI",
-    "sector_primary": "ai",
-    "eligibility_status": "eligible",
-    "is_major_tech": true,
-    "is_mag7": false,
-    "prestige_score": 0.77,
-    "regions_present": [],
-    "regions_hiring": [],
-    "entry_level_regions": []
-  }
-}
-Reads from
-Preferred:
-* company_outputs
-Fallback:
-* companies
-* company-region presence/hiring/entry-level records
-Must not do
-* classify company live
-* run external company research
-
-⸻
-
-GET /companies/{company_id}/regions
-Purpose
-Return where a company is present, hiring, and entry-level accessible.
-Query params
-Optional:
-* present_only=true|false
-* currently_hiring=true|false
-* entry_level=true|false
-Response data
-{
-  "company_id": "comp_101",
-  "regions": [
-    {
-      "region_id": "greater_boston",
-      "display_name": "Greater Boston",
-      "presence_status": "present",
-      "presence_basis": "office_plus_hiring",
-      "currently_hiring_flag": true,
-      "active_posting_count_now": 12,
-      "entry_level_access_score": 0.81
-    }
-  ]
-}
-Reads from
-* companies
-* regions
-* company_region_presence
-* company_region_hiring
-* company_region_entry_level
-
-⸻
-
-GET /companies/{company_id}/hiring
-Purpose
-Return company hiring footprint across supported regions.
-Query params
-Optional:
-* region_id
-* entry_level=true|false
-* role_family
-Response data
-{
-  "company_id": "comp_101",
-  "hiring_by_region": [
-    {
-      "region_id": "greater_boston",
-      "currently_hiring_flag": true,
-      "active_posting_count_now": 12,
-      "posting_count_30d": 24,
-      "posting_count_90d": 55,
-      "entry_level": {
-        "internship_count": 3,
-        "coop_count": 2,
-        "entry_level_full_time_count": 4
-      }
-    }
-  ]
-}
-Must not do
-* fetch live postings synchronously
-* mutate hiring records
-
-⸻
-
-6. Comparison APIs
-GET /compare
-Purpose
-Compare two supported regions.
-Query params
-Required:
-* region_a
-* region_b
-Optional:
-* role_family
-* entry_level=true|false
-* personalized=true|false
-Example:
-GET /compare?region_a=greater_boston&region_b=greater_sf
-Response data
-{
-  "comparison": {
-    "comparison_id": "greater_boston__greater_sf",
-    "region_a": {
-      "region_id": "greater_boston",
-      "scores": {}
-    },
-    "region_b": {
-      "region_id": "greater_sf",
-      "scores": {}
-    },
-    "category_winners": {
-      "structural_ecosystem": "greater_sf",
-      "early_career_accessibility": "greater_boston",
-      "objective_opportunity": "greater_boston"
-    },
-    "notes": []
-  }
-}
-Reads from
-Preferred:
-* cached comparison_outputs
-Fallback:
-* region_outputs
-Allowed live work
-* lightweight comparison assembly from region outputs
-* lightweight filtering
-Must not do
-* recompute region scores from scratch synchronously
-* run hiring refresh synchronously
-* run presence mapping synchronously
-
-⸻
-
-GET /compare/contextual
-Purpose
-Return secondary contextual challenge output for a comparison.
-Query params
-Required:
-* comparison_id
-Alternative:
-* region_a
-* region_b
-Response data
-{
-  "contextual_challenge": {
-    "comparison_id": "greater_boston__greater_sf",
-    "challenge_status": "challenged",
-    "changed_findings": [],
-    "unchanged_findings": [],
-    "explanation": ""
-  }
-}
-Reads from
-* contextual_challenge_outputs
-* comparison_outputs
-Allowed live work
-* lightweight contextual challenge generation if base comparison exists
-Must not do
-* replace primary comparison score
-* mutate region scores
-* treat contextual challenge as canonical truth
-
-⸻
-
-7. Search / Filter APIs
-GET /search/companies
-Purpose
-Search companies across supported regions and filters.
-Query params
-Optional:
-* q
-* region_id
-* sector
-* major_tech
-* mag7
-* currently_hiring
-* entry_level
-* limit
-* offset
-Response data
-{
-  "companies": [
-    {
-      "company_id": "comp_101",
-      "company_name": "Example AI",
-      "sector_primary": "ai",
-      "is_major_tech": true,
-      "regions": []
-    }
-  ]
-}
-Reads from
-* companies
-* company-region tables
-Must not do
-* semantic search unless explicitly implemented
-* external web lookup
-
-⸻
-
-GET /search/regions
-Purpose
-Search or filter supported regions.
-Query params
-Optional:
-* q
-* region_type
-* min_objective_score
-* role_family
-* entry_level=true|false
-Response data
-{
-  "regions": [
-    {
-      "region_id": "greater_boston",
-      "display_name": "Greater Boston",
-      "objective_opportunity_score": 0.74,
-      "early_career_accessibility_score": 0.79
-    }
-  ]
-}
-Reads from
-* regions
-* region_market_scores
-
-⸻
-
-8. Personalized Discovery APIs
-POST /discover/personalized
-Purpose
-Return personalized region and company rankings from user preferences.
-Request body
-{
-  "role_targets": ["product"],
+  "role_targets": ["product", "ai_cloud_adjacent"],
   "industry_preferences": ["ai", "cloud"],
   "career_stage": "entry_level",
   "prestige_preference": "medium",
@@ -564,203 +219,76 @@ Request body
   "region_ids": ["greater_boston", "greater_sf"],
   "limit": 25
 }
-Response data
+```
+
+Returns the implemented personalized payload in a flattened `data` body. The response does not wrap the body in a `personalized` key. Preferences are request-scoped and are not persisted.
+
+Response `data`:
+
+```json
 {
-  "personalized": {
-    "ranked_regions": [
-      {
-        "region_id": "greater_boston",
-        "personal_market_score": 0.78,
-        "objective_opportunity_score": 0.74
-      }
-    ],
-    "ranked_companies": [
-      {
-        "company_id": "comp_101",
-        "region_id": "greater_boston",
-        "personal_company_score": 0.84,
-        "match_notes": []
-      }
-    ]
-  }
+  "ranked_regions": [
+    {
+      "region_id": "greater_boston",
+      "display_name": "Greater Boston",
+      "personal_market_score": 0.78,
+      "objective_opportunity_score": 0.74,
+      "match_notes": []
+    }
+  ],
+  "ranked_companies": [
+    {
+      "company_id": "comp_alphabet",
+      "company_name": "Alphabet",
+      "region_id": "greater_boston",
+      "region_display_name": "Greater Boston",
+      "personal_company_score": 0.84,
+      "role_fit": 0.75,
+      "industry_fit": 1.0,
+      "prestige_fit": 0.9,
+      "brand_fit": 1.0,
+      "match_notes": []
+    }
+  ]
 }
-Reads from
-* region_market_scores
-* companies
-* company_region_hiring
-* company_region_entry_level
-* derived output objects if useful
-Writes to
-* session cache only, if implemented
-Must not do
-* mutate canonical truth
-* create permanent user profile unless explicitly requested
-* run foundational rebuilds
+```
 
-⸻
+## Deferred Endpoints
 
-9. Minimal Admin/Internal APIs
-These are not public product APIs.
-They may be implemented only when needed for orchestration/testing/admin workflows.
-POST /admin/jobs/run
-Purpose
-Manually enqueue a job.
-Request body
-{
-  "job_type": "hiring_refresh",
-  "scope": {
-    "region_ids": ["greater_boston"]
-  },
-  "priority": "normal"
-}
-Response data
-{
-  "job_id": "job_123",
-  "status": "queued"
-}
-Must protect
-This endpoint should be internal/admin only.
+These endpoints may appear in older planning docs, but they are not currently implemented as public API routes:
 
-⸻
+- `GET /regions/{region_id}/companies`
+- `GET /regions/{region_id}/hiring`
+- `GET /regions/{region_id}/entry-level`
+- `GET /companies/{company_id}/regions`
+- `GET /companies/{company_id}/hiring`
+- `GET /compare/contextual`
+- `GET /search/companies`
+- `GET /search/regions`
+- `POST /admin/jobs/run`
+- `POST /admin/refresh/region`
+- `POST /admin/refresh/company`
 
-POST /admin/refresh/region
-Purpose
-Trigger region refresh workflow.
-Request body
-{
-  "region_id": "greater_boston",
-  "refresh_scope": "hiring_and_entry_level"
-}
-Response data
-{
-  "queued_jobs": ["job_123", "job_124"]
-}
+The contextual challenge builder and seed path exist in backend code, but there is no public `GET /compare/contextual` endpoint in the current MVP.
 
-⸻
+## Runtime And Orchestration Boundaries
 
-POST /admin/refresh/company
-Purpose
-Trigger company refresh workflow.
-Request body
-{
-  "company_id": "comp_101",
-  "refresh_scope": "hiring"
-}
-Response data
-{
-  "queued_jobs": ["job_125"]
-}
+- Full output GET endpoints assemble response payloads in read-only mode. They do not create or update `OutputMetadata`; seed flows and output-build job handlers are responsible for cache metadata writes.
+- Event invalidation returns directives/recommendations and can apply a narrow stale-marking pass for existing `OutputMetadata` rows affected by region/company/comparison output directives. Stale marking requires the DB-session-backed dispatch path; dispatch without a session reports stale marking as skipped. It does not delete rows, rebuild outputs, enqueue jobs beyond existing routing behavior, or run workers.
+- Scheduler-generated `dependency_refs` are still opaque by default. The runtime also supports optional DB-backed refs in the form `kind:object_id@vN` through an injected database dependency resolver; there is no full source-version dependency graph.
+- Queue dedupe uses an application-level check plus a partial unique index for active `dedupe_key` rows on SQLite/PostgreSQL. This is DB-level protection for supported databases, not a replacement for a production broker, distributed lock, or multi-worker orchestration.
+- Audit and contextual challenge handlers/services exist for backend use, but they are not registered in the default worker registry and are not exposed as public API routes.
 
-⸻
+External-production work remains deferred: migrations, deployment configuration, auth/security, observability, distributed queue/broker integration, artifact storage/cache serving, and multi-worker stress testing.
 
-10. Error Codes
-MVP APIs should use consistent error codes.
-Recommended error codes:
-* NOT_FOUND
-* VALIDATION_ERROR
-* OBJECT_STALE
-* OBJECT_PARTIAL
-* OBJECT_BLOCKED
-* OBJECT_FAILED
-* DEPENDENCY_MISSING
-* UNSUPPORTED_FILTER
-* INTERNAL_ERROR
-Example:
-{
-  "status": "error",
-  "data": null,
-  "metadata": {
-    "state": "blocked",
-    "warnings": []
-  },
-  "error": {
-    "code": "OBJECT_BLOCKED",
-    "message": "Comparison cannot be built because one region output is unavailable."
-  }
-}
+## MVP Non-Goals
 
-⸻
-
-11. Freshness and State Exposure
-Where useful, responses should expose:
-* object state
-* last updated time
-* freshness expiry
-* warnings
-* source versions
-Do not hide stale or partial data.
-If a response uses stale data, return it honestly.
-Example warning:
-{
-  "warning_code": "STALE_REGION_OUTPUT",
-  "severity": "medium",
-  "message": "Region output is older than the preferred freshness window."
-}
-
-⸻
-
-12. API Non-Goals for MVP
 Do not implement unless explicitly requested:
-* frontend routes/pages
-* authentication-heavy user account system
-* employer accounts
-* application submission
-* resume upload
-* saved job tracking
-* messaging
-* full admin dashboard
-* semantic natural-language search
-* raw job posting CRUD APIs
-* public mutation APIs for canonical truth
 
-⸻
-
-13. MVP Endpoint List
-Required MVP endpoints:
-GET  /health
-GET  /regions
-GET  /regions/{region_id}
-GET  /regions/{region_id}/companies
-GET  /companies/{company_id}
-GET  /companies/{company_id}/regions
-GET  /compare
-POST /discover/personalized
-Recommended if slice reaches them:
-GET  /regions/{region_id}/hiring
-GET  /regions/{region_id}/entry-level
-GET  /companies/{company_id}/hiring
-GET  /compare/contextual
-GET  /search/companies
-GET  /search/regions
-Internal/admin only:
-POST /admin/jobs/run
-POST /admin/refresh/region
-POST /admin/refresh/company
-
-⸻
-
-14. Implementation Guidance
-When implementing APIs:
-1. keep route handlers thin
-2. put business logic in services
-3. read cached/derived outputs first when available
-4. expose state/freshness metadata
-5. do not run heavy rebuilds synchronously
-6. validate filters explicitly
-7. return partial data honestly
-8. avoid inventing endpoints not listed here
-
-⸻
-
-15. API Acceptance Criteria
-The MVP API surface is acceptable when it can:
-1. return supported regions
-2. return a region output
-3. return companies in a region
-4. return a company output
-5. return company regions
-6. compare two supported regions
-7. run personalized discovery from request-scoped preferences
-8. expose state/freshness metadata
-9. avoid heavy truth-building in request handlers
-10. return structured errors for missing/stale/blocked objects
+- authentication-heavy user account systems
+- saved profiles or application tracking
+- scraping or external APIs
+- maps or advanced charts
+- production deployment/security controls
+- public mutation APIs for canonical truth
+- persistent personalized outputs

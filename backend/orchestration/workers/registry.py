@@ -5,10 +5,9 @@ returns a per-request ``handler(request) -> JobResponse`` callable. The
 runner builds a fresh handler per request so the wired-up service can
 share the runtime's session.
 
-Slice 14 registers every implemented handler. The deferred handlers
-(``personal_overlay_query`` is interactive-only via the API,
-``contextual_challenge_build`` is Slice 17, ``audit`` is Slice 16) are
-intentionally **not** registered.
+The default runtime registry is intentionally conservative. Interactive
+personalization stays API-only, and the audit/contextual handlers are callable
+backend functionality but are not registered for default worker dispatch.
 """
 
 from __future__ import annotations
@@ -173,8 +172,9 @@ def default_registry() -> WorkerRegistry:
     Excluded:
 
     * ``PERSONAL_OVERLAY_QUERY`` — Slice 13 is interactive (HTTP) only.
-    * ``CONTEXTUAL_CHALLENGE_BUILD`` — Slice 17 hasn't shipped yet.
-    * ``AUDIT`` — Slice 16 hasn't shipped yet.
+    * ``CONTEXTUAL_CHALLENGE_BUILD`` — handler exists, but auto-dispatch is
+      deferred for MVP.
+    * ``AUDIT`` — handler exists, but auto-dispatch is deferred for MVP.
     * ``COMPANY_UNIVERSE_INTAKE`` — no handler implemented yet (real
       ingestion is Deferred A).
     """

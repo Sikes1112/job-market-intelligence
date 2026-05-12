@@ -1,9 +1,9 @@
 """Dependency reference structure.
 
 A :class:`DependencyRef` is a *structural* declaration that one job depends on
-a specific versioned upstream object. This module does **not** resolve the
-reference, query the database, or fetch the upstream object — those concerns
-belong to later orchestration slices.
+a specific versioned upstream object. This module does **not** query the
+database or fetch the upstream object; resolution lives in
+``backend.orchestration.dependencies.checks``.
 
 The wire format used by ``JobRequest.dependency_refs`` is plain strings (per
 the docs: ``["company_universe_v45", "presence_v33"]``). :class:`DependencyRef`
@@ -13,7 +13,20 @@ of upstream object alongside the ``ref``.
 
 from __future__ import annotations
 
+import re
+from typing import NamedTuple
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+_VERSIONED_REF_RE = re.compile(
+    r"^(?P<kind>[a-z_]+):(?P<object_id>[^@]+?)(?:@v(?P<version>[1-9][0-9]*))?$"
+)
+
+
+class ParsedDependencyRef(NamedTuple):
+    kind: str
+    object_id: str
+    version: int | None
 
 
 class DependencyRef(BaseModel):
@@ -46,3 +59,30 @@ class DependencyRef(BaseModel):
     @classmethod
     def from_string(cls, ref: str, *, kind: str | None = None) -> DependencyRef:
         return cls(ref=ref, kind=kind)
+
+
+def make_versioned_dependency_ref(
+    kind: str, object_id: str, *, version: int | None = None
+) -> str:
+    if not kind or not kind.strip() or ":" in kind or "@" in kind:
+        raise ValueError("kind must be non-empty and must not contain ':' or '@'")
+    if not object_id or not object_id.strip() or "@" in object_id:
+        raise ValueError("object_id must be non-empty and must not contain '@'")
+    base = f"{kind}:{object_id}"
+    if version is None:
+        return base
+    if version < 1:
+        raise ValueError("version must be >= 1")
+    return f"{base}@v{version}"
+
+
+def parse_versioned_dependency_ref(ref: str) -> ParsedDependencyRef | None:
+    match = _VERSIONED_REF_RE.match(ref.strip())
+    if match is None:
+        return None
+    raw_version = match.group("version")
+    return ParsedDependencyRef(
+        kind=match.group("kind"),
+        object_id=match.group("object_id"),
+        version=int(raw_version) if raw_version is not None else None,
+    )

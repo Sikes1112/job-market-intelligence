@@ -15,9 +15,12 @@ from backend.outputs.exceptions import (
     InvalidComparisonInput,
     MissingRegionForOutput,
 )
+from backend.outputs.models import OutputMetadata
 from backend.outputs.repository import OutputMetadataRepository
+from backend.outputs.types import BuildOutcome
 from backend.scoring.models import RegionMarketScore
 from backend.scoring.repository import RegionScoreRepository
+from backend.shared.state import ObjectState
 
 
 def _service(session: Session) -> ContextualChallengeService:
@@ -128,8 +131,45 @@ def test_changed_rebuild_bumps_version_and_state_stays_fresh(session: Session) -
     second = svc.build("greater_boston", "greater_sf")
     assert second.action == "updated"
     assert second.metadata.version == initial_version + 1
-    # State stays fresh per OBJECT_STATE_MODEL.md §17 — no rebuilding walk.
     assert second.metadata.state == "fresh"
+
+
+@pytest.mark.parametrize(
+    ("initial", "outcome", "expected_path"),
+    [
+        (ObjectState.FRESH, BuildOutcome.FRESH, ["rebuilding", "fresh"]),
+        (ObjectState.FRESH, BuildOutcome.STALE, ["rebuilding", "fresh", "stale"]),
+        (ObjectState.FRESH, BuildOutcome.PARTIAL, ["rebuilding", "partial"]),
+        (ObjectState.STALE, BuildOutcome.FRESH, ["rebuilding", "fresh"]),
+        (ObjectState.PARTIAL, BuildOutcome.FRESH, ["rebuilding", "fresh"]),
+    ],
+)
+def test_changed_rebuild_walks_existing_contextual_state_through_rebuilding(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    initial: ObjectState,
+    outcome: BuildOutcome,
+    expected_path: list[str],
+) -> None:
+    svc = _service(session)
+    row = OutputMetadata(
+        output_id="out_contextual_test",
+        output_type="contextual_challenge_output",
+        subject_id="a__b",
+        state=initial.value,
+    )
+    transitions: list[str] = []
+    original = svc._set_state
+
+    def record_transition(row: OutputMetadata, target: ObjectState) -> None:
+        transitions.append(target.value)
+        original(row, target)
+
+    monkeypatch.setattr(svc, "_set_state", record_transition)
+    svc._walk_changed_rebuild_state(row, outcome)
+
+    assert transitions == expected_path
+    assert row.state == expected_path[-1]
 
 
 def test_subject_id_is_canonical_regardless_of_argument_order(

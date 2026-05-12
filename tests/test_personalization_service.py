@@ -27,6 +27,16 @@ def _service(session: Session) -> PersonalizationService:
     )
 
 
+def _assert_warning_shape(warning: dict) -> None:
+    assert {"warning_code", "severity", "message", "scope_type", "scope_ref"}.issubset(
+        warning
+    )
+    assert isinstance(warning["warning_code"], str)
+    assert warning["severity"] in {"low", "medium", "high", "critical"}
+    assert isinstance(warning["message"], str)
+    assert warning["message"]
+
+
 # --- seed helpers ---------------------------------------------------------
 
 
@@ -228,6 +238,8 @@ def test_discover_handles_missing_role_family_with_warning(session: Session) -> 
             region_ids=["greater_boston"], role_targets=["product"]
         )
     )
+    for warning in result.warnings:
+        _assert_warning_shape(warning)
     codes = [w["warning_code"] for w in result.warnings]
     assert "missing_role_family_summary" in codes
 
@@ -245,6 +257,8 @@ def test_discover_warns_on_missing_score(session: Session) -> None:
     )
     region = result.personalized.ranked_regions[0]
     assert region.objective_opportunity_score is None
+    for warning in result.warnings:
+        _assert_warning_shape(warning)
     codes = [w["warning_code"] for w in result.warnings]
     assert "region_score_missing" in codes
 
@@ -255,6 +269,8 @@ def test_discover_warns_on_no_present_companies(session: Session) -> None:
 
     svc = _service(session)
     result = svc.discover(UserPreferences(region_ids=["greater_boston"]))
+    for warning in result.warnings:
+        _assert_warning_shape(warning)
     codes = [w["warning_code"] for w in result.warnings]
     assert "no_present_companies_for_region" in codes
     assert result.personalized.ranked_companies == []

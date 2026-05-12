@@ -16,12 +16,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import NamedTuple
 
+from sqlalchemy.orm import Session
+
 from backend.orchestration.events.payloads import Event
 from backend.orchestration.events.router import (
     EventRouter,
     RouteResult,
     route_event,
 )
+from backend.orchestration.invalidation.service import InvalidationService
 from backend.orchestration.invalidation.types import InvalidationDirective
 from backend.orchestration.queues.service import EnqueueResult, QueueService
 from backend.orchestration.scheduler.router import build_job_request
@@ -50,6 +53,9 @@ class EventDispatchResult:
     invalidations: tuple[InvalidationDirective, ...]
     suppressed: bool
     suppression_reason: str | None
+    stale_output_ids: tuple[str, ...] = ()
+    stale_marking_applied: bool = False
+    stale_marking_skipped_reason: str | None = None
 
 
 class EventEnqueueService:
@@ -65,9 +71,13 @@ class EventEnqueueService:
         queue_service: QueueService,
         *,
         router: EventRouter | None = None,
+        session: Session | None = None,
+        invalidation_service: InvalidationService | None = None,
     ) -> None:
         self._queue = queue_service
         self._router = router or EventRouter()
+        self._session = session
+        self._invalidation = invalidation_service or InvalidationService()
 
     def dispatch(self, event: Event) -> EventDispatchResult:
         route = self._router.route(event)
@@ -79,6 +89,8 @@ class EventEnqueueService:
                 invalidations=route.invalidations,
                 suppressed=True,
                 suppression_reason=route.suppression_reason,
+                stale_marking_applied=False,
+                stale_marking_skipped_reason="event_suppressed",
             )
 
         enqueued: list[EnqueuedFromEvent] = []
@@ -92,6 +104,16 @@ class EventEnqueueService:
                     reason=recommendation.reason,
                 )
             )
+        stale_output_ids: tuple[str, ...] = ()
+        stale_marking_applied = False
+        stale_marking_skipped_reason: str | None = "session_not_configured"
+        if self._session is not None:
+            apply_result = self._invalidation.mark_stale_for(
+                event, session=self._session
+            )
+            stale_output_ids = tuple(apply_result.stale_output_ids)
+            stale_marking_applied = True
+            stale_marking_skipped_reason = None
         return EventDispatchResult(
             event=event,
             route=route,
@@ -99,6 +121,9 @@ class EventEnqueueService:
             invalidations=route.invalidations,
             suppressed=False,
             suppression_reason=None,
+            stale_output_ids=stale_output_ids,
+            stale_marking_applied=stale_marking_applied,
+            stale_marking_skipped_reason=stale_marking_skipped_reason,
         )
 
 
@@ -106,8 +131,10 @@ class EventEnqueueService:
 def dispatch_event(
     event: Event,
     queue_service: QueueService,
+    *,
+    session: Session | None = None,
 ) -> EventDispatchResult:
-    return EventEnqueueService(queue_service).dispatch(event)
+    return EventEnqueueService(queue_service, session=session).dispatch(event)
 
 
 # Re-exports for convenience.

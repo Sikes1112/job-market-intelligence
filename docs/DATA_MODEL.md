@@ -462,7 +462,7 @@ Required fields
 * dedupe_key
 * inputs
 * options
-* dependency_refs
+* dependency_refs (opaque strings by default; optionally `kind:object_id@vN` for DB-backed runtime checks)
 * retry_count
 * max_retries
 * input_hash
@@ -702,6 +702,7 @@ For MVP, one current score record per region is acceptable.
 jobs
 * unique job_id
 * dedupe key index
+* partial unique active dedupe key for queued/running jobs where the database supports it
 output_metadata
 * unique active output per output_type + subject_id if using current active version
 

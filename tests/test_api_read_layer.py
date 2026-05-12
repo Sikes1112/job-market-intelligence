@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from backend.companies.models import Company
 from backend.geography.models import Region
+from backend.outputs.models import OutputMetadata
+from backend.outputs.repository import OutputMetadataRepository
 from backend.presence.models import CompanyRegionPresence
 from backend.scoring.models import RegionMarketScore
 
@@ -200,6 +202,9 @@ def test_get_region_includes_freshness_metadata(api_client, session) -> None:
     freshness = body["metadata"]["freshness"]
     assert "is_stale" in freshness
     assert "freshness_expires_at" in freshness
+    assert freshness["freshness_expires_at"] is None
+    assert freshness["is_stale"] is False
+    assert freshness["freshness_status"] == "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -401,22 +406,52 @@ def test_api_passes_through_stored_score_values_unchanged(
     )
 
 
-def test_api_does_not_emit_personalized_or_contextual_outputs(
+def test_api_get_output_endpoints_do_not_create_output_metadata(
     api_client, session
 ) -> None:
-    """Slice 12 must not write OutputMetadata rows of either deferred type
-    when handling read requests."""
-    from backend.outputs.repository import OutputMetadataRepository
+    """GET output routes assemble payloads in memory and do not populate the
+    OutputMetadata cache table."""
+    _seed_region(session, region_id="greater_boston")
+    _seed_region(session, region_id="greater_sf")
+    _seed_company(session, company_id="comp_a")
+    _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+    _seed_score(session, region_id="greater_boston")
+    _seed_score(session, region_id="greater_sf")
 
+    api_client.get("/regions/greater_boston")
+    api_client.get("/companies/comp_a")
+    api_client.get(
+        "/compare", params={"region_a": "greater_boston", "region_b": "greater_sf"}
+    )
+
+    repo = OutputMetadataRepository(session)
+    assert repo.list() == []
+
+
+def test_api_get_region_does_not_update_existing_output_metadata(
+    api_client, session
+) -> None:
     _seed_region(session, region_id="greater_boston")
     _seed_company(session, company_id="comp_a")
     _seed_presence(session, company_id="comp_a", region_id="greater_boston")
     _seed_score(session, region_id="greater_boston")
+    row = OutputMetadata(
+        output_id="out_region_greater_boston",
+        output_type="region_output",
+        subject_id="greater_boston",
+        artifact_hash="sentinel_hash",
+        source_version_bundle={"sentinel": 1},
+    )
+    session.add(row)
+    session.flush()
+    version_before = row.version
+    state_before = row.state
 
-    api_client.get("/regions/greater_boston")
-    api_client.get("/companies/comp_a")
+    response = api_client.get("/regions/greater_boston")
+    assert response.status_code == 200
 
-    repo = OutputMetadataRepository(session)
-    types = {row.output_type for row in repo.list()}
-    assert "personalized_output" not in types
-    assert "contextual_challenge_output" not in types
+    session.refresh(row)
+    assert row.version == version_before
+    assert row.state == state_before
+    assert row.artifact_hash == "sentinel_hash"
+    assert row.source_version_bundle == {"sentinel": 1}

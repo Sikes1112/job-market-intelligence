@@ -11,6 +11,7 @@ from typing import Any
 
 from backend.outputs.models import OutputMetadata
 from backend.outputs.payloads import OutputPayloadMetadata
+from backend.shared.freshness import FreshnessStatus
 
 # Documented envelope error codes (``API_SURFACES.md`` §10).
 NOT_FOUND = "NOT_FOUND"
@@ -24,6 +25,20 @@ def _is_stale(freshness_expires_at: datetime | None, *, now: datetime) -> bool:
     if freshness_expires_at.tzinfo is None:
         freshness_expires_at = freshness_expires_at.replace(tzinfo=UTC)
     return freshness_expires_at <= now
+
+
+def _freshness_status(
+    freshness_expires_at: datetime | None, *, now: datetime
+) -> FreshnessStatus:
+    if freshness_expires_at is None:
+        return FreshnessStatus.UNKNOWN
+    if freshness_expires_at.tzinfo is None:
+        freshness_expires_at = freshness_expires_at.replace(tzinfo=UTC)
+    return (
+        FreshnessStatus.STALE
+        if freshness_expires_at <= now
+        else FreshnessStatus.FRESH
+    )
 
 
 def _status_for_state(state: str) -> str:
@@ -86,6 +101,9 @@ def success_envelope(
                 else None
             ),
             "is_stale": _is_stale(freshness_expires_at, now=now),
+            "freshness_status": _freshness_status(
+                freshness_expires_at, now=now
+            ).value,
         },
         "source_versions": source_versions,
         "warnings": warnings,

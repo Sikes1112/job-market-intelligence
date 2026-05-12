@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy.orm import Session
 
 from backend.orchestration.events.exceptions import (
     EventValidationError,
@@ -21,6 +22,7 @@ from backend.orchestration.invalidation.types import (
     InvalidationDirective,
     InvalidationTarget,
 )
+from backend.outputs.models import OutputMetadata
 
 _T0 = datetime(2026, 5, 6, 16, 0, tzinfo=UTC)
 
@@ -33,6 +35,25 @@ def _event(event_type: EventType, scope: dict) -> Event:
         source="scheduler",
         scope=scope,
     )
+
+
+def _output(
+    session: Session,
+    *,
+    output_type: str,
+    subject_id: str,
+    state: str = "fresh",
+) -> OutputMetadata:
+    row = OutputMetadata(
+        output_id=f"out_{output_type}_{subject_id}".replace("__", "_"),
+        output_type=output_type,
+        subject_id=subject_id,
+        state=state,
+        artifact_hash=f"hash_{output_type}_{subject_id}",
+    )
+    session.add(row)
+    session.flush()
+    return row
 
 
 def test_invalidation_target_vocabulary_is_fixed() -> None:
@@ -205,3 +226,146 @@ def test_directives_are_pydantic_frozen() -> None:
     )
     with pytest.raises(ValidationError):
         directive.reason = "y"  # type: ignore[misc]
+
+
+def test_region_definition_changed_marks_scoped_outputs_stale(
+    session: Session,
+) -> None:
+    region = _output(
+        session, output_type="region_output", subject_id="greater_boston"
+    )
+    comparison = _output(
+        session,
+        output_type="comparison_output",
+        subject_id="greater_boston__greater_sf",
+    )
+    unrelated_region = _output(
+        session, output_type="region_output", subject_id="greater_sf"
+    )
+    company = _output(session, output_type="company_output", subject_id="comp_a")
+
+    result = InvalidationService().mark_stale_for(
+        _event(EventType.REGION_DEFINITION_CHANGED, {"region_id": "greater_boston"}),
+        session=session,
+    )
+
+    assert set(result.stale_output_ids) == {
+        region.output_id,
+        comparison.output_id,
+    }
+    assert region.state == "stale"
+    assert comparison.state == "stale"
+    assert unrelated_region.state == "fresh"
+    assert company.state == "fresh"
+
+
+def test_hiring_data_updated_marks_region_company_and_comparison_outputs_stale(
+    session: Session,
+) -> None:
+    region = _output(
+        session, output_type="region_output", subject_id="greater_boston"
+    )
+    company = _output(session, output_type="company_output", subject_id="comp_a")
+    comparison = _output(
+        session,
+        output_type="comparison_output",
+        subject_id="greater_boston__greater_sf",
+    )
+    unrelated_company = _output(
+        session, output_type="company_output", subject_id="comp_b"
+    )
+
+    result = InvalidationService().mark_stale_for(
+        _event(
+            EventType.HIRING_DATA_UPDATED,
+            {
+                "company_region_pairs": [
+                    {"company_id": "comp_a", "region_id": "greater_boston"}
+                ]
+            },
+        ),
+        session=session,
+    )
+
+    assert set(result.stale_output_ids) == {
+        region.output_id,
+        company.output_id,
+        comparison.output_id,
+    }
+    assert region.state == "stale"
+    assert company.state == "stale"
+    assert comparison.state == "stale"
+    assert unrelated_company.state == "fresh"
+
+
+def test_entry_level_signal_updated_marks_scoped_outputs_stale(
+    session: Session,
+) -> None:
+    region = _output(
+        session, output_type="region_output", subject_id="greater_boston"
+    )
+    company = _output(session, output_type="company_output", subject_id="comp_a")
+    comparison = _output(
+        session,
+        output_type="comparison_output",
+        subject_id="greater_boston__greater_sf",
+    )
+
+    result = InvalidationService().mark_stale_for(
+        _event(
+            EventType.ENTRY_LEVEL_SIGNAL_UPDATED,
+            {
+                "company_region_pairs": [
+                    {"company_id": "comp_a", "region_id": "greater_boston"}
+                ]
+            },
+        ),
+        session=session,
+    )
+
+    assert set(result.stale_output_ids) == {
+        region.output_id,
+        company.output_id,
+        comparison.output_id,
+    }
+    assert region.state == "stale"
+    assert company.state == "stale"
+    assert comparison.state == "stale"
+
+
+def test_comparison_requested_does_not_mark_outputs_stale(session: Session) -> None:
+    comparison = _output(
+        session,
+        output_type="comparison_output",
+        subject_id="greater_boston__greater_sf",
+    )
+    unrelated = _output(session, output_type="region_output", subject_id="greater_sf")
+
+    result = InvalidationService().mark_stale_for(
+        _event(
+            EventType.COMPARISON_REQUESTED,
+            {"region_a": "greater_boston", "region_b": "greater_sf"},
+        ),
+        session=session,
+    )
+
+    assert result.stale_output_ids == []
+    assert comparison.state == "fresh"
+    assert unrelated.state == "fresh"
+
+
+def test_invalidation_does_not_mutate_non_fresh_outputs(session: Session) -> None:
+    partial = _output(
+        session,
+        output_type="region_output",
+        subject_id="greater_boston",
+        state="partial",
+    )
+
+    result = InvalidationService().mark_stale_for(
+        _event(EventType.REGION_DEFINITION_CHANGED, {"region_id": "greater_boston"}),
+        session=session,
+    )
+
+    assert result.stale_output_ids == []
+    assert partial.state == "partial"

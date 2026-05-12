@@ -99,9 +99,9 @@ def test_routes_use_output_assembly_service_for_full_payloads() -> None:
     inline."""
     text = (BACKEND / "api" / "routes.py").read_text()
     assert "OutputAssemblyService" in text
-    assert "build_region" in text
-    assert "build_company" in text
-    assert "build_comparison" in text
+    assert "read_region" in text
+    assert "read_company" in text
+    assert "read_comparison" in text
 
 
 def test_api_does_not_import_upstream_services() -> None:

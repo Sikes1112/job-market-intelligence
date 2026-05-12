@@ -52,7 +52,12 @@ def build_job_request(
     event: Event,
     recommendation: DownstreamTriggerRecommendation,
 ) -> JobRequest:
-    """Translate a recommendation into a :class:`JobRequest` envelope."""
+    """Translate a recommendation into a :class:`JobRequest` envelope.
+
+    MVP event recommendations do not carry version-aware dependency refs. The
+    dependency list is left empty until a post-MVP dependency graph can resolve
+    concrete source-version references.
+    """
     return JobRequest(
         job_id=_stable_job_id(event, recommendation),
         job_type=JobType(recommendation.job_type),

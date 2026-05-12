@@ -10,10 +10,11 @@ Hard rules enforced at this layer:
 * upstream domain *services* and the Slice 9/10 scoring formulas are
   forbidden imports (verified by the layer-isolation test);
 * the only writable target is ``OutputMetadata``;
-* identical builds (matching ``artifact_hash``) return ``"unchanged"`` —
+* API read paths can assemble payloads without mutating ``OutputMetadata``;
+* identical persisted builds (matching ``artifact_hash``) return ``"unchanged"`` —
   no version bump, no state change;
-* state walks follow ``OBJECT_STATE_MODEL.md`` §17 strictly. ``rebuilding``
-  remains deferred to Slice 14+.
+* changed persisted rebuilds walk through ``rebuilding`` instead of preserving
+  stale/fresh/partial state incorrectly.
 """
 
 from __future__ import annotations
@@ -58,24 +59,34 @@ from backend.scoring.repository import RegionScoreRepository
 from backend.shared.state import ObjectState, validate_transition
 
 UpsertOutcome = Literal["created", "updated", "unchanged"]
+AssemblyAction = Literal["created", "updated", "unchanged", "read_only"]
+
+
+class _AssembledOutput(NamedTuple):
+    subject_id: str
+    payload: RegionOutput | CompanyOutput | ComparisonOutput
+    outcome: BuildOutcome
+    source_version_bundle: dict
+    freshness_expires_at: datetime | None
+    output_id_default: str
 
 
 class RegionAssemblyResult(NamedTuple):
-    metadata: OutputMetadata
+    metadata: OutputMetadata | None
     payload: RegionOutput
-    action: UpsertOutcome
+    action: AssemblyAction
 
 
 class CompanyAssemblyResult(NamedTuple):
-    metadata: OutputMetadata
+    metadata: OutputMetadata | None
     payload: CompanyOutput
-    action: UpsertOutcome
+    action: AssemblyAction
 
 
 class ComparisonAssemblyResult(NamedTuple):
-    metadata: OutputMetadata
+    metadata: OutputMetadata | None
     payload: ComparisonOutput
-    action: UpsertOutcome
+    action: AssemblyAction
 
 
 class OutputAssemblyService:
@@ -105,6 +116,32 @@ class OutputAssemblyService:
     def build_region(
         self, region_id: str, *, now: Callable[[], datetime] | None = None
     ) -> RegionAssemblyResult:
+        assembled = self._assemble_region(region_id, now=now)
+        row, action = self._upsert_metadata(
+            output_type=OutputType.REGION_OUTPUT,
+            subject_id=assembled.subject_id,
+            payload=assembled.payload,
+            outcome=assembled.outcome,
+            source_version_bundle=assembled.source_version_bundle,
+            freshness_expires_at=assembled.freshness_expires_at,
+            output_id_default=assembled.output_id_default,
+        )
+        return RegionAssemblyResult(metadata=row, payload=assembled.payload, action=action)
+
+    def read_region(
+        self, region_id: str, *, now: Callable[[], datetime] | None = None
+    ) -> RegionAssemblyResult:
+        assembled = self._assemble_region(region_id, now=now)
+        row = self._output_repo.get_by_type_and_subject(
+            OutputType.REGION_OUTPUT.value, assembled.subject_id
+        )
+        return RegionAssemblyResult(
+            metadata=row, payload=assembled.payload, action="read_only"
+        )
+
+    def _assemble_region(
+        self, region_id: str, *, now: Callable[[], datetime] | None = None
+    ) -> _AssembledOutput:
         region = self._region_repo.get(region_id)
         if region is None:
             raise MissingRegionForOutput(region_id)
@@ -124,8 +161,7 @@ class OutputAssemblyService:
             entry_level_rows=entry_level_rows,
             now=(now or _default_now)(),
         )
-        row, action = self._upsert_metadata(
-            output_type=OutputType.REGION_OUTPUT,
+        return _AssembledOutput(
             subject_id=region_id,
             payload=result.payload,
             outcome=result.outcome,
@@ -133,7 +169,6 @@ class OutputAssemblyService:
             freshness_expires_at=result.freshness_expires_at,
             output_id_default=f"out_region_{region_id}",
         )
-        return RegionAssemblyResult(metadata=row, payload=result.payload, action=action)
 
     def _present_pairs_for_region(
         self, region_id: str
@@ -153,6 +188,32 @@ class OutputAssemblyService:
     def build_company(
         self, company_id: str, *, now: Callable[[], datetime] | None = None
     ) -> CompanyAssemblyResult:
+        assembled = self._assemble_company(company_id, now=now)
+        row, action = self._upsert_metadata(
+            output_type=OutputType.COMPANY_OUTPUT,
+            subject_id=assembled.subject_id,
+            payload=assembled.payload,
+            outcome=assembled.outcome,
+            source_version_bundle=assembled.source_version_bundle,
+            freshness_expires_at=assembled.freshness_expires_at,
+            output_id_default=assembled.output_id_default,
+        )
+        return CompanyAssemblyResult(metadata=row, payload=assembled.payload, action=action)
+
+    def read_company(
+        self, company_id: str, *, now: Callable[[], datetime] | None = None
+    ) -> CompanyAssemblyResult:
+        assembled = self._assemble_company(company_id, now=now)
+        row = self._output_repo.get_by_type_and_subject(
+            OutputType.COMPANY_OUTPUT.value, assembled.subject_id
+        )
+        return CompanyAssemblyResult(
+            metadata=row, payload=assembled.payload, action="read_only"
+        )
+
+    def _assemble_company(
+        self, company_id: str, *, now: Callable[[], datetime] | None = None
+    ) -> _AssembledOutput:
         company = self._company_repo.get(company_id)
         if company is None:
             raise MissingCompanyForOutput(company_id)
@@ -170,8 +231,7 @@ class OutputAssemblyService:
             regions=regions,
             now=(now or _default_now)(),
         )
-        row, action = self._upsert_metadata(
-            output_type=OutputType.COMPANY_OUTPUT,
+        return _AssembledOutput(
             subject_id=company_id,
             payload=result.payload,
             outcome=result.outcome,
@@ -179,7 +239,6 @@ class OutputAssemblyService:
             freshness_expires_at=result.freshness_expires_at,
             output_id_default=f"out_company_{company_id}",
         )
-        return CompanyAssemblyResult(metadata=row, payload=result.payload, action=action)
 
     def _presence_for_company(self, company_id: str) -> list[CompanyRegionPresence]:
         stmt = (
@@ -232,6 +291,42 @@ class OutputAssemblyService:
         *,
         now: Callable[[], datetime] | None = None,
     ) -> ComparisonAssemblyResult:
+        assembled = self._assemble_comparison(region_a_id, region_b_id, now=now)
+        row, action = self._upsert_metadata(
+            output_type=OutputType.COMPARISON_OUTPUT,
+            subject_id=assembled.subject_id,
+            payload=assembled.payload,
+            outcome=assembled.outcome,
+            source_version_bundle=assembled.source_version_bundle,
+            freshness_expires_at=assembled.freshness_expires_at,
+            output_id_default=assembled.output_id_default,
+        )
+        return ComparisonAssemblyResult(
+            metadata=row, payload=assembled.payload, action=action
+        )
+
+    def read_comparison(
+        self,
+        region_a_id: str,
+        region_b_id: str,
+        *,
+        now: Callable[[], datetime] | None = None,
+    ) -> ComparisonAssemblyResult:
+        assembled = self._assemble_comparison(region_a_id, region_b_id, now=now)
+        row = self._output_repo.get_by_type_and_subject(
+            OutputType.COMPARISON_OUTPUT.value, assembled.subject_id
+        )
+        return ComparisonAssemblyResult(
+            metadata=row, payload=assembled.payload, action="read_only"
+        )
+
+    def _assemble_comparison(
+        self,
+        region_a_id: str,
+        region_b_id: str,
+        *,
+        now: Callable[[], datetime] | None = None,
+    ) -> _AssembledOutput:
         if not isinstance(region_a_id, str) or not isinstance(region_b_id, str):
             raise InvalidComparisonInput("region IDs must be strings")
         if not region_a_id.strip() or not region_b_id.strip():
@@ -275,17 +370,13 @@ class OutputAssemblyService:
             now=(now or _default_now)(),
         )
         subject_id = canonical_comparison_id(canonical_a, canonical_b)
-        row, action = self._upsert_metadata(
-            output_type=OutputType.COMPARISON_OUTPUT,
+        return _AssembledOutput(
             subject_id=subject_id,
             payload=result.payload,
             outcome=result.outcome,
             source_version_bundle=result.source_version_bundle,
             freshness_expires_at=result.freshness_expires_at,
             output_id_default=f"out_comparison_{subject_id}",
-        )
-        return ComparisonAssemblyResult(
-            metadata=row, payload=result.payload, action=action
         )
 
     # --- shared upsert + state-machine -----------------------------------
@@ -352,6 +443,7 @@ class OutputAssemblyService:
     def _walk_changed_rebuild_state(
         self, row: OutputMetadata, outcome: BuildOutcome
     ) -> None:
+        target = ObjectState(outcome.value)
         if row.state == ObjectState.NEW.value:
             self._walk_first_build_state(row, outcome)
             return
@@ -363,9 +455,26 @@ class OutputAssemblyService:
                 if outcome is BuildOutcome.STALE:
                     self._set_state(row, ObjectState.STALE)
             return
-        # All other states (fresh, partial, stale, failed, blocked,
-        # rebuilding): stay where we are. Slice 14+ owns lifecycle
-        # progression beyond the first build.
+        if row.state == target.value:
+            return
+        if row.state in {
+            ObjectState.FRESH.value,
+            ObjectState.STALE.value,
+            ObjectState.PARTIAL.value,
+            ObjectState.FAILED.value,
+            ObjectState.BLOCKED.value,
+            ObjectState.REBUILDING.value,
+        }:
+            if row.state != ObjectState.REBUILDING.value:
+                self._set_state(row, ObjectState.REBUILDING)
+            if target is ObjectState.STALE:
+                # rebuilding → stale is not a valid direct transition; a stale
+                # rebuilt payload is still a successful rebuild whose inputs
+                # have already expired.
+                self._set_state(row, ObjectState.FRESH)
+                self._set_state(row, ObjectState.STALE)
+            else:
+                self._set_state(row, target)
 
     def _set_state(self, row: OutputMetadata, target: ObjectState) -> None:
         validate_transition(row.state, target)

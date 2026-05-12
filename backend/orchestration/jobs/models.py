@@ -8,6 +8,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +30,17 @@ class Job(Base):
         Index("ix_jobs_status", "status"),
         Index("ix_jobs_queue_name", "queue_name"),
         Index("ix_jobs_dedupe_key", "dedupe_key"),
+        Index(
+            "uq_jobs_active_dedupe_key",
+            "dedupe_key",
+            unique=True,
+            sqlite_where=text(
+                "dedupe_key IS NOT NULL AND status IN ('queued', 'running')"
+            ),
+            postgresql_where=text(
+                "dedupe_key IS NOT NULL AND status IN ('queued', 'running')"
+            ),
+        ),
         Index("ix_jobs_priority", "priority"),
     )
 

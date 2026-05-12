@@ -4,18 +4,19 @@ Responsibilities:
 
 * validate the requested queue name (or pick the documented default);
 * compute a deterministic ``dedupe_key`` if the caller didn't supply one;
-* suppress duplicate non-terminal jobs by ``dedupe_key``;
+* suppress duplicate non-terminal jobs by ``dedupe_key`` within the current
+  database/session view and via the active-dedupe DB constraint where supported;
 * persist a fresh ``Job`` row in status ``queued`` ready for the runner.
 
 Dependency resolution is **not** done here — the runner does it at
-dispatch time, so a queued job with currently-unsatisfied dependencies
-can become satisfied later without a polling loop. Slice 15 will add the
-event-driven re-check.
+dispatch time. There is no external broker or distributed lock.
 """
 
 from __future__ import annotations
 
 from typing import Literal, NamedTuple
+
+from sqlalchemy.exc import IntegrityError
 
 from backend.orchestration.jobs.dedupe import dedupe_key as compute_dedupe_key
 from backend.orchestration.jobs.dedupe import scope_hash
@@ -80,8 +81,19 @@ class QueueService:
             max_retries=max_retries,
         )
         job = Job(**kwargs)
-        self._repo.add(job)
-        self._repo.flush()
+        try:
+            with self._repo.begin_nested():
+                self._repo.add(job)
+                self._repo.flush()
+        except IntegrityError:
+            # A concurrent enqueue can pass the application-level check and
+            # lose on the active-dedupe unique index. Roll back this enqueue
+            # only to the SAVEPOINT, preserving unrelated caller work in the
+            # surrounding session/transaction.
+            existing = self._repo.find_active_by_dedupe_key(dedupe_key)
+            if existing is not None:
+                return EnqueueResult(job=existing, outcome="suppressed")
+            raise
         return EnqueueResult(job=job, outcome="enqueued")
 
     def get(self, job_id: str) -> Job | None:

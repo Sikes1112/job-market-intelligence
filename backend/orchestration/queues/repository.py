@@ -8,7 +8,7 @@ repositories.
 from __future__ import annotations
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, SessionTransaction
 
 from backend.orchestration.jobs.models import Job
 from backend.orchestration.jobs.types import JobStatus
@@ -40,7 +40,7 @@ class QueueRepository:
             )
             .order_by(Job.created_at)
         )
-        return self._session.execute(stmt).scalar_one_or_none()
+        return self._session.execute(stmt).scalars().first()
 
     def next_queued(self, queue_name: str) -> Job | None:
         """Return the oldest queued job for ``queue_name``."""
@@ -68,3 +68,9 @@ class QueueRepository:
 
     def flush(self) -> None:
         self._session.flush()
+
+    def begin_nested(self) -> SessionTransaction:
+        return self._session.begin_nested()
+
+    def rollback(self) -> None:
+        self._session.rollback()

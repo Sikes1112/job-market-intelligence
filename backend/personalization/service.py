@@ -52,6 +52,23 @@ def _hiring_by_region_company(
     return {(h.region_id, h.company_id): h for h in rows}
 
 
+def _warning(
+    warning_code: str,
+    *,
+    message: str,
+    scope_type: str,
+    scope_ref: str,
+    severity: str = "medium",
+) -> dict:
+    return {
+        "warning_code": warning_code,
+        "severity": severity,
+        "message": message,
+        "scope_type": scope_type,
+        "scope_ref": scope_ref,
+    }
+
+
 class PersonalizationService:
     """Stateless overlay scorer.
 
@@ -95,11 +112,15 @@ class PersonalizationService:
 
             if not present_companies:
                 warnings.append(
-                    {
-                        "warning_code": "no_present_companies_for_region",
-                        "scope_type": "region",
-                        "scope_ref": region.region_id,
-                    }
+                    _warning(
+                        "no_present_companies_for_region",
+                        message=(
+                            "No present companies are available for this region; "
+                            "personalized company ranking may be empty."
+                        ),
+                        scope_type="region",
+                        scope_ref=region.region_id,
+                    )
                 )
 
             per_region_company_scores: list[float] = []
@@ -110,11 +131,15 @@ class PersonalizationService:
                 )
                 if hiring is None or role_family_summary is None:
                     warnings.append(
-                        {
-                            "warning_code": "missing_role_family_summary",
-                            "scope_type": "company_region_pair",
-                            "scope_ref": f"{company.company_id}::{region.region_id}",
-                        }
+                        _warning(
+                            "missing_role_family_summary",
+                            message=(
+                                "Role-family hiring summary is missing for this "
+                                "company-region pair; role fit used fallback inputs."
+                            ),
+                            scope_type="company_region_pair",
+                            scope_ref=f"{company.company_id}::{region.region_id}",
+                        )
                     )
 
                 role_fit, role_notes = role_fit_component(
@@ -173,11 +198,15 @@ class PersonalizationService:
             region_match_notes: list[str] = []
             if objective is None:
                 warnings.append(
-                    {
-                        "warning_code": "region_score_missing",
-                        "scope_type": "region",
-                        "scope_ref": region.region_id,
-                    }
+                    _warning(
+                        "region_score_missing",
+                        message=(
+                            "Objective region score is missing; personalized "
+                            "region ranking omits objective score context."
+                        ),
+                        scope_type="region",
+                        scope_ref=region.region_id,
+                    )
                 )
                 region_match_notes.append("region_score_missing")
             region_entries.append(

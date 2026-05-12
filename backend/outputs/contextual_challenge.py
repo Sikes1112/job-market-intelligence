@@ -483,6 +483,7 @@ class ContextualChallengeService:
     def _walk_changed_rebuild_state(
         self, row: OutputMetadata, outcome: BuildOutcome
     ) -> None:
+        target = ObjectState(outcome.value)
         if row.state == ObjectState.NEW.value:
             self._walk_first_build_state(row, outcome)
             return
@@ -493,6 +494,25 @@ class ContextualChallengeService:
                 self._set_state(row, ObjectState.FRESH)
                 if outcome is BuildOutcome.STALE:
                     self._set_state(row, ObjectState.STALE)
+            return
+        if row.state in {
+            ObjectState.FRESH.value,
+            ObjectState.STALE.value,
+            ObjectState.PARTIAL.value,
+            ObjectState.FAILED.value,
+            ObjectState.BLOCKED.value,
+            ObjectState.REBUILDING.value,
+        }:
+            if row.state != ObjectState.REBUILDING.value:
+                self._set_state(row, ObjectState.REBUILDING)
+            # The state graph intentionally has no direct rebuilding -> stale.
+            # A changed rebuild whose computed output is stale first produces a
+            # usable artifact, then time/freshness semantics mark it stale.
+            if target is ObjectState.STALE:
+                self._set_state(row, ObjectState.FRESH)
+                self._set_state(row, ObjectState.STALE)
+            else:
+                self._set_state(row, target)
 
     def _set_state(self, row: OutputMetadata, target: ObjectState) -> None:
         validate_transition(row.state, target)
