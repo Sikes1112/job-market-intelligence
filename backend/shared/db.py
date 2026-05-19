@@ -56,10 +56,20 @@ class CanonicalMixin:
         return value
 
 
+def _normalize_database_url(database_url: str) -> str:
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql+psycopg://", 1)
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return database_url
+
+
 def make_engine(database_url: str, *, echo: bool = False) -> Engine:
+    is_sqlite = database_url.startswith("sqlite")
+    engine_url = _normalize_database_url(database_url)
     connect_args: dict = {}
     poolclass = None
-    if database_url.startswith("sqlite"):
+    if is_sqlite:
         connect_args["check_same_thread"] = False
         # In-memory SQLite databases are per-connection by default. Tests
         # (and the API layer sharing a session via dependency overrides)
@@ -69,14 +79,18 @@ def make_engine(database_url: str, *, echo: bool = False) -> Engine:
             from sqlalchemy.pool import StaticPool
 
             poolclass = StaticPool
-    engine = create_engine(
-        database_url,
-        echo=echo,
-        future=True,
-        connect_args=connect_args,
-        **({"poolclass": poolclass} if poolclass is not None else {}),
-    )
-    if database_url.startswith("sqlite"):
+    engine_kwargs = {
+        "echo": echo,
+        "future": True,
+        "connect_args": connect_args,
+    }
+    if poolclass is not None:
+        engine_kwargs["poolclass"] = poolclass
+    if not is_sqlite:
+        engine_kwargs["pool_pre_ping"] = True
+
+    engine = create_engine(engine_url, **engine_kwargs)
+    if is_sqlite:
         # SQLite ignores FOREIGN KEY constraints unless explicitly enabled per
         # connection. Match the behavior of a real RDBMS.
         @event.listens_for(engine, "connect")

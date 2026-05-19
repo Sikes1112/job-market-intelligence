@@ -50,6 +50,40 @@ Useful backend endpoints:
 - `GET http://127.0.0.1:8000/compare?region_a=greater_boston&region_b=greater_sf`
 - `POST http://127.0.0.1:8000/discover/personalized`
 
+## Private Cloud Demo Deployment Notes
+
+This repo is prepared only for a private seeded Vercel + Render + Neon cloud
+demo. It is not external-production ready, and the seeded cloud data must not
+be presented as production or factual market data.
+
+Vercel frontend settings:
+
+- Root directory: `frontend/`
+- Install command: `npm ci`
+- Build command: `npm run build`
+- Output directory: `dist`
+- Environment: `VITE_API_BASE_URL=https://<render-service>.onrender.com`
+
+Render backend settings:
+
+- Service type: Python Web Service from the repo root
+- Build command: `pip install -r requirements.txt`
+- Start command: `uvicorn backend.api.app:app --host 0.0.0.0 --port $PORT`
+- Environment: `DATABASE_URL`, `APP_ENV=prod`, `LOG_LEVEL=INFO`, `SERVICE_NAME=jmi-backend`, `CORS_ALLOWED_ORIGINS`, `PYTHON_VERSION=3.11.11`
+- Final CORS lockdown: `CORS_ALLOWED_ORIGINS=https://<vercel-app>.vercel.app`
+- Do not use wildcard CORS. For local dev, leave `CORS_ALLOWED_ORIGINS` empty and use the Vite proxy, or set exact local origins explicitly.
+
+Neon database notes:
+
+- Use the Neon Postgres connection string for Render `DATABASE_URL`.
+- The app uses SQLAlchemy with `psycopg`; `postgres://` and `postgresql://` URLs are normalized to `postgresql+psycopg://`.
+- Initialize schema explicitly with `DATABASE_URL="<neon-url>" python -m scripts.init_db`.
+- Seed demo data only for private demos with `DATABASE_URL="<neon-url>" python -m scripts.seed_demo`.
+- Do not use cloud seed data as production or factual market data.
+
+Layer 1 does not add auth, Alembic migrations, public launch readiness, or
+production data pipelines.
+
 ## MVP Runtime Notes
 
 - Full output GET endpoints assemble payloads on read without creating or updating `OutputMetadata`. Seed flows and output-build job handlers still write cache metadata.

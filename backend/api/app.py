@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import Engine
 
 from backend.api.personalized import router as personalized_router
@@ -16,6 +17,15 @@ def create_app(*, engine: Engine | None = None) -> FastAPI:
         title="Job Market Intelligence Backend",
         version="0.1.0",
     )
+    allowed_origins = settings.cors_allowed_origin_list
+    if allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_credentials=False,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type"],
+        )
 
     # Engine + session_factory are stored on app.state. Tests build the app
     # with a test-bound engine so /regions, /companies, /compare can read
