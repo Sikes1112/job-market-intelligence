@@ -91,16 +91,13 @@ def _seed_score(
 # ---------------------------------------------------------------------------
 
 
-def test_health_endpoint_unchanged(client) -> None:
+def test_health_endpoint_is_liveness_only(client) -> None:
     response = client.get("/health")
     assert response.status_code == 200
     body = response.json()
-    assert body == {
-        "status": "success",
-        "data": {"service": "ok"},
-        "metadata": {"state": "fresh", "warnings": []},
-        "error": None,
-    }
+    assert body["status"] == "ok"
+    assert body["service"] == "jmi-backend"
+    assert "checks" not in body
 
 
 def test_health_still_works_through_api_client(api_client) -> None:

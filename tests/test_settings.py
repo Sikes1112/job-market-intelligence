@@ -1,0 +1,261 @@
+from collections.abc import Iterator
+
+import pytest
+from pydantic import ValidationError
+
+from backend.config.settings import AppEnv, Settings, get_settings, redact_database_url
+
+SETTINGS_ENV_VARS = (
+    "APP_ENV",
+    "DATABASE_URL",
+    "CORS_ALLOWED_ORIGINS",
+    "LOG_LEVEL",
+    "SERVICE_NAME",
+    "RATE_LIMIT_ENABLED",
+    "SECURITY_HEADERS_ENABLED",
+    "MAX_REQUEST_BODY_BYTES",
+    "RATE_LIMIT_REQUESTS",
+    "RATE_LIMIT_WINDOW_SECONDS",
+)
+
+
+@pytest.fixture(autouse=True)
+def clean_settings_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    for name in SETTINGS_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+def test_default_settings_are_local_and_demo_safe() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.app_env == AppEnv.LOCAL
+    assert settings.database_url == "sqlite:///./jmi.db"
+    assert settings.cors_allowed_origin_list == []
+    assert settings.log_level == "INFO"
+    assert settings.service_name == "jmi-backend"
+    assert settings.rate_limit_enabled is False
+    assert settings.security_headers_enabled is False
+    assert settings.max_request_body_bytes == 1_048_576
+    assert settings.rate_limit_requests == 120
+    assert settings.rate_limit_window_seconds == 60
+
+
+def test_explicit_test_settings_can_use_local_database_default() -> None:
+    settings = Settings(app_env="test", database_url="", _env_file=None)
+
+    assert settings.app_env == AppEnv.TEST
+    assert settings.database_url == "sqlite:///./jmi.db"
+    assert settings.rate_limit_enabled is False
+    assert settings.security_headers_enabled is False
+
+
+def test_invalid_app_env_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="local|test|dev|staging|prod"):
+        Settings(app_env="qa", _env_file=None)
+
+
+@pytest.mark.parametrize("app_env", [AppEnv.DEV, AppEnv.STAGING, AppEnv.PROD])
+def test_non_local_environments_require_database_url(app_env: AppEnv) -> None:
+    with pytest.raises(ValidationError, match="DATABASE_URL is required"):
+        Settings(app_env=app_env, database_url="", _env_file=None)
+
+
+def test_non_local_database_url_is_accepted_without_exposing_repr() -> None:
+    settings = Settings(
+        app_env="prod",
+        database_url="postgresql://user:secret@example.test/db",
+        _env_file=None,
+    )
+
+    assert settings.database_url == "postgresql://user:secret@example.test/db"
+    assert "secret" not in repr(settings)
+
+
+def test_invalid_database_url_is_rejected_without_echoing_value() -> None:
+    with pytest.raises(ValidationError, match="valid SQLAlchemy URL") as exc_info:
+        Settings(app_env="prod", database_url="not a database url", _env_file=None)
+
+    assert "not a database url" not in str(exc_info.value)
+
+
+def test_cors_allowed_origins_parse_comma_separated_values() -> None:
+    settings = Settings(
+        cors_allowed_origins=" http://localhost:5173,https://example.test,http://localhost:5173 ",
+        _env_file=None,
+    )
+
+    assert settings.cors_allowed_origins == "http://localhost:5173,https://example.test"
+    assert settings.cors_allowed_origin_list == [
+        "http://localhost:5173",
+        "https://example.test",
+    ]
+
+
+def test_cors_allowed_origins_parse_json_list_values() -> None:
+    settings = Settings(
+        cors_allowed_origins='["http://localhost:5173", "https://example.test"]',
+        _env_file=None,
+    )
+
+    assert settings.cors_allowed_origin_list == [
+        "http://localhost:5173",
+        "https://example.test",
+    ]
+
+
+def test_cors_wildcards_are_rejected() -> None:
+    with pytest.raises(ValidationError, match="wildcard"):
+        Settings(cors_allowed_origins="*", _env_file=None)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "localhost:5173",
+        "ftp://example.test",
+        "https://example.test/path",
+        "https://example.test?debug=true",
+        "https://user:password@example.test",
+    ],
+)
+def test_malformed_cors_allowed_origins_are_rejected(origin: str) -> None:
+    with pytest.raises(ValidationError, match="CORS_ALLOWED_ORIGINS"):
+        Settings(cors_allowed_origins=origin, _env_file=None)
+
+
+def test_cors_allowed_origins_normalizes_root_slash() -> None:
+    settings = Settings(
+        cors_allowed_origins="HTTPS://Example.Test/",
+        _env_file=None,
+    )
+
+    assert settings.cors_allowed_origin_list == ["https://example.test"]
+
+
+def test_log_level_is_normalized_and_validated() -> None:
+    assert Settings(log_level="debug", _env_file=None).log_level == "DEBUG"
+
+    with pytest.raises(ValidationError, match="LOG_LEVEL"):
+        Settings(log_level="verbose", _env_file=None)
+
+
+def test_service_name_must_not_be_whitespace() -> None:
+    with pytest.raises(ValidationError, match="SERVICE_NAME"):
+        Settings(service_name="   ", _env_file=None)
+
+
+def test_feature_flags_parse_from_boolean_strings() -> None:
+    settings = Settings(
+        rate_limit_enabled="true",
+        security_headers_enabled="0",
+        _env_file=None,
+    )
+
+    assert settings.rate_limit_enabled is True
+    assert settings.security_headers_enabled is False
+
+
+def test_feature_flags_reject_unknown_boolean_strings() -> None:
+    with pytest.raises(ValidationError, match="boolean"):
+        Settings(rate_limit_enabled="sometimes", _env_file=None)
+
+
+def test_api_protection_numeric_settings_must_be_positive() -> None:
+    with pytest.raises(ValidationError, match="value must be >= 1"):
+        Settings(max_request_body_bytes=0, _env_file=None)
+    with pytest.raises(ValidationError, match="value must be >= 1"):
+        Settings(rate_limit_requests=0, _env_file=None)
+    with pytest.raises(ValidationError, match="value must be >= 1"):
+        Settings(rate_limit_window_seconds=0, _env_file=None)
+
+
+def test_api_protection_numeric_settings_have_sane_upper_bounds() -> None:
+    with pytest.raises(ValidationError, match="value must be <="):
+        Settings(max_request_body_bytes=10 * 1024 * 1024 + 1, _env_file=None)
+    with pytest.raises(ValidationError, match="value must be <="):
+        Settings(rate_limit_requests=10_001, _env_file=None)
+    with pytest.raises(ValidationError, match="value must be <="):
+        Settings(rate_limit_window_seconds=3_601, _env_file=None)
+
+
+def test_dev_defaults_deferred_flags_to_disabled() -> None:
+    settings = Settings(
+        app_env="dev",
+        database_url="sqlite:///dev.db",
+        _env_file=None,
+    )
+
+    assert settings.rate_limit_enabled is False
+    assert settings.security_headers_enabled is False
+
+
+def test_staging_and_prod_default_deferred_flags_to_enabled() -> None:
+    staging = Settings(
+        app_env="staging",
+        database_url="postgresql://user:secret@example.test/staging",
+        _env_file=None,
+    )
+    prod = Settings(
+        app_env="prod",
+        database_url="postgresql://user:secret@example.test/prod",
+        _env_file=None,
+    )
+
+    assert staging.rate_limit_enabled is True
+    assert staging.security_headers_enabled is True
+    assert prod.rate_limit_enabled is True
+    assert prod.security_headers_enabled is True
+
+
+@pytest.mark.parametrize("app_env", [AppEnv.STAGING, AppEnv.PROD])
+def test_staging_and_prod_reject_sqlite_database_url(app_env: AppEnv) -> None:
+    with pytest.raises(ValidationError, match="must not use SQLite"):
+        Settings(app_env=app_env, database_url="sqlite:///prod.db", _env_file=None)
+
+
+@pytest.mark.parametrize(
+    ("setting_name", "error_message"),
+    [
+        ("rate_limit_enabled", "RATE_LIMIT_ENABLED must be true"),
+        ("security_headers_enabled", "SECURITY_HEADERS_ENABLED must be true"),
+    ],
+)
+def test_staging_and_prod_require_protection_flags_enabled(
+    setting_name: str, error_message: str
+) -> None:
+    kwargs = {
+        "app_env": "prod",
+        "database_url": "postgresql://user:secret@example.test/prod",
+        setting_name: False,
+        "_env_file": None,
+    }
+
+    with pytest.raises(ValidationError, match=error_message):
+        Settings(**kwargs)
+
+
+def test_get_settings_reads_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///env-test.db")
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "yes")
+    monkeypatch.setenv("SECURITY_HEADERS_ENABLED", "no")
+
+    settings = get_settings()
+
+    assert settings.app_env == AppEnv.TEST
+    assert settings.database_url == "sqlite:///env-test.db"
+    assert settings.rate_limit_enabled is True
+    assert settings.security_headers_enabled is False
+
+
+def test_redact_database_url_hides_credentials() -> None:
+    redacted = redact_database_url(
+        "postgresql://user:secret@example.test/db?sslmode=require"
+    )
+
+    assert "secret" not in redacted
+    assert "user:***@" in redacted
+    assert redact_database_url("not a url") == "<invalid database url>"

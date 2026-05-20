@@ -1,24 +1,27 @@
-"""Initialize the canonical schema in the configured database.
+"""Apply database migrations to the configured local/demo database.
 
 Usage::
 
-    python scripts/init_db.py
+    python -m scripts.init_db
 
-Reads ``DATABASE_URL`` from the environment (see ``.env.example``). Idempotent:
-``Base.metadata.create_all`` skips tables that already exist.
+Reads ``DATABASE_URL`` from the environment. This script is a local/demo
+convenience wrapper around ``alembic upgrade head``; production deployment
+should run Alembic migrations explicitly as part of its release process. It is
+blocked for staging/prod app environments.
 """
 
 from __future__ import annotations
 
-from backend.config.settings import get_settings
-from backend.shared.db import create_all, make_engine
+from backend.config.settings import get_settings, redact_database_url
+from backend.shared.demo_safety import ensure_demo_database_target_allowed
+from backend.shared.migrations import upgrade_database
 
 
 def main() -> None:
     settings = get_settings()
-    engine = make_engine(settings.database_url)
-    create_all(engine)
-    print(f"Schema created at {settings.database_url}")
+    ensure_demo_database_target_allowed(settings, settings.database_url)
+    upgrade_database(settings.database_url, allow_existing_schema_stamp=True)
+    print(f"Schema migrated to head at {redact_database_url(settings.database_url)}")
 
 
 if __name__ == "__main__":

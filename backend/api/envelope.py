@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from backend.api.request_context import get_request_id
 from backend.outputs.models import OutputMetadata
 from backend.outputs.payloads import OutputPayloadMetadata
 from backend.shared.freshness import FreshnessStatus
@@ -127,9 +128,13 @@ def lightweight_success_envelope(*, data: Any, state: str = "fresh") -> dict[str
 
 
 def error_envelope(*, code: str, message: str, state: str = "failed") -> dict[str, Any]:
+    error = {"code": code, "message": message}
+    request_id = get_request_id()
+    if request_id is not None:
+        error["request_id"] = request_id
     return {
         "status": "error",
         "data": None,
         "metadata": {"state": state, "warnings": []},
-        "error": {"code": code, "message": message},
+        "error": error,
     }

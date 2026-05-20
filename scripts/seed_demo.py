@@ -2,14 +2,16 @@
 
 Usage::
 
-    python scripts/seed_demo.py [--database-url URL] [--quiet]
+    python -m scripts.seed_demo [--database-url URL] [--quiet]
 
-Initializes the schema (idempotent ``create_all``), runs the MVP seed
+Applies migrations, runs the MVP seed
 pipeline once, and prints a compact ``created/updated/unchanged`` summary
 per layer. Re-running on an already-seeded database returns ``unchanged``
 for every layer that hasn't changed; no duplicate logical rows are created.
 
 The script never performs network IO, scraping, or AI/NLP calls.
+It refuses staging/prod app environments and requires explicit confirmation for
+non-SQLite demo database targets.
 """
 
 from __future__ import annotations
@@ -17,13 +19,14 @@ from __future__ import annotations
 import argparse
 import sys
 
-from backend.config.settings import get_settings
+from backend.config.settings import get_settings, redact_database_url
 from backend.shared.db import (
-    create_all,
     make_engine,
     make_session_factory,
     session_scope,
 )
+from backend.shared.demo_safety import ensure_demo_database_target_allowed
+from backend.shared.migrations import upgrade_database
 from seeds.mvp_seed import run_seed
 
 
@@ -44,8 +47,9 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     database_url = args.database_url or settings.database_url
 
+    ensure_demo_database_target_allowed(settings, database_url)
+    upgrade_database(database_url, allow_existing_schema_stamp=True)
     engine = make_engine(database_url)
-    create_all(engine)
     factory = make_session_factory(engine)
 
     with session_scope(factory) as session:
@@ -54,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.quiet:
         for line in result.summary_lines():
             print(line)
-        print(f"Schema + seed dataset present at {database_url}")
+        print(f"Schema + seed dataset present at {redact_database_url(database_url)}")
     return 0
 
 

@@ -119,13 +119,8 @@ def session_scope(session_factory: sessionmaker[Session]) -> Iterator[Session]:
         session.close()
 
 
-def create_all(engine: Engine) -> None:
-    """Create every registered table.
-
-    This is the MVP "equivalent persistence setup" called out in SLICE_PLAN.md
-    Slice 2 success criteria. Alembic remains an option for future schema
-    evolution, but the canonical schema is locked at this slice.
-    """
+def import_all_models() -> None:
+    """Register every canonical SQLAlchemy model with ``Base.metadata``."""
     # Importing every domain models module registers its mappers with
     # Base.metadata. Keep this list in sync as canonical entities are added.
     from backend.companies import models as _companies  # noqa: F401
@@ -137,4 +132,12 @@ def create_all(engine: Engine) -> None:
     from backend.presence import models as _presence  # noqa: F401
     from backend.scoring import models as _scoring  # noqa: F401
 
+
+def create_all(engine: Engine) -> None:
+    """Demo/test-only schema helper.
+
+    Production-operable schema creation now goes through Alembic migrations.
+    This helper remains for narrow in-memory tests and legacy local demo paths.
+    """
+    import_all_models()
     Base.metadata.create_all(engine)

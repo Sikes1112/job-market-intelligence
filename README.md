@@ -44,6 +44,7 @@ For the local demo, prefer the Vite dev proxy by leaving `VITE_API_BASE_URL` uns
 Useful backend endpoints:
 
 - `GET http://127.0.0.1:8000/health`
+- `GET http://127.0.0.1:8000/ready`
 - `GET http://127.0.0.1:8000/regions`
 - `GET http://127.0.0.1:8000/regions/greater_boston`
 - `GET http://127.0.0.1:8000/regions/greater_sf`
@@ -69,7 +70,8 @@ Render backend settings:
 - Service type: Python Web Service from the repo root
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn backend.api.app:app --host 0.0.0.0 --port $PORT`
-- Environment: `DATABASE_URL`, `APP_ENV=prod`, `LOG_LEVEL=INFO`, `SERVICE_NAME=jmi-backend`, `CORS_ALLOWED_ORIGINS`, `PYTHON_VERSION=3.11.11`
+- Environment: `APP_ENV=prod`, `DATABASE_URL`, `LOG_LEVEL=INFO`, `SERVICE_NAME=jmi-backend`, `CORS_ALLOWED_ORIGINS`, `RATE_LIMIT_ENABLED`, `SECURITY_HEADERS_ENABLED`, `MAX_REQUEST_BODY_BYTES`, `RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`, `PYTHON_VERSION=3.11.11`
+- `APP_ENV=prod` rejects SQLite database URLs and requires rate limiting and security headers to remain enabled.
 - Final CORS lockdown: `CORS_ALLOWED_ORIGINS=https://<vercel-app>.vercel.app`
 - Do not use wildcard CORS. For local dev, leave `CORS_ALLOWED_ORIGINS` empty and use the Vite proxy, or set exact local origins explicitly.
 
@@ -77,24 +79,39 @@ Neon database notes:
 
 - Use the Neon Postgres connection string for Render `DATABASE_URL`.
 - The app uses SQLAlchemy with `psycopg`; `postgres://` and `postgresql://` URLs are normalized to `postgresql+psycopg://`.
-- Initialize schema explicitly with `DATABASE_URL="<neon-url>" python -m scripts.init_db`.
-- Seed demo data only for private demos with `DATABASE_URL="<neon-url>" python -m scripts.seed_demo`.
+- Initialize schema explicitly with `DATABASE_URL="<neon-url>" alembic upgrade head`.
+- `python -m scripts.init_db` remains a local/demo wrapper that runs Alembic `upgrade head`; it is blocked for `APP_ENV=staging` and `APP_ENV=prod`.
+- Seed demo data only for private demos. Non-SQLite seed targets require explicit confirmation, for example `APP_ENV=local JMI_ALLOW_NON_LOCAL_DEMO_DB=true DATABASE_URL="<neon-url>" python -m scripts.seed_demo`.
 - Do not use cloud seed data as production or factual market data.
 
-Layer 1 does not add auth, Alembic migrations, public launch readiness, or
-production data pipelines.
+Layer 1 does not add auth, public launch readiness, or production data pipelines.
 
 ## MVP Runtime Notes
 
+- `/health` is liveness-only. `/ready` checks configuration validity and database reachability with a minimal query; it does not require seeded demo data.
+- API errors use safe responses with `request_id`; `X-Request-ID` is returned on normal and error responses. Basic in-process rate limiting, request size limits, and security headers are infrastructure safeguards, not authentication.
 - Full output GET endpoints assemble payloads on read without creating or updating `OutputMetadata`. Seed flows and output-build job handlers still write cache metadata.
 - Freshness metadata now reports `freshness_status` as `fresh`, `stale`, or `unknown`; `unknown` means the output had no tracked freshness window.
 - Event invalidation has a narrow DB-session-backed apply path that marks existing fresh `OutputMetadata` rows stale for scoped region/company/comparison outputs. Dispatch callers must use the session-backed path to apply stale marking; otherwise routing/enqueue still happens and the dispatch result reports stale marking as skipped. It does not delete rows, rebuild outputs, enqueue jobs beyond existing routing behavior, or run workers.
 - Opaque scheduler-generated `dependency_refs` remain structural, but the worker runtime now supports optional DB-backed refs such as `region:greater_boston@v1` when callers provide a database resolver.
 - Queue dedupe has an application-level check plus a partial unique index for active `dedupe_key` rows on SQLite/PostgreSQL. This provides DB-level protection for supported databases, but it is still not an external broker, distributed queue, or distributed lock.
-- SQLite seeding is the local demo path. Existing demo DBs should be recreated or migrated manually after schema changes; Alembic-style migrations and production deployment configuration remain out of scope.
+- SQLite seeding is the local demo path. Demo seed setup applies Alembic migrations before inserting data.
 - Contextual challenge and audit backend services/job handlers exist, but they are not public API endpoints and are not registered in the default runtime worker registry.
 
-Remaining external-production work includes migrations, deployment configuration, auth/security, observability, distributed queue/broker integration, artifact storage/cache serving, and multi-worker stress testing.
+Remaining external-production work includes deployment configuration, auth/security, observability, distributed queue/broker integration, artifact storage/cache serving, and multi-worker stress testing.
+
+## CI Checks
+
+The GitHub Actions workflow runs the same core checks locally available from
+the repo root:
+
+```bash
+python -m pytest
+python -m ruff check alembic backend scripts tests/
+APP_ENV=local DATABASE_URL=sqlite:////private/tmp/jmi-ci-migrations.db python -m alembic upgrade head
+cd frontend && npm run lint
+cd frontend && npm run build
+```
 
 ## Core Layers
 
@@ -110,3 +127,4 @@ Remaining external-production work includes migrations, deployment configuration
 - `docs/DATA_MODEL.md`
 - `docs/API_SURFACES.md`
 - `docs/architecture/ENGINEERING_IMPLEMENTATION_BLUEPRINT.md`
+- `docs/runbooks/neon_backup_restore.md`

@@ -1,7 +1,7 @@
 import json
 import logging
 
-from backend.config.settings import Settings, get_settings
+from backend.config.settings import AppEnv, Settings, get_settings
 from backend.shared.logging import JsonFormatter, configure_logging
 from backend.shared.results import Err, Ok, Result
 
@@ -23,15 +23,47 @@ def test_err_carries_code_and_message() -> None:
     assert result.message == "missing"
 
 
-def test_settings_have_documented_defaults() -> None:
-    settings = Settings()
-    assert settings.app_env == "dev"
+def test_settings_have_documented_defaults(monkeypatch) -> None:
+    for name in (
+        "APP_ENV",
+        "DATABASE_URL",
+        "CORS_ALLOWED_ORIGINS",
+        "LOG_LEVEL",
+        "SERVICE_NAME",
+        "RATE_LIMIT_ENABLED",
+        "SECURITY_HEADERS_ENABLED",
+        "MAX_REQUEST_BODY_BYTES",
+        "RATE_LIMIT_REQUESTS",
+        "RATE_LIMIT_WINDOW_SECONDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = Settings(_env_file=None)
+    assert settings.app_env == AppEnv.LOCAL
     assert settings.log_level == "INFO"
     assert settings.service_name == "jmi-backend"
 
 
-def test_get_settings_is_cached() -> None:
-    assert get_settings() is get_settings()
+def test_get_settings_is_cached(monkeypatch) -> None:
+    for name in (
+        "APP_ENV",
+        "DATABASE_URL",
+        "CORS_ALLOWED_ORIGINS",
+        "LOG_LEVEL",
+        "SERVICE_NAME",
+        "RATE_LIMIT_ENABLED",
+        "SECURITY_HEADERS_ENABLED",
+        "MAX_REQUEST_BODY_BYTES",
+        "RATE_LIMIT_REQUESTS",
+        "RATE_LIMIT_WINDOW_SECONDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    get_settings.cache_clear()
+    try:
+        assert get_settings() is get_settings()
+    finally:
+        get_settings.cache_clear()
 
 
 def test_json_formatter_emits_structured_json() -> None:

@@ -208,7 +208,7 @@ def test_discover_endpoint_does_not_mutate_canonical_truth(
     assert score.objective_opportunity_score == score_value
 
 
-def test_discover_endpoint_health_unchanged(api_client) -> None:
+def test_discover_endpoint_health_still_works(api_client) -> None:
     """Carry-over: /health still works after the personalization router is mounted."""
     response = api_client.get("/health")
     assert response.status_code == 200
