@@ -62,14 +62,14 @@ p {
 
 h1 {
   font-size: clamp(2.4rem, 5.8vw, 5rem);
-  letter-spacing: -0.075em;
+  letter-spacing: 0;
   line-height: 0.9;
   margin-bottom: 0;
 }
 
 h2 {
   font-size: clamp(1.1rem, 2vw, 1.45rem);
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   line-height: 1.1;
   margin-bottom: 0;
 }
@@ -77,7 +77,7 @@ h2 {
 h3 {
   color: var(--green);
   font-size: 0.78rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   margin-bottom: 0.6rem;
   text-transform: uppercase;
 }
@@ -164,7 +164,7 @@ legend {
   font-weight: 950;
   height: 3rem;
   justify-content: center;
-  letter-spacing: -0.08em;
+  letter-spacing: 0;
   width: 3rem;
 }
 
@@ -182,6 +182,7 @@ legend {
   gap: 0.1rem;
   padding: 0.95rem 1rem;
   text-align: left;
+  text-decoration: none;
 }
 
 .nav-item:hover,
@@ -244,7 +245,7 @@ legend {
   color: var(--ochre);
   font-size: 0.75rem;
   font-weight: 950;
-  letter-spacing: 0.13em;
+  letter-spacing: 0;
   margin-bottom: 0.5rem;
   text-transform: uppercase;
 }
@@ -336,8 +337,19 @@ legend {
 }
 
 .badge-demo {
-  background: #e9eee3;
-  color: #526056;
+  background: #27347e;
+  color: #fff;
+}
+
+.badge-real {
+  background: #d7efe9;
+  color: #145445;
+}
+
+.badge-unknown {
+  background: #ece8df;
+  border-color: #c9c0b3;
+  color: #5d574f;
 }
 
 .badge-error,
@@ -447,16 +459,28 @@ legend {
 
 .toolbar,
 .comparison-controls,
-.form-row {
+.form-row,
+.market-filter-grid {
   display: grid;
   gap: 1rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.toolbar-button {
+  align-self: end;
+  border-radius: 999px;
+  font-weight: 900;
+  min-height: 3.05rem;
+  padding: 0.82rem 1.1rem;
+}
+
 .stat-grid,
 .score-grid,
 .winner-grid,
-.fit-grid {
+.fit-grid,
+.objective-score-grid,
+.source-compare-grid,
+.tradeoff-grid {
   display: grid;
   gap: 0.75rem;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
@@ -540,14 +564,18 @@ legend {
 
 .company-list,
 .stack-list,
-.rank-list {
+.rank-list,
+.signal-list,
+.source-list {
   display: grid;
   gap: 0.65rem;
 }
 
 .company-row,
 .stack-row,
-.rank-row {
+.rank-row,
+.signal-row,
+.source-row {
   background: var(--field);
   border: 1px solid var(--line);
   border-radius: 1rem;
@@ -560,6 +588,23 @@ legend {
 .company-row {
   align-items: center;
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.signal-row,
+.source-row {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.source-row {
+  align-items: start;
+  grid-template-columns: 1fr;
+}
+
+.source-row span,
+.source-row small {
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .company-row:hover,
@@ -578,6 +623,140 @@ legend {
   display: grid;
   gap: 0.65rem;
   min-width: min(360px, 100%);
+}
+
+.metadata-row-secondary {
+  opacity: 0.9;
+}
+
+.source-details summary {
+  color: var(--green);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.source-details .source-list {
+  margin-top: 0.65rem;
+}
+
+.market-summary-strip {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 1rem 0;
+}
+
+.market-summary-strip div {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.85rem;
+}
+
+.market-summary-strip strong {
+  color: var(--green);
+  font-size: 1.35rem;
+}
+
+.market-summary-strip span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.market-card-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.market-card {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  color: var(--ink);
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  text-align: left;
+}
+
+.market-card:hover {
+  transform: translateY(-1px);
+}
+
+.market-card-static:hover {
+  transform: none;
+}
+
+.market-card-topline,
+.chip-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: space-between;
+}
+
+.chip-row {
+  justify-content: start;
+}
+
+.market-card-topline > span,
+.market-card small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.market-card > strong {
+  font-size: 1.08rem;
+  line-height: 1.2;
+}
+
+.market-card-metrics {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.objective-winner-panel {
+  align-items: start;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+}
+
+.source-compare-card {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem;
+}
+
+.fieldset-copy,
+.recommendation-notes {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.fieldset-copy {
+  margin-bottom: 0.5rem;
+}
+
+.preference-summary {
+  align-content: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.recommendation-notes {
+  margin-top: 0.55rem;
 }
 
 .freshness-copy {
@@ -827,6 +1006,11 @@ legend {
   .toolbar,
   .comparison-controls,
   .form-row,
+  .market-filter-grid,
+  .market-summary-strip,
+  .objective-winner-panel,
+  .source-compare-grid,
+  .tradeoff-grid,
   .discovery-form,
   .quick-score-row,
   .rank-row,

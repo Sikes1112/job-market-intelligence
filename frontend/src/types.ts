@@ -7,12 +7,24 @@ export type ApiEnvelope<T> = {
       last_updated_at: string | null;
       freshness_expires_at: string | null;
       is_stale: boolean;
-      freshness_status?: "fresh" | "stale" | "unknown";
+      freshness_status?: FreshnessStatus;
     };
     source_versions?: Record<string, unknown>;
-    warnings: WarningItem[];
+    warnings?: WarningItem[];
   };
   error: { code: string; message: string } | null;
+};
+
+export type FreshnessStatus = "fresh" | "stale" | "partial" | "unknown" | "seeded_demo";
+
+export type DataBasis = "seeded_demo" | "real_imported" | "mixed" | "unknown";
+
+export type FreshnessSourceSummary = {
+  freshness_status: FreshnessStatus;
+  data_basis: DataBasis;
+  last_collected_at: string | null;
+  source_count: number;
+  low_confidence_warning: string | null;
 };
 
 export type WarningRecord = {
@@ -35,6 +47,23 @@ export type RegionListItem = {
   labor_market_group: string | null;
   state: string;
   version?: number;
+};
+
+export type RegionSearchResult = {
+  region_id: string;
+  name: string;
+  region_name: string;
+  region_type: string;
+  parent_region_id: string | null;
+  labor_market_group: string | null;
+  opportunity_score: number | null;
+  freshness: FreshnessSourceSummary;
+  has_real_data: boolean;
+};
+
+export type RegionSearchResponse = {
+  regions?: RegionSearchResult[];
+  count?: number;
 };
 
 export type RegionScores = {
@@ -73,13 +102,13 @@ export type RegionDetail = {
   region_type: string;
   parent_region_id: string | null;
   labor_market_group: string | null;
-  summary: Record<string, number>;
+  summary?: Record<string, number>;
   scores: RegionScores | null;
-  top_companies_present: RegionCompany[];
-  top_companies_hiring: HiringCompany[];
-  entry_level_summary: Record<string, number | null>;
-  major_tech_summary: { count: number; company_ids: string[] };
-  mag7_summary: { count: number; company_ids: string[] };
+  top_companies_present?: RegionCompany[];
+  top_companies_hiring?: HiringCompany[];
+  entry_level_summary?: Record<string, number | null>;
+  major_tech_summary?: { count: number; company_ids: string[] };
+  mag7_summary?: { count: number; company_ids: string[] };
 };
 
 export type CompanyDetail = {
@@ -94,14 +123,14 @@ export type CompanyDetail = {
   is_major_tech: boolean;
   is_mag7: boolean;
   prestige_score: number | null;
-  regions_present: Array<{
+  regions_present?: Array<{
     region_id: string;
     region_display_name: string;
     presence_status: string;
     presence_basis: string | null;
     presence_confidence: string | null;
   }>;
-  regions_hiring: Array<{
+  regions_hiring?: Array<{
     region_id: string;
     region_display_name: string;
     currently_hiring_flag: boolean;
@@ -109,7 +138,7 @@ export type CompanyDetail = {
     posting_count_30d: number | null;
     posting_count_90d: number | null;
   }>;
-  entry_level_regions: Array<{
+  entry_level_regions?: Array<{
     region_id: string;
     region_display_name: string;
     internship_count: number | null;
@@ -121,20 +150,74 @@ export type CompanyDetail = {
   }>;
 };
 
+export type CompanySearchResult = {
+  company_id: string;
+  name: string;
+  sector: string | null;
+  industry: string | null;
+  role_families?: string[];
+  matched_region_ids?: string[];
+  current_hiring: boolean;
+  has_entry_level_access: boolean;
+  presence_status: string | null;
+  freshness: FreshnessSourceSummary;
+  has_real_data: boolean;
+};
+
+export type CompanySearchResponse = {
+  companies?: CompanySearchResult[];
+  count?: number;
+};
+
+export type CompanyGeographyResult = {
+  region_id: string;
+  region_name: string;
+  presence_status: string | null;
+  current_hiring: boolean;
+  has_entry_level_access: boolean;
+  freshness: FreshnessSourceSummary;
+  has_real_data: boolean;
+};
+
+export type CompanyGeographyResponse = {
+  company_id: string;
+  company_name: string;
+  regions?: CompanyGeographyResult[];
+  count?: number;
+};
+
+export type SourceDetail = {
+  source_id: string;
+  source_type: string;
+  source_name: string;
+  url: string | null;
+  collected_at: string | null;
+  freshness_status: FreshnessStatus;
+  data_basis: DataBasis;
+};
+
+export type SourceExplanation = {
+  subject_type: "company" | "region";
+  subject_id: string;
+  freshness: FreshnessSourceSummary;
+  sources?: SourceDetail[];
+  warnings?: string[];
+};
+
 export type ComparisonDetail = {
   comparison_id: string;
-  region_a: {
+  region_a?: {
     region_id: string;
     display_name: string;
     scores: RegionScores | null;
   };
-  region_b: {
+  region_b?: {
     region_id: string;
     display_name: string;
     scores: RegionScores | null;
   };
-  category_winners: Record<string, string | null>;
-  notes: string[];
+  category_winners?: Record<string, string | null>;
+  notes?: string[];
 };
 
 export type PersonalizedRequest = {
@@ -148,14 +231,14 @@ export type PersonalizedRequest = {
 };
 
 export type PersonalizedResult = {
-  ranked_regions: Array<{
+  ranked_regions?: Array<{
     region_id: string;
     display_name: string;
     personal_market_score: number;
     objective_opportunity_score: number | null;
     match_notes: string[];
   }>;
-  ranked_companies: Array<{
+  ranked_companies?: Array<{
     company_id: string;
     company_name: string;
     region_id: string;

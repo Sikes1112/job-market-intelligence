@@ -1,0 +1,223 @@
+export const DEFAULT_REGION_A = "greater_boston";
+export const DEFAULT_REGION_B = "greater_sf";
+
+export const ROLE_TARGETS = ["product", "ai_cloud_adjacent", "cybersecurity"];
+export const INDUSTRY_OPTIONS = ["software", "ai", "cloud", "data", "cybersecurity"];
+export const PREFERENCE_LEVELS = ["low", "medium", "high"];
+export const CAREER_STAGE_OPTIONS = ["entry_level"];
+
+export type ProductPage = "explore" | "region" | "company" | "compare" | "discovery";
+
+export type ComparisonUrlState = {
+  regionA: string;
+  regionB: string;
+};
+
+export type DiscoveryFilters = {
+  selectedRegions: string[];
+  roleTargets: string[];
+  industries: string[];
+  careerStage: string;
+  prestigePreference: string;
+  brandPreference: string;
+  limit: number;
+};
+
+export type RouteState = {
+  page: ProductPage;
+  regionId?: string;
+  companyId?: string;
+  comparison: ComparisonUrlState;
+  discovery: DiscoveryFilters;
+  unknownPath?: string;
+};
+
+export const DEFAULT_DISCOVERY_FILTERS: DiscoveryFilters = {
+  selectedRegions: [DEFAULT_REGION_A, DEFAULT_REGION_B],
+  roleTargets: ROLE_TARGETS,
+  industries: ["software", "ai", "cloud"],
+  careerStage: "entry_level",
+  prestigePreference: "medium",
+  brandPreference: "medium",
+  limit: 10,
+};
+
+const PRODUCT_ROOT = "/markets";
+
+function safeDecodeSegment(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return "";
+  }
+}
+
+function cleanToken(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function parseListParam(
+  params: URLSearchParams,
+  key: string,
+  fallback: string[],
+  allowedValues?: readonly string[],
+): string[] {
+  if (!params.has(key)) return [...fallback];
+
+  const allowed = allowedValues ? new Set(allowedValues) : null;
+  const values = params
+    .getAll(key)
+    .flatMap((rawValue) => rawValue.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .filter((value) => !allowed || allowed.has(value));
+
+  return unique(values);
+}
+
+function parsePreference(
+  params: URLSearchParams,
+  key: string,
+  fallback: string,
+): string {
+  const value = cleanToken(params.get(key));
+  return value && PREFERENCE_LEVELS.includes(value) ? value : fallback;
+}
+
+function parseCareerStage(params: URLSearchParams): string {
+  const value = cleanToken(params.get("career") ?? params.get("career_stage"));
+  return value && CAREER_STAGE_OPTIONS.includes(value)
+    ? value
+    : DEFAULT_DISCOVERY_FILTERS.careerStage;
+}
+
+function parseLimit(params: URLSearchParams): number {
+  const rawValue = Number(params.get("limit"));
+  if (!Number.isFinite(rawValue)) return DEFAULT_DISCOVERY_FILTERS.limit;
+  return Math.max(1, Math.min(25, Math.trunc(rawValue)));
+}
+
+function parseComparison(params: URLSearchParams): ComparisonUrlState {
+  return {
+    regionA: cleanToken(params.get("region_a") ?? params.get("a")) ?? DEFAULT_REGION_A,
+    regionB: cleanToken(params.get("region_b") ?? params.get("b")) ?? DEFAULT_REGION_B,
+  };
+}
+
+function parseDiscovery(params: URLSearchParams): DiscoveryFilters {
+  return {
+    selectedRegions: parseListParam(
+      params,
+      "regions",
+      DEFAULT_DISCOVERY_FILTERS.selectedRegions,
+    ),
+    roleTargets: parseListParam(
+      params,
+      "roles",
+      DEFAULT_DISCOVERY_FILTERS.roleTargets,
+      ROLE_TARGETS,
+    ),
+    industries: parseListParam(
+      params,
+      "industries",
+      DEFAULT_DISCOVERY_FILTERS.industries,
+      INDUSTRY_OPTIONS,
+    ),
+    careerStage: parseCareerStage(params),
+    prestigePreference: parsePreference(
+      params,
+      "prestige",
+      DEFAULT_DISCOVERY_FILTERS.prestigePreference,
+    ),
+    brandPreference: parsePreference(
+      params,
+      "brand",
+      DEFAULT_DISCOVERY_FILTERS.brandPreference,
+    ),
+    limit: parseLimit(params),
+  };
+}
+
+function baseRoute(
+  page: ProductPage,
+  params: URLSearchParams,
+  extra?: Pick<RouteState, "regionId" | "companyId" | "unknownPath">,
+): RouteState {
+  return {
+    page,
+    comparison: parseComparison(params),
+    discovery: parseDiscovery(params),
+    ...extra,
+  };
+}
+
+export function parseRoute(pathname: string, search: string): RouteState {
+  const params = new URLSearchParams(search);
+  const segments = pathname.split("/").filter(Boolean).map(safeDecodeSegment);
+
+  if (!segments.length) {
+    return baseRoute("explore", params);
+  }
+
+  if (segments[0] !== "markets") {
+    return baseRoute("explore", params, { unknownPath: pathname });
+  }
+
+  const section = segments[1];
+  if (!section) return baseRoute("explore", params);
+
+  if (section === "region") {
+    return baseRoute("region", params, { regionId: cleanToken(segments[2]) });
+  }
+
+  if (section === "company") {
+    return baseRoute("company", params, { companyId: cleanToken(segments[2]) });
+  }
+
+  if (section === "compare") return baseRoute("compare", params);
+  if (section === "discovery") return baseRoute("discovery", params);
+
+  return baseRoute("explore", params, { unknownPath: pathname });
+}
+
+function encodePathValue(value: string): string {
+  return encodeURIComponent(value.trim());
+}
+
+function appendListParam(params: URLSearchParams, key: string, values: string[]) {
+  params.set(key, unique(values).join(","));
+}
+
+export function exploreUrl(): string {
+  return PRODUCT_ROOT;
+}
+
+export function regionDetailUrl(regionId?: string): string {
+  return regionId ? `${PRODUCT_ROOT}/region/${encodePathValue(regionId)}` : `${PRODUCT_ROOT}/region`;
+}
+
+export function companyGeographyUrl(companyId?: string): string {
+  return companyId ? `${PRODUCT_ROOT}/company/${encodePathValue(companyId)}` : `${PRODUCT_ROOT}/company`;
+}
+
+export function compareMarketsUrl(regionA: string, regionB: string): string {
+  const params = new URLSearchParams({ region_a: regionA, region_b: regionB });
+  return `${PRODUCT_ROOT}/compare?${params.toString()}`;
+}
+
+export function personalizedDiscoveryUrl(filters: DiscoveryFilters): string {
+  const params = new URLSearchParams();
+  appendListParam(params, "regions", filters.selectedRegions);
+  appendListParam(params, "roles", filters.roleTargets);
+  appendListParam(params, "industries", filters.industries);
+  params.set("career", filters.careerStage);
+  params.set("prestige", filters.prestigePreference);
+  params.set("brand", filters.brandPreference);
+  params.set("limit", String(filters.limit));
+  return `${PRODUCT_ROOT}/discovery?${params.toString()}`;
+}
