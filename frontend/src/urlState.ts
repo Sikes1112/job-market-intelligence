@@ -6,7 +6,7 @@ export const INDUSTRY_OPTIONS = ["software", "ai", "cloud", "data", "cybersecuri
 export const PREFERENCE_LEVELS = ["low", "medium", "high"];
 export const CAREER_STAGE_OPTIONS = ["entry_level"];
 
-export type ProductPage = "explore" | "region" | "company" | "compare" | "discovery";
+export type ProductPage = "explore" | "region" | "company" | "compare" | "discovery" | "account";
 
 export type ComparisonUrlState = {
   regionA: string;
@@ -181,6 +181,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
 
   if (section === "compare") return baseRoute("compare", params);
   if (section === "discovery") return baseRoute("discovery", params);
+  if (section === "account") return baseRoute("account", params);
 
   return baseRoute("explore", params, { unknownPath: pathname });
 }
@@ -220,4 +221,8 @@ export function personalizedDiscoveryUrl(filters: DiscoveryFilters): string {
   params.set("brand", filters.brandPreference);
   params.set("limit", String(filters.limit));
   return `${PRODUCT_ROOT}/discovery?${params.toString()}`;
+}
+
+export function accountUrl(): string {
+  return `${PRODUCT_ROOT}/account`;
 }

@@ -1,18 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import {
   API_TARGET_LABEL,
+  createRecommendationSnapshot,
+  createSavedMarketArtifact,
+  deactivateAccount,
+  deletePreferences,
+  deleteSavedMarketArtifact,
   discoverPersonalized,
+  exportUserData,
   getCompany,
   getCompanyGeography,
   getCompanySources,
   getComparison,
+  getCurrentUser,
   getHealth,
+  getPreferences,
   getRegion,
   getRegionSources,
   getRegions,
+  listRecommendationSnapshots,
+  listSavedMarketArtifacts,
   searchCompanies,
   searchRegions,
+  updatePreferences,
+  type ProtectedRequestOptions,
 } from "./api";
+import { useFrontendAuth, type FrontendAuthContextValue } from "./auth";
 import {
   dataBasisLabel,
   envelopeFreshnessStatus,
@@ -23,19 +36,30 @@ import {
 } from "./dataQuality";
 import type {
   ApiEnvelope,
+  AccountDeactivationResult,
   CompanyGeographyResponse,
   CompanyDetail,
   CompanySearchResponse,
   ComparisonDetail,
+  CurrentUserProfile,
   FreshnessSourceSummary,
   FreshnessStatus,
+  PersonalizedRecommendationSnapshot,
+  PersonalizedRecommendationSnapshotInput,
   PersonalizedResult,
+  PreferenceLevel,
   RegionDetail,
   RegionListItem,
   RegionSearchResult,
   RegionSearchResponse,
   RegionScores,
+  RemoteHybridPreference,
+  SavedMarketArtifact,
+  SavedMarketArtifactInput,
   SourceExplanation,
+  UserDataExport,
+  UserPreferenceProfile,
+  UserPreferenceProfileInput,
   WarningItem,
 } from "./types";
 import {
@@ -45,6 +69,7 @@ import {
   INDUSTRY_OPTIONS,
   PREFERENCE_LEVELS,
   ROLE_TARGETS,
+  accountUrl,
   companyGeographyUrl,
   compareMarketsUrl,
   exploreUrl,
@@ -96,6 +121,20 @@ type CompanyOption = {
 type OpportunityFilter = "any" | "0.70" | "0.50" | "missing";
 type CareerStageFilter = "any" | "entry_level_reported" | "entry_level_unknown";
 type FreshnessFilter = "any" | FreshnessStatus;
+type PreferenceDraft = {
+  roleInterests: string;
+  industryInterests: string;
+  preferredRegions: string;
+  prestigeWeighting: "" | PreferenceLevel;
+  brandWeighting: "" | PreferenceLevel;
+  careerStage: "" | "entry_level";
+  remoteHybridPreference: "" | RemoteHybridPreference;
+};
+type AccountActionState = {
+  loading: boolean;
+  message: string | null;
+  error: string | null;
+};
 
 const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
   { id: "explore", label: "Explore Markets", kicker: "Market map" },
@@ -103,7 +142,10 @@ const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
   { id: "company", label: "Company Geography", kicker: "Presence and hiring" },
   { id: "compare", label: "Compare Markets", kicker: "Score comparison" },
   { id: "discovery", label: "Personalized Discovery", kicker: "Personal overlay" },
+  { id: "account", label: "Account", kicker: "Saved overlays" },
 ];
+
+const REMOTE_HYBRID_OPTIONS: RemoteHybridPreference[] = ["remote", "hybrid", "onsite", "flexible"];
 
 function emptyLoadState<T>(): LoadState<T> {
   return { loading: false, envelope: null, error: null };
@@ -150,6 +192,7 @@ function getNavigationUrl(
   if (page === "company") return companyGeographyUrl(selectedCompanyId);
   if (page === "compare") return compareMarketsUrl(comparisonA, comparisonB);
   if (page === "discovery") return personalizedDiscoveryUrl(discoveryFilters);
+  if (page === "account") return accountUrl();
   return exploreUrl();
 }
 
@@ -165,6 +208,76 @@ function formatValue(value: unknown): string {
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (Array.isArray(value)) return value.length ? value.join(", ") : "None";
   return String(value);
+}
+
+function emptyPreferenceDraft(): PreferenceDraft {
+  return {
+    roleInterests: "",
+    industryInterests: "",
+    preferredRegions: "",
+    prestigeWeighting: "",
+    brandWeighting: "",
+    careerStage: "",
+    remoteHybridPreference: "",
+  };
+}
+
+function splitDraftList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function joinDraftList(values?: string[]): string {
+  return values?.join(", ") ?? "";
+}
+
+function preferenceDraftFromProfile(profile?: UserPreferenceProfile | null): PreferenceDraft {
+  if (!profile) return emptyPreferenceDraft();
+  return {
+    roleInterests: joinDraftList(profile.role_interests),
+    industryInterests: joinDraftList(profile.industry_interests),
+    preferredRegions: joinDraftList(profile.preferred_regions),
+    prestigeWeighting: profile.prestige_weighting ?? "",
+    brandWeighting: profile.brand_weighting ?? "",
+    careerStage: profile.career_stage ?? "",
+    remoteHybridPreference: profile.remote_hybrid_preference ?? "",
+  };
+}
+
+function preferenceInputFromDraft(draft: PreferenceDraft): UserPreferenceProfileInput {
+  return {
+    role_interests: splitDraftList(draft.roleInterests),
+    industry_interests: splitDraftList(draft.industryInterests),
+    preferred_regions: splitDraftList(draft.preferredRegions),
+    prestige_weighting: draft.prestigeWeighting || null,
+    brand_weighting: draft.brandWeighting || null,
+    career_stage: draft.careerStage || null,
+    remote_hybrid_preference: draft.remoteHybridPreference || null,
+  };
+}
+
+function savedArtifactKey(type: SavedMarketArtifactInput["artifact_type"], ref: string): string {
+  return `${type}:${ref}`;
+}
+
+async function sha256Label(value: unknown): Promise<string> {
+  const serialized = JSON.stringify(value);
+  if (window.crypto?.subtle) {
+    const bytes = new TextEncoder().encode(serialized);
+    const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+    const hex = Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    return `sha256:${hex}`;
+  }
+
+  let hash = 0;
+  for (const char of serialized) {
+    hash = Math.imul(31, hash) + char.charCodeAt(0);
+  }
+  return `sha256:fallback-${Math.abs(hash).toString(16)}`;
 }
 
 function formatDateTime(value: string | null | undefined): string {
@@ -701,6 +814,390 @@ function LoadingBlock({ label = "Loading data" }: { label?: string }) {
   );
 }
 
+function AuthStatusPanel({
+  auth,
+  onOpenAccount,
+}: {
+  auth: FrontendAuthContextValue;
+  onOpenAccount: () => void;
+}) {
+  if (!auth.isConfigured) {
+    return (
+      <div className="auth-panel">
+        <span className="badge badge-unknown">Local account mode</span>
+        <p>Auth0 frontend config is not set. Public market exploration remains available.</p>
+      </div>
+    );
+  }
+
+  if (auth.isLoading) {
+    return (
+      <div className="auth-panel">
+        <span className="badge badge-loading">Checking account</span>
+      </div>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <div className="auth-panel">
+        <span className="badge">Signed out</span>
+        <p>Sign in to save personal overlays.</p>
+        <button className="secondary-button" type="button" onClick={() => void auth.login()}>
+          Sign in
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="auth-panel">
+      <span className="badge badge-success">Signed in</span>
+      <strong>{auth.user?.name ?? auth.user?.email ?? "Auth0 user"}</strong>
+      <div className="auth-actions">
+        <button className="secondary-button" type="button" onClick={onOpenAccount}>
+          Account
+        </button>
+        <button className="secondary-button" type="button" onClick={auth.logout}>
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function JsonBlock({ value }: { value: unknown }) {
+  return <pre className="json-block">{JSON.stringify(value, null, 2)}</pre>;
+}
+
+function AccountView({
+  auth,
+  currentUserState,
+  preferenceState,
+  preferenceDraft,
+  artifactsState,
+  snapshotsState,
+  exportState,
+  deactivationResult,
+  actionState,
+  deactivateConfirmed,
+  onLogin,
+  onRefresh,
+  onPreferenceDraft,
+  onSavePreferences,
+  onDeletePreferences,
+  onDeleteArtifact,
+  onExport,
+  onDeactivate,
+  onDeactivateConfirmed,
+}: {
+  auth: FrontendAuthContextValue;
+  currentUserState: LoadState<CurrentUserProfile>;
+  preferenceState: LoadState<UserPreferenceProfile>;
+  preferenceDraft: PreferenceDraft;
+  artifactsState: LoadState<{ saved_market_artifacts: SavedMarketArtifact[] }>;
+  snapshotsState: LoadState<{ personalized_recommendation_snapshots: PersonalizedRecommendationSnapshot[] }>;
+  exportState: LoadState<UserDataExport>;
+  deactivationResult: AccountDeactivationResult | null;
+  actionState: AccountActionState;
+  deactivateConfirmed: boolean;
+  onLogin: () => void;
+  onRefresh: () => void;
+  onPreferenceDraft: (draft: PreferenceDraft) => void;
+  onSavePreferences: () => void;
+  onDeletePreferences: () => void;
+  onDeleteArtifact: (savedArtifactId: string) => void;
+  onExport: () => void;
+  onDeactivate: () => void;
+  onDeactivateConfirmed: (confirmed: boolean) => void;
+}) {
+  const currentUser = currentUserState.envelope?.data;
+  const preferences = preferenceState.envelope?.data;
+  const artifacts = artifactsState.envelope?.data?.saved_market_artifacts ?? [];
+  const snapshots = snapshotsState.envelope?.data?.personalized_recommendation_snapshots ?? [];
+
+  if (!auth.isConfigured) {
+    return (
+      <div className="view-grid">
+        <ShellCard title="Account" eyebrow="Auth0 configuration required">
+          <EmptyState
+            title="Local demo mode"
+            body="Auth0 frontend variables are not configured, so account workflows are disabled while public market exploration remains available."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <div className="view-grid">
+        <ShellCard title="Account" eyebrow="Signed out">
+          <p className="lead-copy">
+            Account and personalization workflows use protected /me routes. Public market
+            exploration does not require sign-in.
+          </p>
+          <button className="primary-button" type="button" onClick={onLogin}>Sign in with Auth0</button>
+        </ShellCard>
+      </div>
+    );
+  }
+
+  return (
+    <div className="view-grid">
+      {actionState.message ? (
+        <div className="notice-state">
+          <strong>Account update</strong>
+          <p>{actionState.message}</p>
+        </div>
+      ) : null}
+      {actionState.error ? <ErrorState message={actionState.error} /> : null}
+
+      <div className="split-grid">
+        <ShellCard
+          title="Current user"
+          eyebrow="Internal app account"
+          action={<button className="secondary-button" type="button" onClick={onRefresh}>Refresh</button>}
+        >
+          {currentUserState.loading ? <LoadingBlock label="Loading account" /> : null}
+          {currentUserState.error ? <ErrorState message={currentUserState.error} /> : null}
+          {currentUser ? (
+            <div className="account-summary">
+              <div>
+                <span>User ID</span>
+                <strong>{currentUser.user.user_id}</strong>
+              </div>
+              <div>
+                <span>Status</span>
+                <strong>{currentUser.user.status}</strong>
+              </div>
+              <div>
+                <span>Email</span>
+                <strong>{currentUser.profile.email ?? "n/a"}</strong>
+              </div>
+              <div>
+                <span>Display</span>
+                <strong>{currentUser.profile.display_name ?? auth.user?.name ?? "n/a"}</strong>
+              </div>
+            </div>
+          ) : null}
+          <p className="meta-copy">
+            Auth0 identity is mapped to this internal user. Saved overlays use the internal user id,
+            not the Auth0 subject, as their durable owner.
+          </p>
+        </ShellCard>
+
+        <ShellCard title="Privacy controls" eyebrow="App-owned data only">
+          <p className="meta-copy">
+            Export and deactivation operate on Layer 7 account data. They do not delete or change
+            canonical regions, companies, objective scores, source freshness, ingestion records, or
+            output metadata.
+          </p>
+          <div className="account-button-row">
+            <button className="secondary-button" disabled={actionState.loading} type="button" onClick={onExport}>
+              Export user data
+            </button>
+            <label className="checkbox-label">
+              <input
+                checked={deactivateConfirmed}
+                onChange={(event) => onDeactivateConfirmed(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Confirm app account deactivation</span>
+            </label>
+            <button
+              className="danger-button"
+              disabled={!deactivateConfirmed || actionState.loading}
+              type="button"
+              onClick={onDeactivate}
+            >
+              Deactivate app account
+            </button>
+          </div>
+          {deactivationResult ? <JsonBlock value={deactivationResult} /> : null}
+        </ShellCard>
+      </div>
+
+      <ShellCard title="Saved preferences" eyebrow="User-owned inputs">
+        {preferenceState.loading ? <LoadingBlock label="Loading preferences" /> : null}
+        {preferenceState.error ? <ErrorState message={preferenceState.error} /> : null}
+        <p className="meta-copy">
+          These inputs are personal preferences only. They do not alter objective market records.
+          Current state: {preferences?.persisted ? "saved" : "empty/default"}.
+        </p>
+        <div className="account-form-grid">
+          <label>
+            Role interests
+            <input
+              onChange={(event) => onPreferenceDraft({ ...preferenceDraft, roleInterests: event.target.value })}
+              placeholder="product, cybersecurity"
+              value={preferenceDraft.roleInterests}
+            />
+          </label>
+          <label>
+            Industry interests
+            <input
+              onChange={(event) => onPreferenceDraft({ ...preferenceDraft, industryInterests: event.target.value })}
+              placeholder="software, ai, cloud"
+              value={preferenceDraft.industryInterests}
+            />
+          </label>
+          <label>
+            Preferred regions
+            <input
+              onChange={(event) => onPreferenceDraft({ ...preferenceDraft, preferredRegions: event.target.value })}
+              placeholder="greater_boston, greater_sf"
+              value={preferenceDraft.preferredRegions}
+            />
+          </label>
+          <label>
+            Prestige weighting
+            <select
+              value={preferenceDraft.prestigeWeighting}
+              onChange={(event) =>
+                onPreferenceDraft({
+                  ...preferenceDraft,
+                  prestigeWeighting: event.target.value as PreferenceDraft["prestigeWeighting"],
+                })
+              }
+            >
+              <option value="">No saved weighting</option>
+              {PREFERENCE_LEVELS.map((level) => (
+                <option key={level} value={level}>{level}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Brand weighting
+            <select
+              value={preferenceDraft.brandWeighting}
+              onChange={(event) =>
+                onPreferenceDraft({
+                  ...preferenceDraft,
+                  brandWeighting: event.target.value as PreferenceDraft["brandWeighting"],
+                })
+              }
+            >
+              <option value="">No saved weighting</option>
+              {PREFERENCE_LEVELS.map((level) => (
+                <option key={level} value={level}>{level}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Career stage
+            <select
+              value={preferenceDraft.careerStage}
+              onChange={(event) =>
+                onPreferenceDraft({
+                  ...preferenceDraft,
+                  careerStage: event.target.value as PreferenceDraft["careerStage"],
+                })
+              }
+            >
+              <option value="">No saved stage</option>
+              {CAREER_STAGE_OPTIONS.map((stage) => (
+                <option key={stage} value={stage}>{prettyKey(stage)}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Remote/hybrid preference
+            <select
+              value={preferenceDraft.remoteHybridPreference}
+              onChange={(event) =>
+                onPreferenceDraft({
+                  ...preferenceDraft,
+                  remoteHybridPreference: event.target.value as PreferenceDraft["remoteHybridPreference"],
+                })
+              }
+            >
+              <option value="">No saved preference</option>
+              {REMOTE_HYBRID_OPTIONS.map((option) => (
+                <option key={option} value={option}>{prettyKey(option)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="account-button-row">
+          <button disabled={actionState.loading} type="button" onClick={onSavePreferences}>
+            Save preferences
+          </button>
+          <button
+            className="secondary-button"
+            disabled={actionState.loading || !preferences?.persisted}
+            type="button"
+            onClick={onDeletePreferences}
+          >
+            Delete preferences
+          </button>
+        </div>
+      </ShellCard>
+
+      <ShellCard title="Saved market artifacts" eyebrow="References and snapshots">
+        {artifactsState.loading ? <LoadingBlock label="Loading saved artifacts" /> : null}
+        {artifactsState.error ? <ErrorState message={artifactsState.error} /> : null}
+        {artifacts.length ? (
+          <div className="account-list">
+            {artifacts.map((artifact) => (
+              <div className="account-list-row" key={artifact.saved_artifact_id}>
+                <div>
+                  <span className="badge">{prettyKey(artifact.artifact_type)}</span>
+                  <strong>{artifact.label ?? artifact.artifact_ref}</strong>
+                  <small>{artifact.artifact_ref} · saved {formatDateTime(artifact.created_at)}</small>
+                  {artifact.notes ? <p className="meta-copy">{artifact.notes}</p> : null}
+                </div>
+                <button
+                  className="secondary-button"
+                  disabled={actionState.loading}
+                  type="button"
+                  onClick={() => onDeleteArtifact(artifact.saved_artifact_id)}
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="No saved artifacts" body="Save a visible region, company, comparison, or discovery result from its market view." />
+        )}
+      </ShellCard>
+
+      <ShellCard title="Recommendation snapshots" eyebrow="Persisted derived overlays">
+        {snapshotsState.loading ? <LoadingBlock label="Loading snapshots" /> : null}
+        {snapshotsState.error ? <ErrorState message={snapshotsState.error} /> : null}
+        {snapshots.length ? (
+          <div className="account-list">
+            {snapshots.map((snapshot) => (
+              <details className="account-list-row account-details-row" key={snapshot.recommendation_snapshot_id}>
+                <summary>
+                  <span>
+                    <strong>{snapshot.recommendation_version}</strong>
+                    <small>{formatDateTime(snapshot.generated_at)}</small>
+                  </span>
+                </summary>
+                <JsonBlock value={snapshot} />
+              </details>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title="No recommendation snapshots"
+            body="Run personalized discovery while signed in, then persist the visible output as a recommendation snapshot."
+          />
+        )}
+      </ShellCard>
+
+      {exportState.envelope?.data ? (
+        <ShellCard title="Export preview" eyebrow="Current user-owned data">
+          <JsonBlock value={exportState.envelope.data} />
+        </ShellCard>
+      ) : null}
+      {exportState.error ? <ErrorState message={exportState.error} /> : null}
+    </div>
+  );
+}
+
 function ScoreCard({
   label,
   value,
@@ -1052,18 +1549,24 @@ function RegionExplorer({
   regionState,
   sourceState,
   roleFamilyState,
+  canSavePersonalOverlays,
+  regionSaved,
   onSelectRegion,
   onSelectCompany,
   onCompareRegion,
+  onSaveRegion,
 }: {
   regions: RegionListItem[];
   selectedRegionId: string;
   regionState: LoadState<RegionDetail>;
   sourceState: LoadState<SourceExplanation>;
   roleFamilyState: LoadState<CompanySearchResponse>;
+  canSavePersonalOverlays: boolean;
+  regionSaved: boolean;
   onSelectRegion: (regionId: string) => void;
   onSelectCompany: (companyId: string) => void;
   onCompareRegion: (regionId: string) => void;
+  onSaveRegion: (region: RegionDetail) => void;
 }) {
   const region = regionState.envelope?.data;
   const hasSelectedRegion = regions.some((item) => item.region_id === selectedRegionId);
@@ -1094,14 +1597,26 @@ function RegionExplorer({
               ))}
             </select>
           </label>
-          <button
-            className="secondary-button toolbar-button"
-            disabled={!region}
-            onClick={() => onCompareRegion(selectedRegionId)}
-            type="button"
-          >
-            Compare this market
-          </button>
+          <div className="toolbar-actions">
+            <button
+              className="secondary-button toolbar-button"
+              disabled={!region}
+              onClick={() => onCompareRegion(selectedRegionId)}
+              type="button"
+            >
+              Compare this market
+            </button>
+            <button
+              className="secondary-button toolbar-button"
+              disabled={!region || !canSavePersonalOverlays || regionSaved}
+              onClick={() => {
+                if (region) onSaveRegion(region);
+              }}
+              type="button"
+            >
+              {regionSaved ? "Region saved" : canSavePersonalOverlays ? "Save region" : "Sign in to save"}
+            </button>
+          </div>
         </div>
 
         {regionState.loading ? <LoadingBlock label="Loading region output" /> : null}
@@ -1220,14 +1735,20 @@ function CompanyExplorer({
   companyState,
   geographyState,
   sourceState,
+  canSavePersonalOverlays,
+  companySaved,
   onSelectCompany,
+  onSaveCompany,
 }: {
   companyOptions: CompanyOption[];
   selectedCompanyId: string;
   companyState: LoadState<CompanyDetail>;
   geographyState: LoadState<CompanyGeographyResponse>;
   sourceState: LoadState<SourceExplanation>;
+  canSavePersonalOverlays: boolean;
+  companySaved: boolean;
   onSelectCompany: (companyId: string) => void;
+  onSaveCompany: (company: CompanyDetail) => void;
 }) {
   const company = companyState.envelope?.data;
   const hasSelectedCompany = companyOptions.some((item) => item.company_id === selectedCompanyId);
@@ -1260,6 +1781,16 @@ function CompanyExplorer({
               ))}
             </select>
           </label>
+          <button
+            className="secondary-button toolbar-button"
+            disabled={!company || !canSavePersonalOverlays || companySaved}
+            onClick={() => {
+              if (company) onSaveCompany(company);
+            }}
+            type="button"
+          >
+            {companySaved ? "Company saved" : canSavePersonalOverlays ? "Save company" : "Sign in to save"}
+          </button>
         </div>
         {!companyOptions.length ? (
           <EmptyState
@@ -1432,8 +1963,11 @@ function ComparisonView({
   sourceAState,
   sourceBState,
   validationError,
+  canSavePersonalOverlays,
+  comparisonSaved,
   onRegionA,
   onRegionB,
+  onSaveComparison,
 }: {
   regions: RegionListItem[];
   regionA: string;
@@ -1442,8 +1976,11 @@ function ComparisonView({
   sourceAState: LoadState<SourceExplanation>;
   sourceBState: LoadState<SourceExplanation>;
   validationError?: string | null;
+  canSavePersonalOverlays: boolean;
+  comparisonSaved: boolean;
   onRegionA: (regionId: string) => void;
   onRegionB: (regionId: string) => void;
+  onSaveComparison: (comparison: ComparisonDetail, label: string) => void;
 }) {
   const comparison = validationError ? null : comparisonState.envelope?.data;
   const hasRegionA = regions.some((region) => region.region_id === regionA);
@@ -1493,6 +2030,18 @@ function ComparisonView({
               ))}
             </select>
           </label>
+        </div>
+        <div className="account-inline-actions">
+          <button
+            className="secondary-button"
+            disabled={!comparison || !canSavePersonalOverlays || comparisonSaved}
+            onClick={() => {
+              if (comparison) onSaveComparison(comparison, `${regionALabel} vs ${regionBLabel}`);
+            }}
+            type="button"
+          >
+            {comparisonSaved ? "Comparison saved" : canSavePersonalOverlays ? "Save comparison" : "Sign in to save"}
+          </button>
         </div>
 
         {regionA === regionB ? (
@@ -1665,6 +2214,9 @@ function PersonalizedDiscovery({
   onBrandPreference,
   onLimit,
   onSubmit,
+  canSavePersonalOverlays,
+  onSaveDiscoveryResult,
+  onSaveRecommendationSnapshot,
 }: {
   regions: RegionListItem[];
   sourceStates: Record<string, LoadState<SourceExplanation>>;
@@ -1684,6 +2236,9 @@ function PersonalizedDiscovery({
   onBrandPreference: (level: string) => void;
   onLimit: (limit: number) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  canSavePersonalOverlays: boolean;
+  onSaveDiscoveryResult: (discovery: PersonalizedResult) => void;
+  onSaveRecommendationSnapshot: (discovery: PersonalizedResult) => void;
 }) {
   const discovery = discoveryState.envelope?.data;
   const knownRegionIds = new Set(regions.map((region) => region.region_id));
@@ -1820,6 +2375,26 @@ function PersonalizedDiscovery({
         ) : null}
         {discoveryState.error ? <ErrorState message={discoveryState.error} /> : null}
         <MetadataPanel envelope={discoveryState.envelope} />
+        {discovery ? (
+          <div className="account-inline-actions">
+            <button
+              className="secondary-button"
+              disabled={!canSavePersonalOverlays}
+              type="button"
+              onClick={() => onSaveDiscoveryResult(discovery)}
+            >
+              {canSavePersonalOverlays ? "Save discovery result" : "Sign in to save result"}
+            </button>
+            <button
+              className="secondary-button"
+              disabled={!canSavePersonalOverlays}
+              type="button"
+              onClick={() => onSaveRecommendationSnapshot(discovery)}
+            >
+              {canSavePersonalOverlays ? "Save recommendation snapshot" : "Sign in to save snapshot"}
+            </button>
+          </div>
+        ) : null}
       </ShellCard>
 
       {discovery ? (
@@ -1902,6 +2477,7 @@ function PersonalizedDiscovery({
 }
 
 function App() {
+  const auth = useFrontendAuth();
   const [route, setRoute] = useState<RouteState>(() => readCurrentRoute());
   const [health, setHealth] = useState<LoadState<{ service: string }>>(emptyLoadState);
   const [regions, setRegions] = useState<LoadState<{ regions: RegionListItem[] }>>(emptyLoadState);
@@ -1916,6 +2492,16 @@ function App() {
   const [companyGeographyStates, setCompanyGeographyStates] = useState<Record<string, LoadState<CompanyGeographyResponse>>>({});
   const [comparisonState, setComparisonState] = useState<LoadState<ComparisonDetail>>(emptyLoadState);
   const [discoveryState, setDiscoveryState] = useState<LoadState<PersonalizedResult>>(emptyLoadState);
+  const [currentUserState, setCurrentUserState] = useState<LoadState<CurrentUserProfile>>(emptyLoadState);
+  const [preferenceState, setPreferenceState] = useState<LoadState<UserPreferenceProfile>>(emptyLoadState);
+  const [preferenceDraft, setPreferenceDraft] = useState<PreferenceDraft>(() => emptyPreferenceDraft());
+  const [artifactsState, setArtifactsState] = useState<LoadState<{ saved_market_artifacts: SavedMarketArtifact[] }>>(emptyLoadState);
+  const [snapshotsState, setSnapshotsState] = useState<LoadState<{ personalized_recommendation_snapshots: PersonalizedRecommendationSnapshot[] }>>(emptyLoadState);
+  const [exportState, setExportState] = useState<LoadState<UserDataExport>>(emptyLoadState);
+  const [deactivationResult, setDeactivationResult] = useState<AccountDeactivationResult | null>(null);
+  const [accountAction, setAccountAction] = useState<AccountActionState>({ loading: false, message: null, error: null });
+  const [deactivateConfirmed, setDeactivateConfirmed] = useState(false);
+  const [accountDeactivated, setAccountDeactivated] = useState(false);
   const discoveryRequestKey = useRef(0);
 
   const regionList = useMemo(() => regions.envelope?.data?.regions ?? [], [regions.envelope]);
@@ -1931,6 +2517,10 @@ function App() {
   const comparisonRegionBKnown = isKnownRegion(comparisonB, regionList, hasLoadedRegionList);
   const discoveryFilters = route.discovery;
   const discoveryUrl = personalizedDiscoveryUrl(discoveryFilters);
+  const protectedOptions = useMemo<ProtectedRequestOptions>(
+    () => ({ getAccessToken: auth.getAccessTokenSilently }),
+    [auth.getAccessTokenSilently],
+  );
   const comparisonValidationError =
     comparisonA === comparisonB
       ? "Choose two distinct regions before running comparison."
@@ -1955,6 +2545,16 @@ function App() {
   const selectedCompanySourceState = companySourceStates[selectedCompanyId] ?? emptyLoadState<SourceExplanation>();
   const selectedCompanyGeographyState =
     companyGeographyStates[selectedCompanyId] ?? emptyLoadState<CompanyGeographyResponse>();
+  const savedArtifactRefs = useMemo(() => {
+    const refs = new Set<string>();
+    for (const artifact of artifactsState.envelope?.data?.saved_market_artifacts ?? []) {
+      refs.add(savedArtifactKey(artifact.artifact_type, artifact.artifact_ref));
+    }
+    return refs;
+  }, [artifactsState.envelope]);
+  const comparisonArtifactRef = comparisonState.envelope?.data?.comparison_id
+    ?? `${comparisonA}:${comparisonB}`;
+  const canSavePersonalOverlays = auth.isConfigured && auth.isAuthenticated && !accountDeactivated;
   const regionSourceIdsNeeded = useMemo(() => {
     const ids: string[] = [];
     if (selectedRegionId && selectedRegionIsKnown) ids.push(selectedRegionId);
@@ -1995,6 +2595,74 @@ function App() {
     setRoute(readCurrentRoute());
   }, []);
 
+  const resetAccountState = useCallback(() => {
+    setCurrentUserState(emptyLoadState());
+    setPreferenceState(emptyLoadState());
+    setPreferenceDraft(emptyPreferenceDraft());
+    setArtifactsState(emptyLoadState());
+    setSnapshotsState(emptyLoadState());
+    setExportState(emptyLoadState());
+    setDeactivationResult(null);
+    setDeactivateConfirmed(false);
+  }, []);
+
+  const loadAccountData = useCallback(async () => {
+    if (!auth.isAuthenticated || accountDeactivated) return;
+
+    setCurrentUserState((current) => ({ ...current, loading: true, error: null }));
+    setPreferenceState((current) => ({ ...current, loading: true, error: null }));
+    setArtifactsState((current) => ({ ...current, loading: true, error: null }));
+    setSnapshotsState((current) => ({ ...current, loading: true, error: null }));
+
+    const [userResult, preferenceResult, artifactResult, snapshotResult] = await Promise.allSettled([
+      getCurrentUser(protectedOptions),
+      getPreferences(protectedOptions),
+      listSavedMarketArtifacts(protectedOptions),
+      listRecommendationSnapshots(protectedOptions),
+    ]);
+
+    if (userResult.status === "fulfilled") {
+      setCurrentUserState({ loading: false, envelope: userResult.value, error: null });
+    } else {
+      setCurrentUserState({
+        loading: false,
+        envelope: null,
+        error: userResult.reason instanceof Error ? userResult.reason.message : "Failed to load account",
+      });
+    }
+
+    if (preferenceResult.status === "fulfilled") {
+      setPreferenceState({ loading: false, envelope: preferenceResult.value, error: null });
+      setPreferenceDraft(preferenceDraftFromProfile(preferenceResult.value.data));
+    } else {
+      setPreferenceState({
+        loading: false,
+        envelope: null,
+        error: preferenceResult.reason instanceof Error ? preferenceResult.reason.message : "Failed to load preferences",
+      });
+    }
+
+    if (artifactResult.status === "fulfilled") {
+      setArtifactsState({ loading: false, envelope: artifactResult.value, error: null });
+    } else {
+      setArtifactsState({
+        loading: false,
+        envelope: null,
+        error: artifactResult.reason instanceof Error ? artifactResult.reason.message : "Failed to load saved artifacts",
+      });
+    }
+
+    if (snapshotResult.status === "fulfilled") {
+      setSnapshotsState({ loading: false, envelope: snapshotResult.value, error: null });
+    } else {
+      setSnapshotsState({
+        loading: false,
+        envelope: null,
+        error: snapshotResult.reason instanceof Error ? snapshotResult.reason.message : "Failed to load snapshots",
+      });
+    }
+  }, [accountDeactivated, auth.isAuthenticated, protectedOptions]);
+
   const loadRegion = useCallback(async (regionId: string) => {
     if (!regionId) return;
     setRegionLoading((current) => ({ ...current, [regionId]: true }));
@@ -2017,6 +2685,15 @@ function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!auth.isAuthenticated) {
+      resetAccountState();
+      setAccountDeactivated(false);
+      return;
+    }
+    void loadAccountData();
+  }, [auth.isAuthenticated, loadAccountData, resetAccountState]);
 
   useEffect(() => {
     async function loadInitialData() {
@@ -2352,6 +3029,259 @@ function App() {
     }
   }
 
+  async function handleSaveArtifact(input: SavedMarketArtifactInput, successMessage: string) {
+    if (!canSavePersonalOverlays) {
+      setAccountAction({ loading: false, message: "Sign in to save personal overlays.", error: null });
+      return;
+    }
+    if (savedArtifactRefs.has(savedArtifactKey(input.artifact_type, input.artifact_ref))) {
+      setAccountAction({ loading: false, message: "This artifact is already saved for your account.", error: null });
+      return;
+    }
+
+    setAccountAction({ loading: true, message: null, error: null });
+    try {
+      await createSavedMarketArtifact(input, protectedOptions);
+      await loadAccountData();
+      setAccountAction({ loading: false, message: successMessage, error: null });
+    } catch (error) {
+      setAccountAction({
+        loading: false,
+        message: null,
+        error: error instanceof Error ? error.message : "Failed to save artifact",
+      });
+    }
+  }
+
+  function handleSaveRegion(region: RegionDetail) {
+    void handleSaveArtifact(
+      {
+        artifact_type: "region",
+        artifact_ref: region.region_id,
+        label: region.display_name,
+        snapshot: {
+          region_id: region.region_id,
+          display_name: region.display_name,
+          region_type: region.region_type,
+          scores: region.scores,
+          saved_from: "region_detail",
+        },
+      },
+      "Region saved to your account overlays.",
+    );
+  }
+
+  function handleSaveCompany(company: CompanyDetail) {
+    void handleSaveArtifact(
+      {
+        artifact_type: "company",
+        artifact_ref: company.company_id,
+        label: company.company_name,
+        snapshot: {
+          company_id: company.company_id,
+          company_name: company.company_name,
+          sector_primary: company.sector_primary,
+          eligibility_status: company.eligibility_status,
+          prestige_score: company.prestige_score,
+          saved_from: "company_geography",
+        },
+      },
+      "Company saved to your account overlays.",
+    );
+  }
+
+  function handleSaveComparison(comparison: ComparisonDetail, label: string) {
+    void handleSaveArtifact(
+      {
+        artifact_type: "comparison",
+        artifact_ref: comparison.comparison_id ?? comparisonArtifactRef,
+        label,
+        snapshot: {
+          comparison_id: comparison.comparison_id,
+          region_a: comparison.region_a,
+          region_b: comparison.region_b,
+          category_winners: comparison.category_winners,
+          saved_from: "compare_markets",
+        },
+      },
+      "Comparison saved to your account overlays.",
+    );
+  }
+
+  function discoveryObjectiveRefs(discovery: PersonalizedResult): Array<Record<string, unknown>> {
+    return [
+      ...(discovery.ranked_regions ?? []).map((region) => ({
+        output_type: "region",
+        subject_id: region.region_id,
+      })),
+      ...(discovery.ranked_companies ?? []).map((company) => ({
+        output_type: "company_region",
+        company_id: company.company_id,
+        region_id: company.region_id,
+      })),
+    ];
+  }
+
+  function handleSaveDiscoveryResult(discovery: PersonalizedResult) {
+    void (async () => {
+      const refs = discoveryObjectiveRefs(discovery);
+      const hash = await sha256Label({ discoveryFilters, refs });
+      await handleSaveArtifact(
+        {
+          artifact_type: "discovery_result",
+          artifact_ref: `discovery:${hash.slice(7, 39)}`,
+          label: `Discovery result ${formatDateTime(new Date().toISOString())}`,
+          snapshot: {
+            filters: discoveryFilters,
+            result: discovery,
+            objective_output_refs: refs,
+            saved_from: "personalized_discovery",
+          },
+        },
+        "Discovery result saved to your account overlays.",
+      );
+    })();
+  }
+
+  function handleSaveRecommendationSnapshot(discovery: PersonalizedResult) {
+    void (async () => {
+      if (!canSavePersonalOverlays) {
+        setAccountAction({ loading: false, message: "Sign in to save recommendation snapshots.", error: null });
+        return;
+      }
+      const refs = discoveryObjectiveRefs(discovery);
+      const sourceVersionBundle = discoveryState.envelope?.metadata.source_versions ?? {};
+      const recommendationInputsHash = await sha256Label({
+        discoveryFilters,
+        refs,
+        sourceVersionBundle,
+      });
+      const preferenceProfile = preferenceState.envelope?.data;
+      const snapshot: PersonalizedRecommendationSnapshotInput = {
+        preference_profile_id: preferenceProfile?.persisted ? preferenceProfile.user_id : null,
+        personalized_output: { ...discovery } as Record<string, unknown>,
+        recommendation_version: "frontend_discovery_snapshot_v1",
+        source_version_bundle: sourceVersionBundle,
+        objective_output_refs: refs,
+        recommendation_inputs_hash: recommendationInputsHash,
+        generated_at: new Date().toISOString(),
+      };
+
+      setAccountAction({ loading: true, message: null, error: null });
+      try {
+        await createRecommendationSnapshot(snapshot, protectedOptions);
+        await loadAccountData();
+        setAccountAction({ loading: false, message: "Recommendation snapshot saved.", error: null });
+      } catch (error) {
+        setAccountAction({
+          loading: false,
+          message: null,
+          error: error instanceof Error ? error.message : "Failed to save recommendation snapshot",
+        });
+      }
+    })();
+  }
+
+  function handleSavePreferences() {
+    void (async () => {
+      setAccountAction({ loading: true, message: null, error: null });
+      try {
+        const envelope = await updatePreferences(preferenceInputFromDraft(preferenceDraft), protectedOptions);
+        setPreferenceState({ loading: false, envelope, error: null });
+        setPreferenceDraft(preferenceDraftFromProfile(envelope.data));
+        setAccountAction({ loading: false, message: "Preferences saved.", error: null });
+      } catch (error) {
+        setAccountAction({
+          loading: false,
+          message: null,
+          error: error instanceof Error ? error.message : "Failed to save preferences",
+        });
+      }
+    })();
+  }
+
+  function handleDeletePreferences() {
+    void (async () => {
+      setAccountAction({ loading: true, message: null, error: null });
+      try {
+        await deletePreferences(protectedOptions);
+        const envelope = await getPreferences(protectedOptions);
+        setPreferenceState({ loading: false, envelope, error: null });
+        setPreferenceDraft(preferenceDraftFromProfile(envelope.data));
+        setAccountAction({ loading: false, message: "Preferences deleted.", error: null });
+      } catch (error) {
+        setAccountAction({
+          loading: false,
+          message: null,
+          error: error instanceof Error ? error.message : "Failed to delete preferences",
+        });
+      }
+    })();
+  }
+
+  function handleDeleteArtifact(savedArtifactId: string) {
+    void (async () => {
+      setAccountAction({ loading: true, message: null, error: null });
+      try {
+        await deleteSavedMarketArtifact(savedArtifactId, protectedOptions);
+        await loadAccountData();
+        setAccountAction({ loading: false, message: "Saved artifact deleted.", error: null });
+      } catch (error) {
+        setAccountAction({
+          loading: false,
+          message: null,
+          error: error instanceof Error ? error.message : "Failed to delete saved artifact",
+        });
+      }
+    })();
+  }
+
+  function handleExportUserData() {
+    void (async () => {
+      setExportState((current) => ({ ...current, loading: true, error: null }));
+      setAccountAction({ loading: true, message: null, error: null });
+      try {
+        const envelope = await exportUserData(protectedOptions);
+        setExportState({ loading: false, envelope, error: null });
+        setAccountAction({ loading: false, message: "User-owned data export loaded.", error: null });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to export user data";
+        setExportState({ loading: false, envelope: null, error: message });
+        setAccountAction({ loading: false, message: null, error: message });
+      }
+    })();
+  }
+
+  function handleDeactivateAccount() {
+    void (async () => {
+      if (!deactivateConfirmed) return;
+      setAccountAction({ loading: true, message: null, error: null });
+      try {
+        const envelope = await deactivateAccount(protectedOptions);
+        setDeactivationResult(envelope.data);
+        setAccountDeactivated(true);
+        setCurrentUserState(emptyLoadState());
+        setPreferenceState(emptyLoadState());
+        setPreferenceDraft(emptyPreferenceDraft());
+        setArtifactsState(emptyLoadState());
+        setSnapshotsState(emptyLoadState());
+        setExportState(emptyLoadState());
+        setDeactivateConfirmed(false);
+        setAccountAction({
+          loading: false,
+          message: "App account deactivated. Auth0 provider account deletion is not performed here.",
+          error: null,
+        });
+      } catch (error) {
+        setAccountAction({
+          loading: false,
+          message: null,
+          error: error instanceof Error ? error.message : "Failed to deactivate account",
+        });
+      }
+    })();
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -2385,6 +3315,7 @@ function App() {
             );
           })}
         </nav>
+        <AuthStatusPanel auth={auth} onOpenAccount={() => navigateTo(accountUrl())} />
         <div className="api-target">
           <span>API target</span>
           <code>{API_TARGET_LABEL}</code>
@@ -2419,9 +3350,12 @@ function App() {
 
         {route.page === "region" ? (
           <RegionExplorer
+            canSavePersonalOverlays={canSavePersonalOverlays}
             onCompareRegion={compareRegion}
+            onSaveRegion={handleSaveRegion}
             onSelectCompany={selectCompany}
             onSelectRegion={selectRegion}
+            regionSaved={savedArtifactRefs.has(savedArtifactKey("region", selectedRegionId))}
             roleFamilyState={selectedRegionRoleFamilyState}
             regionState={selectedRegionState}
             regions={regionList}
@@ -2432,9 +3366,12 @@ function App() {
 
         {route.page === "company" ? (
           <CompanyExplorer
+            canSavePersonalOverlays={canSavePersonalOverlays}
+            companySaved={savedArtifactRefs.has(savedArtifactKey("company", selectedCompanyId))}
             companyOptions={companyOptions}
             companyState={companyState}
             geographyState={selectedCompanyGeographyState}
+            onSaveCompany={handleSaveCompany}
             onSelectCompany={selectCompany}
             selectedCompanyId={selectedCompanyId}
             sourceState={selectedCompanySourceState}
@@ -2443,9 +3380,12 @@ function App() {
 
         {route.page === "compare" ? (
           <ComparisonView
+            canSavePersonalOverlays={canSavePersonalOverlays}
             comparisonState={comparisonState}
+            comparisonSaved={savedArtifactRefs.has(savedArtifactKey("comparison", comparisonArtifactRef))}
             onRegionA={selectComparisonA}
             onRegionB={selectComparisonB}
+            onSaveComparison={handleSaveComparison}
             regionA={comparisonA}
             regionB={comparisonB}
             regions={regionList}
@@ -2458,6 +3398,7 @@ function App() {
         {route.page === "discovery" ? (
           <PersonalizedDiscovery
             brandPreference={discoveryFilters.brandPreference}
+            canSavePersonalOverlays={canSavePersonalOverlays}
             careerStage={discoveryFilters.careerStage}
             discoveryState={discoveryState}
             industries={discoveryFilters.industries}
@@ -2477,6 +3418,8 @@ function App() {
             onPrestigePreference={(prestigePreference) =>
               updateDiscoveryFilters({ ...discoveryFilters, prestigePreference })
             }
+            onSaveDiscoveryResult={handleSaveDiscoveryResult}
+            onSaveRecommendationSnapshot={handleSaveRecommendationSnapshot}
             onSubmit={handleDiscoverySubmit}
             onToggleIndustry={(industry) =>
               updateDiscoveryFilters({
@@ -2501,6 +3444,30 @@ function App() {
             roleTargets={discoveryFilters.roleTargets}
             selectedRegions={discoveryFilters.selectedRegions}
             sourceStates={regionSourceStates}
+          />
+        ) : null}
+
+        {route.page === "account" ? (
+          <AccountView
+            actionState={accountAction}
+            artifactsState={artifactsState}
+            auth={auth}
+            currentUserState={currentUserState}
+            deactivateConfirmed={deactivateConfirmed}
+            deactivationResult={deactivationResult}
+            exportState={exportState}
+            onDeactivate={handleDeactivateAccount}
+            onDeactivateConfirmed={setDeactivateConfirmed}
+            onDeleteArtifact={handleDeleteArtifact}
+            onDeletePreferences={handleDeletePreferences}
+            onExport={handleExportUserData}
+            onLogin={() => void auth.login()}
+            onPreferenceDraft={setPreferenceDraft}
+            onRefresh={() => void loadAccountData()}
+            onSavePreferences={handleSavePreferences}
+            preferenceDraft={preferenceDraft}
+            preferenceState={preferenceState}
+            snapshotsState={snapshotsState}
           />
         ) : null}
       </section>

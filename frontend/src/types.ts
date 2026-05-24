@@ -251,3 +251,109 @@ export type PersonalizedResult = {
     match_notes: string[];
   }>;
 };
+
+export type UserAccount = {
+  user_id: string;
+  status: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type UserProfile = {
+  user_id: string;
+  display_name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type CurrentUserProfile = {
+  user: UserAccount;
+  profile: UserProfile;
+};
+
+export type PreferenceLevel = "low" | "medium" | "high";
+export type CareerStage = "entry_level";
+export type RemoteHybridPreference = "remote" | "hybrid" | "onsite" | "flexible";
+
+export type UserPreferenceProfileInput = {
+  role_interests?: string[];
+  industry_interests?: string[];
+  preferred_regions?: string[];
+  prestige_weighting?: PreferenceLevel | null;
+  brand_weighting?: PreferenceLevel | null;
+  career_stage?: CareerStage | null;
+  remote_hybrid_preference?: RemoteHybridPreference | null;
+};
+
+export type UserPreferenceProfile = Required<UserPreferenceProfileInput> & {
+  user_id: string;
+  persisted: boolean;
+};
+
+export type SavedMarketArtifactType = "region" | "company" | "comparison" | "discovery_result";
+
+export type SavedMarketArtifactInput = {
+  artifact_type: SavedMarketArtifactType;
+  artifact_ref: string;
+  label?: string | null;
+  notes?: string | null;
+  snapshot?: Record<string, unknown> | unknown[] | null;
+};
+
+export type SavedMarketArtifact = SavedMarketArtifactInput & {
+  saved_artifact_id: string;
+  user_id: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type SavedMarketArtifactList = {
+  saved_market_artifacts: SavedMarketArtifact[];
+};
+
+export type PersonalizedRecommendationSnapshotInput = {
+  preference_profile_id?: string | null;
+  personalized_output: Record<string, unknown> | unknown[];
+  recommendation_version: string;
+  source_version_bundle: Record<string, unknown> | unknown[];
+  objective_output_refs: Array<Record<string, unknown> | string>;
+  recommendation_inputs_hash: string;
+  generated_at: string;
+};
+
+export type PersonalizedRecommendationSnapshot = PersonalizedRecommendationSnapshotInput & {
+  recommendation_snapshot_id: string;
+  user_id: string;
+  preference_profile_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type RecommendationSnapshotList = {
+  personalized_recommendation_snapshots: PersonalizedRecommendationSnapshot[];
+};
+
+export type UserDataExport = {
+  export_schema_version: string;
+  user: UserAccount;
+  profile: UserProfile | null;
+  external_auth_identities: Array<Record<string, unknown>>;
+  preference_profile: (Omit<UserPreferenceProfile, "persisted"> & {
+    created_at: string | null;
+    updated_at: string | null;
+  }) | null;
+  saved_market_artifacts: SavedMarketArtifact[];
+  personalized_recommendation_snapshots: PersonalizedRecommendationSnapshot[];
+};
+
+export type AccountDeactivationResult = {
+  user_id: string;
+  user_status: string;
+  deleted_preference_profiles: number;
+  deleted_saved_market_artifacts: number;
+  deleted_recommendation_snapshots: number;
+  deleted_profiles: number;
+  deleted_external_auth_identities: number;
+};

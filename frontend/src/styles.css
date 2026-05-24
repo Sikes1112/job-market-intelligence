@@ -214,6 +214,47 @@ legend {
   color: #fff;
 }
 
+.auth-panel {
+  background: rgb(0 0 0 / 16%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 1rem;
+  color: rgb(255 255 255 / 82%);
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem;
+}
+
+.auth-panel p,
+.auth-panel strong {
+  margin: 0;
+}
+
+.auth-panel strong {
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+
+.auth-actions,
+.account-button-row,
+.account-inline-actions,
+.toolbar-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.account-button-row,
+.account-inline-actions {
+  margin-top: 1rem;
+}
+
+.auth-actions .secondary-button,
+.auth-panel .secondary-button {
+  background: rgb(255 255 255 / 14%);
+  color: #fff;
+}
+
 .content-shell {
   display: grid;
   gap: 1.1rem;
@@ -294,6 +335,7 @@ legend {
 }
 
 .hero-actions button,
+.primary-button,
 .secondary-button {
   border-radius: 999px;
   font-weight: 900;
@@ -301,6 +343,7 @@ legend {
 }
 
 .hero-actions button:first-child,
+.primary-button,
 .discovery-form button {
   background: var(--green);
   color: #fff;
@@ -309,6 +352,14 @@ legend {
 .secondary-button {
   background: var(--green-soft);
   color: var(--green);
+}
+
+.danger-button {
+  background: var(--red-soft);
+  border-radius: 999px;
+  color: var(--red);
+  font-weight: 900;
+  padding: 0.82rem 1.1rem;
 }
 
 .badge {
@@ -474,6 +525,10 @@ legend {
   padding: 0.82rem 1.1rem;
 }
 
+.toolbar-actions .toolbar-button {
+  flex: 1 1 180px;
+}
+
 .stat-grid,
 .score-grid,
 .winner-grid,
@@ -492,6 +547,7 @@ legend {
 .entry-card,
 .empty-state,
 .error-state,
+.notice-state,
 .loading-block,
 .metadata-panel {
   background: var(--field);
@@ -513,6 +569,15 @@ legend {
 .stat-card strong,
 .winner-card strong {
   overflow-wrap: anywhere;
+}
+
+.notice-state {
+  color: var(--green);
+}
+
+.notice-state strong,
+.notice-state p {
+  margin: 0;
 }
 
 .winner-card small {
@@ -605,6 +670,77 @@ legend {
 .source-row small {
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.account-summary,
+.account-form-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 1rem;
+}
+
+.account-summary div {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.9rem;
+}
+
+.account-summary span,
+.account-list-row small {
+  color: var(--muted);
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.account-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.account-list-row {
+  align-items: center;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  color: var(--ink);
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0.9rem;
+}
+
+.account-list-row strong {
+  display: block;
+  margin-top: 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.account-details-row {
+  align-items: stretch;
+  grid-template-columns: 1fr;
+}
+
+.account-details-row summary {
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.json-block {
+  background: rgb(29 40 34 / 8%);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  color: var(--ink);
+  font-size: 0.78rem;
+  margin: 0.85rem 0 0;
+  max-height: 28rem;
+  overflow: auto;
+  padding: 0.85rem;
+  white-space: pre-wrap;
 }
 
 .company-row:hover,
@@ -976,7 +1112,7 @@ legend {
   }
 
   .nav-list {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .api-target {
@@ -1019,6 +1155,10 @@ legend {
   }
 
   .nav-list {
+    grid-template-columns: 1fr;
+  }
+
+  .account-list-row {
     grid-template-columns: 1fr;
   }
 }

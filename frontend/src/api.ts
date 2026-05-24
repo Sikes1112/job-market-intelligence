@@ -1,16 +1,27 @@
 import type {
   ApiEnvelope,
+  AccountDeactivationResult,
   CompanyDetail,
   CompanyGeographyResponse,
   CompanySearchResponse,
   ComparisonDetail,
+  CurrentUserProfile,
   FreshnessStatus,
+  PersonalizedRecommendationSnapshot,
+  PersonalizedRecommendationSnapshotInput,
   PersonalizedRequest,
   PersonalizedResult,
+  RecommendationSnapshotList,
   RegionDetail,
   RegionListItem,
   RegionSearchResponse,
+  SavedMarketArtifact,
+  SavedMarketArtifactInput,
+  SavedMarketArtifactList,
   SourceExplanation,
+  UserDataExport,
+  UserPreferenceProfile,
+  UserPreferenceProfileInput,
   WarningItem,
 } from "./types";
 import { isFreshnessStatus, isRecord } from "./dataQuality";
@@ -32,6 +43,10 @@ export class ApiError extends Error {
     this.statusCode = options?.statusCode;
   }
 }
+
+export type ProtectedRequestOptions = {
+  getAccessToken: () => Promise<string | null>;
+};
 
 function isEnvelopeStatus(value: unknown): value is ApiEnvelope<unknown>["status"] {
   return value === "success" || value === "partial" || value === "error";
@@ -137,6 +152,30 @@ async function request<T>(
   return envelope;
 }
 
+async function protectedRequest<T>(
+  path: string,
+  auth: ProtectedRequestOptions,
+  options?: RequestInit,
+): Promise<ApiEnvelope<T>> {
+  if (path !== "/me" && !path.startsWith("/me/")) {
+    throw new ApiError("Protected requests are restricted to /me routes");
+  }
+
+  const token = await auth.getAccessToken();
+  if (!token) {
+    throw new ApiError("Authentication required for account request", { statusCode: 401 });
+  }
+
+  return request<T>(path, {
+    ...options,
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+}
+
 export function getHealth() {
   return request<{ service: string }>("/health");
 }
@@ -205,4 +244,92 @@ export function discoverPersonalized(body: PersonalizedRequest) {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export function getCurrentUser(auth: ProtectedRequestOptions) {
+  return protectedRequest<CurrentUserProfile>("/me", auth);
+}
+
+export function getPreferences(auth: ProtectedRequestOptions) {
+  return protectedRequest<UserPreferenceProfile>("/me/preferences", auth);
+}
+
+export function updatePreferences(
+  body: UserPreferenceProfileInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<UserPreferenceProfile>("/me/preferences", auth, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deletePreferences(auth: ProtectedRequestOptions) {
+  return protectedRequest<{ deleted_preference_profiles: number }>("/me/preferences", auth, {
+    method: "DELETE",
+  });
+}
+
+export function createSavedMarketArtifact(
+  body: SavedMarketArtifactInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<SavedMarketArtifact>("/me/saved-market-artifacts", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function listSavedMarketArtifacts(auth: ProtectedRequestOptions, artifactType?: string) {
+  const params = new URLSearchParams();
+  appendOptionalParam(params, "artifact_type", artifactType);
+  const query = params.toString();
+  return protectedRequest<SavedMarketArtifactList>(
+    `/me/saved-market-artifacts${query ? `?${query}` : ""}`,
+    auth,
+  );
+}
+
+export function getSavedMarketArtifact(savedArtifactId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<SavedMarketArtifact>(
+    `/me/saved-market-artifacts/${encodeURIComponent(savedArtifactId)}`,
+    auth,
+  );
+}
+
+export function deleteSavedMarketArtifact(savedArtifactId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<{ deleted_saved_market_artifacts: number }>(
+    `/me/saved-market-artifacts/${encodeURIComponent(savedArtifactId)}`,
+    auth,
+    { method: "DELETE" },
+  );
+}
+
+export function createRecommendationSnapshot(
+  body: PersonalizedRecommendationSnapshotInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<PersonalizedRecommendationSnapshot>("/me/recommendation-snapshots", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function listRecommendationSnapshots(auth: ProtectedRequestOptions) {
+  return protectedRequest<RecommendationSnapshotList>("/me/recommendation-snapshots", auth);
+}
+
+export function getRecommendationSnapshot(recommendationSnapshotId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<PersonalizedRecommendationSnapshot>(
+    `/me/recommendation-snapshots/${encodeURIComponent(recommendationSnapshotId)}`,
+    auth,
+  );
+}
+
+export function exportUserData(auth: ProtectedRequestOptions) {
+  return protectedRequest<UserDataExport>("/me/export", auth);
+}
+
+export function deactivateAccount(auth: ProtectedRequestOptions) {
+  return protectedRequest<AccountDeactivationResult>("/me", auth, { method: "DELETE" });
 }
