@@ -30,6 +30,7 @@ from backend.api.search import (
     company_geography,
     explain_company_sources,
     explain_region_sources,
+    region_coverage_lookup,
     search_companies,
     search_regions,
 )
@@ -52,8 +53,10 @@ router = APIRouter()
 @router.get("/regions")
 def list_regions(
     region_repo: RegionRepository = Depends(get_region_repository),
+    session: Session = Depends(get_session),
 ) -> dict:
     rows = region_repo.list()
+    coverage_by_region = region_coverage_lookup(session)
     regions = [
         {
             "region_id": r.region_id,
@@ -63,10 +66,19 @@ def list_regions(
             "labor_market_group": r.labor_market_group,
             "state": r.state,
             "version": r.version,
+            "coverage": coverage_by_region[r.region_id].model_dump(mode="json"),
+            "sector_coverage": {},
         }
         for r in rows
     ]
     return lightweight_success_envelope(data={"regions": regions})
+
+
+@router.get("/metadata/coverage")
+def coverage_metadata() -> dict:
+    from backend.api.metadata import build_coverage_metadata_vocabulary
+
+    return lightweight_success_envelope(data=build_coverage_metadata_vocabulary())
 
 
 @router.get("/regions/search")

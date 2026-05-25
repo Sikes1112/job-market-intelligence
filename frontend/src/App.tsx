@@ -35,6 +35,12 @@ import {
 } from "./api";
 import { useFrontendAuth, type FrontendAuthContextValue } from "./auth";
 import {
+  coverageComponentEntries,
+  coverageDescription,
+  coverageDisplayLabel,
+  coverageIsWeak,
+  coverageScoreText,
+  coverageTone,
   dataBasisLabel,
   envelopeFreshnessStatus,
   freshnessLabel,
@@ -49,6 +55,8 @@ import type {
   CompanyDetail,
   CompanySearchResponse,
   ComparisonDetail,
+  CoverageMetadata,
+  SectorCoverageMap,
   CurrentUserProfile,
   ExplanationEvidencePacket,
   ExplanationResult,
@@ -513,6 +521,103 @@ function QualityBadgeRow({
   );
 }
 
+function CoverageBadge({ coverage }: { coverage?: CoverageMetadata | null }) {
+  return (
+    <span className={qualityBadgeClass(coverageTone(coverage))}>
+      {coverageDisplayLabel(coverage)}
+    </span>
+  );
+}
+
+function CoverageInlineNote({ coverage }: { coverage?: CoverageMetadata | null }) {
+  if (!coverageIsWeak(coverage) && coverage?.tier) return null;
+  return <p className="meta-copy coverage-note">{coverageDescription(coverage)}</p>;
+}
+
+function CoverageWarningList({ warnings }: { warnings: WarningItem[] }) {
+  const coverageWarnings = warnings.filter((warning) => warningCode(warning) === "region_coverage_not_confident");
+  if (!coverageWarnings.length) return null;
+  return (
+    <div className="warning-list coverage-warning-list" aria-label="Coverage warnings">
+      {coverageWarnings.map((warning, index) => (
+        <div className="warning-item" key={index}>
+          <div className="warning-header">
+            <span className="warning-code">{prettyKey(warningCode(warning))}</span>
+            {warningSeverity(warning) ? (
+              <span className="badge badge-warning">{warningSeverity(warning)}</span>
+            ) : null}
+          </div>
+          <p>{warningMessage(warning)}</p>
+          {warningScope(warning) ? <small>{warningScope(warning)}</small> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SectorCoveragePanel({ sectorCoverage }: { sectorCoverage?: SectorCoverageMap | null }) {
+  const sectors = Object.values(sectorCoverage ?? {}).filter((sector) => sector?.coverage);
+  if (!sectors.length) return null;
+
+  return (
+    <div className="sector-coverage-panel">
+      <div className="coverage-section-heading">
+        <strong>Sector coverage</strong>
+        <small>Separate from overall region coverage</small>
+      </div>
+      <div className="sector-coverage-list">
+        {sectors.map((sector) => (
+          <div className="sector-coverage-row" key={sector.sector}>
+            <span>{sector.label ?? prettyKey(sector.sector)}</span>
+            <CoverageBadge coverage={sector.coverage} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CoveragePanel({
+  coverage,
+  sectorCoverage,
+}: {
+  coverage?: CoverageMetadata | null;
+  sectorCoverage?: SectorCoverageMap | null;
+}) {
+  const scoreText = coverageScoreText(coverage);
+  const components = coverageComponentEntries(coverage);
+  const notes = coverage?.notes ?? [];
+
+  return (
+    <div className="coverage-panel">
+      <div className="metadata-row">
+        <CoverageBadge coverage={coverage} />
+        {coverage?.heuristic ? <span className="badge badge-unknown">Heuristic</span> : null}
+      </div>
+      {scoreText ? <p className="coverage-score">{scoreText}</p> : null}
+      <p className="meta-copy">{coverageDescription(coverage)}</p>
+      {components.length ? (
+        <div className="coverage-component-grid" aria-label="Coverage components">
+          {components.map((component) => (
+            <div className="coverage-component-row" key={component.key}>
+              <span>{component.label}</span>
+              <strong>{component.value}%</strong>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {notes.length ? (
+        <ul className="coverage-notes">
+          {notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      ) : null}
+      <SectorCoveragePanel sectorCoverage={sectorCoverage} />
+    </div>
+  );
+}
+
 function getSourceSummary(
   source?: SourceExplanation | FreshnessSourceSummary | null,
 ): FreshnessSourceSummary | null {
@@ -522,6 +627,17 @@ function getSourceSummary(
 
 function getRegionSearchMap(search?: ApiEnvelope<RegionSearchResponse> | null): Map<string, RegionSearchResult> {
   return new Map((search?.data?.regions ?? []).map((region) => [region.region_id, region]));
+}
+
+function coverageForRegion(
+  region: RegionListItem,
+  searchItem?: RegionSearchResult,
+  detail?: RegionDetail | null,
+): { coverage?: CoverageMetadata; sectorCoverage?: SectorCoverageMap } {
+  return {
+    coverage: searchItem?.coverage ?? detail?.coverage ?? region.coverage,
+    sectorCoverage: searchItem?.sector_coverage ?? detail?.sector_coverage ?? region.sector_coverage,
+  };
 }
 
 function regionOpportunityScore(
@@ -849,6 +965,8 @@ function strongestCompanyRegions(
   entryScore: number | null;
   activePostings: number | null;
   freshness?: FreshnessSourceSummary;
+  coverage?: CoverageMetadata;
+  sectorCoverage?: SectorCoverageMap;
 }> {
   const regions = new Map<string, {
     regionId: string;
@@ -857,6 +975,8 @@ function strongestCompanyRegions(
     entryScore: number | null;
     activePostings: number | null;
     freshness?: FreshnessSourceSummary;
+    coverage?: CoverageMetadata;
+    sectorCoverage?: SectorCoverageMap;
   }>();
 
   function ensure(regionId: string, regionName: string) {
@@ -869,6 +989,8 @@ function strongestCompanyRegions(
       entryScore: number | null;
       activePostings: number | null;
       freshness?: FreshnessSourceSummary;
+      coverage?: CoverageMetadata;
+      sectorCoverage?: SectorCoverageMap;
     } = {
       regionId,
       regionName,
@@ -882,13 +1004,18 @@ function strongestCompanyRegions(
 
   for (const row of company.regions_present ?? []) {
     if (row.presence_status === "present") {
-      ensure(row.region_id, row.region_display_name).signals.add("Presence");
+      const item = ensure(row.region_id, row.region_display_name);
+      item.coverage ??= row.coverage;
+      item.sectorCoverage ??= row.sector_coverage;
+      item.signals.add("Presence");
     }
   }
 
   for (const row of company.regions_hiring ?? []) {
     const item = ensure(row.region_id, row.region_display_name);
     item.activePostings = row.active_posting_count_now;
+    item.coverage ??= row.coverage;
+    item.sectorCoverage ??= row.sector_coverage;
     if (row.currently_hiring_flag || (row.active_posting_count_now ?? 0) > 0) {
       item.signals.add("Hiring activity");
     }
@@ -897,6 +1024,8 @@ function strongestCompanyRegions(
   for (const row of company.entry_level_regions ?? []) {
     const item = ensure(row.region_id, row.region_display_name);
     item.entryScore = row.entry_level_access_score;
+    item.coverage ??= row.coverage;
+    item.sectorCoverage ??= row.sector_coverage;
     if (hasEntryLevelAccess(row)) {
       item.signals.add("Entry-level access");
     }
@@ -905,6 +1034,8 @@ function strongestCompanyRegions(
   for (const row of geography?.regions ?? []) {
     const item = ensure(row.region_id, row.region_name);
     item.freshness = row.freshness;
+    item.coverage ??= row.coverage;
+    item.sectorCoverage ??= row.sector_coverage;
     if (row.presence_status === "present") item.signals.add("Presence");
     if (row.current_hiring) item.signals.add("Hiring activity");
     if (row.has_entry_level_access) item.signals.add("Entry-level access");
@@ -919,6 +1050,8 @@ function strongestCompanyRegions(
       entryScore: item.entryScore,
       activePostings: item.activePostings,
       freshness: item.freshness,
+      coverage: item.coverage,
+      sectorCoverage: item.sectorCoverage,
     }))
     .filter((item) => item.signalCount > 0)
     .sort((left, right) =>
@@ -1871,8 +2004,10 @@ function ScoringPreviewPanel({ preview }: { preview: ScoringPreviewResult }) {
         <div className="preview-row" key={region.region_id}>
           <div>
             <span className="badge">Personalized overlay</span>
+            <CoverageBadge coverage={region.coverage} />
             <strong>{region.display_name}</strong>
             <small>{region.region_id}</small>
+            <CoverageInlineNote coverage={region.coverage} />
           </div>
           <ScoreCard
             compact
@@ -1895,6 +2030,7 @@ function ScoringPreviewPanel({ preview }: { preview: ScoringPreviewResult }) {
               );
             })}
           </div>
+          <CoveragePanel coverage={region.coverage} />
         </div>
       ))}
     </div>
@@ -2250,7 +2386,8 @@ function ExploreMarkets({
         <p className="lead-copy">
           Compare prepared regional market outputs for early-career tech decisions. Scores
           are derived signals, source labels show whether evidence is seeded demo, real
-          imported, mixed, partial, stale, or unknown.
+          imported, mixed, partial, stale, or unknown. Coverage labels separately show
+          whether each market is fully covered, partial, watchlist, or placeholder.
         </p>
         <div className="hero-actions">
           <button type="button" onClick={onOpenRegionDetail}>
@@ -2334,7 +2471,8 @@ function ExploreMarkets({
         ) : null}
         <p className="meta-copy">
           Unknown freshness is intentionally kept separate from fresh. Missing scores and
-          missing entry-level values are not converted into zeroes.
+          missing entry-level values are not converted into zeroes. Coverage is a separate
+          readiness estimate and does not replace source or freshness evidence.
         </p>
       </ShellCard>
 
@@ -2356,6 +2494,7 @@ function ExploreMarkets({
               const detail = detailEnvelope?.data;
               const opportunityScore = regionOpportunityScore(region.region_id, searchMap, regionDetails);
               const careerState = entryLevelSignalState(detail);
+              const { coverage } = coverageForRegion(region, searchItem, detail);
               return (
                 <button
                   className="market-card"
@@ -2365,12 +2504,14 @@ function ExploreMarkets({
                 >
                   <div className="market-card-topline">
                     <span>{prettyKey(region.region_type)}</span>
+                    <CoverageBadge coverage={coverage} />
                     <QualityBadgeRow envelope={detailEnvelope} source={searchItem?.freshness} />
                   </div>
                   <strong>{region.display_name}</strong>
                   <small>
                     {region.region_id} · {region.labor_market_group ?? "unknown labor market"}
                   </small>
+                  <CoverageInlineNote coverage={coverage} />
                   <div className="market-card-metrics">
                     <ScoreCard compact label="Opportunity" value={opportunityScore} />
                     <div className="stat-card">
@@ -2401,6 +2542,8 @@ function ExploreMarkets({
       <div className="quick-region-grid">
         {filteredRegions.slice(0, 2).map((region) => {
           const detail = regionDetails[region.region_id]?.data;
+          const searchItem = searchMap.get(region.region_id);
+          const { coverage } = coverageForRegion(region, searchItem, detail);
           return detail ? (
             <button
               className="quick-region-card"
@@ -2411,6 +2554,7 @@ function ExploreMarkets({
               }}
             >
               <span>{detail.region_type}</span>
+              <CoverageBadge coverage={coverage} />
               <strong>{detail.display_name}</strong>
               <div className="quick-score-row">
                 <ScoreCard compact label="Total score" value={detail.scores?.raw_total_score} />
@@ -2555,7 +2699,10 @@ function RegionExplorer({
                   as unknown rather than converted to zero.
                 </p>
               </div>
-              <MetadataPanel envelope={regionState.envelope} source={source} />
+              <div className="detail-side-panels">
+                <CoveragePanel coverage={region.coverage} sectorCoverage={region.sector_coverage} />
+                <MetadataPanel envelope={regionState.envelope} source={source} />
+              </div>
             </div>
             <StatGrid values={region.summary ?? {}} />
           </ShellCard>
@@ -2593,7 +2740,7 @@ function RegionExplorer({
           </ShellCard>
 
           <div className="split-grid">
-            <ShellCard title="Top companies present" eyebrow="Presence facts">
+            <ShellCard title="Companies present" eyebrow="Presence facts">
               <p className="meta-copy">
                 Presence means the backend has a company-region presence record. It does not
                 imply current hiring.
@@ -2810,10 +2957,11 @@ function CompanyExplorer({
             <MetadataPanel envelope={companyState.envelope} source={source} />
           </ShellCard>
 
-          <ShellCard title="Strongest observed region signals" eyebrow="Derived from visible geography rows">
+          <ShellCard title="Observed region signals" eyebrow="Derived from visible geography rows">
             <p className="meta-copy">
               This section counts distinct observed signals: presence, hiring activity, and
               entry-level access. It is not a comprehensive ranking of all possible markets.
+              Coverage labels describe each region's readiness separately from source freshness.
             </p>
             {geographyState.loading ? <LoadingBlock label="Loading geography source summaries" /> : null}
             {strongestRegions.length ? (
@@ -2822,15 +2970,18 @@ function CompanyExplorer({
                   <div className="market-card market-card-static" key={region.regionId}>
                     <div className="market-card-topline">
                       <span>{region.signalCount} observed signal(s)</span>
+                      <CoverageBadge coverage={region.coverage} />
                       {region.freshness ? <QualityBadgeRow source={region.freshness} /> : null}
                     </div>
                     <strong>{region.regionName}</strong>
                     <small>{region.regionId}</small>
+                    <CoverageInlineNote coverage={region.coverage} />
                     <div className="chip-row">
                       {region.signals.map((signal) => (
                         <span className="badge" key={signal}>{signal}</span>
                       ))}
                     </div>
+                    <SectorCoveragePanel sectorCoverage={region.sectorCoverage} />
                     <div className="market-card-metrics">
                       <ScoreCard compact label="Entry access" value={region.entryScore} />
                       <div className="stat-card">
@@ -2871,12 +3022,15 @@ function CompanyExplorer({
                   {(company.regions_present ?? []).map((region) => (
                     <div className="stack-row" key={region.region_id}>
                       <strong>{region.region_display_name}</strong>
+                      <CoverageBadge coverage={region.coverage} />
+                      <CoverageInlineNote coverage={region.coverage} />
                       <span>
                         {formatValue(region.presence_basis)} · {formatValue(region.presence_confidence)}
                       </span>
                       <span className={qualityBadgeClass(confidenceTone(region.presence_confidence))}>
                         Confidence: {formatValue(region.presence_confidence)}
                       </span>
+                      <SectorCoveragePanel sectorCoverage={region.sector_coverage} />
                     </div>
                   ))}
                 </div>
@@ -2895,6 +3049,8 @@ function CompanyExplorer({
                   {(company.regions_hiring ?? []).map((region) => (
                     <div className="stack-row" key={region.region_id}>
                       <strong>{region.region_display_name}</strong>
+                      <CoverageBadge coverage={region.coverage} />
+                      <CoverageInlineNote coverage={region.coverage} />
                       <span>
                         {formatValue(region.active_posting_count_now)} active ·{" "}
                         {formatValue(region.posting_count_90d)} in 90d
@@ -2902,6 +3058,7 @@ function CompanyExplorer({
                       <span className={region.currently_hiring_flag ? "badge badge-fresh" : "badge badge-unknown"}>
                         Currently hiring: {formatValue(region.currently_hiring_flag)}
                       </span>
+                      <SectorCoveragePanel sectorCoverage={region.sector_coverage} />
                     </div>
                   ))}
                 </div>
@@ -2921,6 +3078,8 @@ function CompanyExplorer({
                 {(company.entry_level_regions ?? []).map((region) => (
                   <div className="entry-card" key={region.region_id}>
                     <h3>{region.region_display_name}</h3>
+                    <CoverageBadge coverage={region.coverage} />
+                    <CoverageInlineNote coverage={region.coverage} />
                     <span className={qualityBadgeClass(confidenceTone(region.entry_level_confidence))}>
                       Confidence: {formatValue(region.entry_level_confidence)}
                     </span>
@@ -2934,6 +3093,7 @@ function CompanyExplorer({
                         confidence: region.entry_level_confidence,
                       }}
                     />
+                    <SectorCoveragePanel sectorCoverage={region.sector_coverage} />
                   </div>
                 ))}
               </div>
@@ -3066,12 +3226,33 @@ function ComparisonView({
         {comparisonState.error ? <ErrorState message={comparisonState.error} /> : null}
         <p className="meta-copy">
           The comparison uses returned score fields only. Missing values are shown as
-          unavailable and are not treated as zero.
+          unavailable and are not treated as zero. Coverage warnings identify markets
+          that should not be treated as confident recommendations.
         </p>
+        <CoverageWarningList warnings={pickEnvelopeWarnings(comparisonState.envelope)} />
       </ShellCard>
 
       {comparison ? (
         <>
+          <ShellCard title="Coverage context" eyebrow="Comparison readiness">
+            <div className="source-compare-grid">
+              <div className="source-compare-card">
+                <strong>{regionALabel}</strong>
+                <CoveragePanel
+                  coverage={comparison.region_a?.coverage}
+                  sectorCoverage={comparison.region_a?.sector_coverage}
+                />
+              </div>
+              <div className="source-compare-card">
+                <strong>{regionBLabel}</strong>
+                <CoveragePanel
+                  coverage={comparison.region_b?.coverage}
+                  sectorCoverage={comparison.region_b?.sector_coverage}
+                />
+              </div>
+            </div>
+          </ShellCard>
+
           <ShellCard title="Objective winner" eyebrow="Overall comparison signal">
             <div className="objective-winner-panel">
               <div>
@@ -3284,6 +3465,8 @@ function PersonalizedDiscovery({
     : [];
   const rankedRegions = discovery?.ranked_regions ?? [];
   const rankedCompanies = discovery?.ranked_companies ?? [];
+  const rankedRegionCoverage = new Map(rankedRegions.map((region) => [region.region_id, region.coverage]));
+  const regionListCoverage = new Map(regions.map((region) => [region.region_id, region.coverage]));
 
   return (
     <div className="view-grid">
@@ -3307,6 +3490,7 @@ function PersonalizedDiscovery({
                   type="checkbox"
                 />
                 <span>{region.display_name}</span>
+                <CoverageBadge coverage={region.coverage} />
               </label>
             ))}
             {unknownSelectedRegions.map((regionId) => (
@@ -3412,6 +3596,7 @@ function PersonalizedDiscovery({
         ) : null}
         {discoveryState.error ? <ErrorState message={discoveryState.error} /> : null}
         <MetadataPanel envelope={discoveryState.envelope} />
+        <CoverageWarningList warnings={pickEnvelopeWarnings(discoveryState.envelope)} />
         {discovery ? (
           <div className="account-inline-actions">
             <button
@@ -3436,7 +3621,7 @@ function PersonalizedDiscovery({
 
       {discovery ? (
         <div className="split-grid">
-          <ShellCard title="Recommended regions" eyebrow="Exploratory market overlay">
+          <ShellCard title="Ranked regions" eyebrow="Exploratory market overlay">
             {rankedRegions.length ? (
               <div className="rank-list">
                 {rankedRegions.map((region, index) => (
@@ -3444,6 +3629,8 @@ function PersonalizedDiscovery({
                     <span className="rank-number">{index + 1}</span>
                     <div>
                       <strong>{region.display_name}</strong>
+                      <CoverageBadge coverage={region.coverage} />
+                      <CoverageInlineNote coverage={region.coverage} />
                       <small>
                         Objective score: {formatValue(region.objective_opportunity_score)}
                       </small>
@@ -3462,43 +3649,48 @@ function PersonalizedDiscovery({
               </div>
             ) : (
               <EmptyState
-                title="No recommended regions"
-                body="The personalization response returned no region recommendations for this request."
+                title="No ranked regions"
+                body="The personalization response returned no ranked region rows for this request."
               />
             )}
           </ShellCard>
 
-          <ShellCard title="Recommended company-region pairs" eyebrow="Preference fit components">
+          <ShellCard title="Ranked company-region pairs" eyebrow="Preference fit components">
             {rankedCompanies.length ? (
               <div className="rank-list">
-                {rankedCompanies.map((company, index) => (
-                  <div className="rank-row rank-row-company" key={`${company.company_id}-${company.region_id}`}>
-                    <span className="rank-number">{index + 1}</span>
-                    <div>
-                      <strong>{company.company_name}</strong>
-                      <small>{company.region_display_name}</small>
-                      <div className="chip-row">
-                        <QualityBadgeRow source={sourceForRegion(company.region_id, sourceStates)} />
+                {rankedCompanies.map((company, index) => {
+                  const coverage = rankedRegionCoverage.get(company.region_id) ?? regionListCoverage.get(company.region_id);
+                  return (
+                    <div className="rank-row rank-row-company" key={`${company.company_id}-${company.region_id}`}>
+                      <span className="rank-number">{index + 1}</span>
+                      <div>
+                        <strong>{company.company_name}</strong>
+                        <CoverageBadge coverage={coverage} />
+                        <CoverageInlineNote coverage={coverage} />
+                        <small>{company.region_display_name}</small>
+                        <div className="chip-row">
+                          <QualityBadgeRow source={sourceForRegion(company.region_id, sourceStates)} />
+                        </div>
+                        <ul className="notes-list recommendation-notes">
+                          {recommendationNotes(company.match_notes).map((note) => (
+                            <li key={note}>{prettyKey(note)}</li>
+                          ))}
+                        </ul>
                       </div>
-                      <ul className="notes-list recommendation-notes">
-                        {recommendationNotes(company.match_notes).map((note) => (
-                          <li key={note}>{prettyKey(note)}</li>
+                      <div className="fit-grid">
+                        <ScoreCard compact label="Personal" value={company.personal_company_score} />
+                        {preferenceInfluencesForCompany(company).map((item) => (
+                          <ScoreCard compact key={item.label} label={item.label} value={item.value} />
                         ))}
-                      </ul>
+                      </div>
                     </div>
-                    <div className="fit-grid">
-                      <ScoreCard compact label="Personal" value={company.personal_company_score} />
-                      {preferenceInfluencesForCompany(company).map((item) => (
-                        <ScoreCard compact key={item.label} label={item.label} value={item.value} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <EmptyState
-                title="No recommended companies"
-                body="The personalization response returned no company-region recommendations for this request."
+                title="No ranked companies"
+                body="The personalization response returned no ranked company-region rows for this request."
               />
             )}
           </ShellCard>

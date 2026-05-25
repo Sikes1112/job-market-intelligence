@@ -69,12 +69,18 @@ def test_target_regions_are_represented_as_unpublished_candidates(
         ("nyc", "NYC"),
         ("seattle", "Seattle"),
         ("austin", "Austin"),
-        ("dc_nova", "DC/NoVA"),
-        ("boston", "Boston"),
-        ("sf", "SF"),
+        ("dc_nova", "DC / NoVA"),
         ("atlanta", "Atlanta"),
         ("chicago", "Chicago"),
-        ("la", "LA"),
+        ("los_angeles", "Los Angeles"),
+        ("raleigh_durham", "Raleigh-Durham"),
+        ("denver_boulder", "Denver / Boulder"),
+        ("boston", "Boston"),
+        ("sf_bay_area", "SF Bay Area"),
+        ("dallas", "Dallas"),
+        ("miami", "Miami"),
+        ("pittsburgh", "Pittsburgh"),
+        ("minneapolis", "Minneapolis"),
     ]
     assert {row.region_key for row in rows} == {
         key for key, _label in TARGET_REGION_EXPANSION_PLAN

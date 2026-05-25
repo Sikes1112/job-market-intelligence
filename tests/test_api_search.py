@@ -254,9 +254,22 @@ def test_regions_search_returns_stable_schema(api_client, session: Session) -> N
         "parent_region_id",
         "labor_market_group",
         "opportunity_score",
+        "coverage",
+        "sector_coverage",
         "freshness",
         "has_real_data",
     }
+    assert row["coverage"]["heuristic"] is True
+    assert row["coverage"]["tier"] in {"tier_1", "tier_2", "tier_3", "tier_4"}
+    assert set(row["coverage"]["components"]) == {
+        "company_coverage",
+        "hiring_coverage",
+        "entry_level_coverage",
+        "freshness",
+        "source_diversity",
+        "confidence",
+    }
+    assert row["sector_coverage"] == {}
     assert set(row["freshness"]) == {
         "freshness_status",
         "data_basis",
@@ -338,6 +351,19 @@ def test_regions_search_filters_real_data_and_freshness(
     assert [r["region_id"] for r in real["data"]["regions"]] == ["greater_boston"]
     assert [r["region_id"] for r in fresh["data"]["regions"]] == ["greater_boston"]
     assert [r["region_id"] for r in demo["data"]["regions"]] == ["greater_sf"]
+
+
+def test_regions_search_distinguishes_placeholder_coverage(
+    api_client, session: Session
+) -> None:
+    _seed_region_search_fixture(session)
+
+    body = api_client.get("/regions/search", params={"query": "tri"}).json()
+    [row] = body["data"]["regions"]
+
+    assert row["region_id"] == "tri_state"
+    assert row["coverage"]["tier"] == "tier_4"
+    assert row["coverage"]["should_rank_as_confident_recommendation"] is False
 
 
 def test_regions_search_does_not_label_seeded_demo_as_real_imported(
@@ -455,12 +481,14 @@ def test_companies_search_returns_stable_schema(api_client, session: Session) ->
         "industry",
         "role_families",
         "matched_region_ids",
+        "matched_region_coverage",
         "current_hiring",
         "has_entry_level_access",
         "presence_status",
         "freshness",
         "has_real_data",
     }
+    assert isinstance(row["matched_region_coverage"], dict)
     assert set(row["freshness"]) == {
         "freshness_status",
         "data_basis",
@@ -572,6 +600,8 @@ def test_companies_search_includes_freshness_and_real_data_metadata(
     assert row["freshness"]["freshness_status"] == "fresh"
     assert row["freshness"]["source_count"] == 1
     assert row["has_real_data"] is True
+    assert "greater_boston" in row["matched_region_coverage"]
+    assert row["matched_region_coverage"]["greater_boston"]["heuristic"] is True
 
 
 def test_companies_search_does_not_derive_from_region_output_metadata(
@@ -626,6 +656,8 @@ def test_company_geography_returns_canonical_regions_and_freshness(
         "presence_status",
         "current_hiring",
         "has_entry_level_access",
+        "coverage",
+        "sector_coverage",
         "freshness",
         "has_real_data",
     }
@@ -634,6 +666,9 @@ def test_company_geography_returns_canonical_regions_and_freshness(
     assert row["presence_status"] == "present"
     assert row["current_hiring"] is True
     assert row["has_entry_level_access"] is True
+    assert row["coverage"]["heuristic"] is True
+    assert row["coverage"]["tier"] in {"tier_1", "tier_2", "tier_3", "tier_4"}
+    assert row["sector_coverage"] == {}
     assert row["freshness"]["data_basis"] == "real_imported"
     assert row["freshness"]["freshness_status"] == "fresh"
     assert row["freshness"]["source_count"] == 1

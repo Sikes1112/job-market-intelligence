@@ -20,6 +20,7 @@ from typing import NamedTuple
 
 from backend.companies.models import Company
 from backend.entry_level.models import CompanyRegionEntryLevel
+from backend.geography.market_coverage import build_region_coverage_metadata
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
 from backend.orchestration.jobs.errors import JobWarning, WarningSeverity
@@ -270,6 +271,17 @@ def build_region_output(
     else:
         outcome = BuildOutcome.FRESH
 
+    coverage = build_region_coverage_metadata(
+        present_company_count=len(companies),
+        presence_record_count=len(presence_list),
+        hiring_record_count=len(hiring_list),
+        entry_level_record_count=len(entry_level_list),
+        has_region_score=region_market_score is not None,
+        freshness_expires_at_known=freshness_expires_at is not None,
+        freshness_is_stale=is_stale,
+        source_evidence_loaded=False,
+    )
+
     source_versions = region_source_version_bundle(
         region=region,
         region_market_score=region_market_score,
@@ -285,6 +297,8 @@ def build_region_output(
         region_type=region.region_type,
         parent_region_id=region.parent_region_id,
         labor_market_group=region.labor_market_group,
+        coverage=coverage,
+        sector_coverage={},
         summary=summary,
         scores=scores,
         top_companies_present=top_companies_present,

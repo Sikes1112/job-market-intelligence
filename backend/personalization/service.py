@@ -19,12 +19,19 @@ Architectural rules pinned by the layer-isolation test:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.companies.models import Company
+from backend.entry_level.models import CompanyRegionEntryLevel
+from backend.geography.market_coverage import (
+    CoverageMetadataPayload,
+    CoverageTier,
+    build_region_coverage_metadata,
+)
 from backend.geography.repository import RegionRepository
 from backend.hiring.models import CompanyRegionHiring
 from backend.personalization.controls import (
@@ -121,8 +128,18 @@ class PersonalizationService:
                 region.region_id
             )
             hiring_rows = self._score_repo.list_hiring_for_region(region.region_id)
+            entry_level_rows = self._score_repo.list_entry_level_for_region(
+                region.region_id
+            )
             score_row = self._score_repo.get_score_by_region(region.region_id)
             hiring_index = _hiring_by_region_company(hiring_rows)
+            coverage = _coverage_for_region(
+                present_company_count=len(present_companies),
+                presence_record_count=len(present_companies),
+                hiring_rows=hiring_rows,
+                entry_level_rows=entry_level_rows,
+                has_region_score=score_row is not None,
+            )
 
             if not present_companies:
                 warnings.append(
@@ -223,12 +240,27 @@ class PersonalizationService:
                     )
                 )
                 region_match_notes.append("region_score_missing")
+            if coverage.tier in {CoverageTier.TIER_3, CoverageTier.TIER_4}:
+                warnings.append(
+                    _warning(
+                        "region_coverage_not_confident",
+                        message=(
+                            f"Region {region.region_id!r} is {coverage.tier.value}; "
+                            "personalized ranking should not be treated as a "
+                            "confident recommendation."
+                        ),
+                        scope_type="region",
+                        scope_ref=region.region_id,
+                    )
+                )
+                region_match_notes.append("region_coverage_not_confident")
             region_entries.append(
                 PersonalizedRegionEntry(
                     region_id=region.region_id,
                     display_name=region.display_name,
                     personal_market_score=market_score,
                     objective_opportunity_score=objective,
+                    coverage=coverage,
                     match_notes=region_match_notes,
                 )
             )
@@ -274,6 +306,16 @@ class PersonalizationService:
                 region.region_id
             )
             hiring_rows = self._score_repo.list_hiring_for_region(region.region_id)
+            entry_level_rows = self._score_repo.list_entry_level_for_region(
+                region.region_id
+            )
+            coverage = _coverage_for_region(
+                present_company_count=len(present_companies),
+                presence_record_count=len(present_companies),
+                hiring_rows=hiring_rows,
+                entry_level_rows=entry_level_rows,
+                has_region_score=score_row is not None,
+            )
 
             components: dict[ScoringWeightKey, float | None] = {
                 "entry_level_access": (
@@ -343,6 +385,7 @@ class PersonalizationService:
                             else None
                         ),
                     ),
+                    coverage=coverage,
                     personalized_overlay_score=overlay_score,
                     components={
                         key: ScoringPreviewComponent(
@@ -401,6 +444,45 @@ def _average_known(values: list[float | None]) -> float | None:
     if not known:
         return None
     return max(0.0, min(1.0, sum(known) / len(known)))
+
+
+def _coverage_for_region(
+    *,
+    present_company_count: int,
+    presence_record_count: int,
+    hiring_rows: list[CompanyRegionHiring],
+    entry_level_rows: list[CompanyRegionEntryLevel],
+    has_region_score: bool,
+) -> CoverageMetadataPayload:
+    freshness_expires_at = _min_freshness_expires_at(
+        [row.freshness_expires_at for row in hiring_rows]
+        + [row.freshness_expires_at for row in entry_level_rows]
+    )
+    is_stale = (
+        freshness_expires_at is not None
+        and _ensure_aware(freshness_expires_at) <= datetime.now(UTC)
+    )
+    return build_region_coverage_metadata(
+        present_company_count=present_company_count,
+        presence_record_count=presence_record_count,
+        hiring_record_count=len(hiring_rows),
+        entry_level_record_count=len(entry_level_rows),
+        has_region_score=has_region_score,
+        freshness_expires_at_known=freshness_expires_at is not None,
+        freshness_is_stale=is_stale,
+        source_evidence_loaded=False,
+    )
+
+
+def _min_freshness_expires_at(values: list[datetime | None]) -> datetime | None:
+    non_null = [_ensure_aware(value) for value in values if value is not None]
+    return min(non_null) if non_null else None
+
+
+def _ensure_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 def _region_industry_fit(

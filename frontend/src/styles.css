@@ -625,6 +625,12 @@ legend {
   justify-content: start;
 }
 
+.detail-side-panels {
+  display: grid;
+  gap: 0.75rem;
+  min-width: min(420px, 100%);
+}
+
 .health-card p,
 .meta-copy {
   color: var(--muted);
@@ -662,9 +668,9 @@ legend {
 }
 
 .region-chip span,
-.quick-region-card span,
+.quick-region-card span:not(.badge),
 .company-row small,
-.stack-row span,
+.stack-row > span:not(.badge),
 .rank-row small {
   color: var(--muted);
   display: block;
@@ -684,7 +690,7 @@ legend {
   padding: 1.25rem;
 }
 
-.quick-region-card span {
+.quick-region-card span:not(.badge) {
   color: rgb(255 255 255 / 70%);
   text-transform: capitalize;
 }
@@ -746,7 +752,9 @@ legend {
 .error-state,
 .notice-state,
 .loading-block,
-.metadata-panel {
+.metadata-panel,
+.coverage-panel,
+.sector-coverage-panel {
   background: var(--field);
   border: 1px solid var(--line);
   border-radius: 1rem;
@@ -929,6 +937,10 @@ legend {
   grid-column: 1 / -1;
 }
 
+.preview-row > .coverage-panel {
+  grid-column: 1 / -1;
+}
+
 .watchlist-group-header {
   align-items: center;
   display: flex;
@@ -1036,6 +1048,97 @@ legend {
   min-width: min(360px, 100%);
 }
 
+.coverage-panel {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.coverage-score {
+  color: var(--green);
+  font-size: 0.9rem;
+  font-weight: 900;
+  margin: 0;
+}
+
+.coverage-note {
+  color: #70401f;
+}
+
+.coverage-component-grid {
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.coverage-component-row {
+  align-items: center;
+  background: rgb(255 253 247 / 70%);
+  border: 1px solid rgb(29 40 34 / 8%);
+  border-radius: 0.75rem;
+  display: flex;
+  gap: 0.55rem;
+  justify-content: space-between;
+  padding: 0.55rem 0.65rem;
+}
+
+.coverage-component-row span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.coverage-component-row strong {
+  color: var(--green);
+}
+
+.coverage-notes {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.82rem;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.coverage-section-heading {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.coverage-section-heading small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.sector-coverage-panel {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.sector-coverage-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.sector-coverage-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: space-between;
+}
+
+.sector-coverage-row > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: capitalize;
+}
+
+.coverage-warning-list {
+  margin-top: 0.9rem;
+}
+
 .metadata-row-secondary {
   opacity: 0.9;
 }
@@ -1116,7 +1219,7 @@ legend {
   justify-content: start;
 }
 
-.market-card-topline > span,
+.market-card-topline > span:not(.badge),
 .market-card small {
   color: var(--muted);
   font-size: 0.82rem;

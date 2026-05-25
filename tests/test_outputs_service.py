@@ -215,6 +215,9 @@ def test_build_region_happy_path_uses_stored_score_values_exactly(session: Sessi
     assert result.payload.region.scores.objective_opportunity_score == 0.74
     assert result.payload.region.scores.early_career_accessibility_score == 0.79
     assert result.payload.region.scores.score_ruleset_version == "marketscore_v1"
+    assert result.payload.region.coverage.heuristic is True
+    assert result.payload.region.coverage.tier.value in {"tier_2", "tier_3"}
+    assert result.payload.region.sector_coverage == {}
     # Summary aggregates reflect seeded data.
     assert result.payload.region.summary.present_company_count == 1
     assert result.payload.region.summary.major_tech_count == 1
@@ -405,6 +408,10 @@ def test_build_company_happy_path(session: Session) -> None:
         "greater_boston",
         "greater_sf",
     }
+    assert all(
+        entry.coverage.heuristic for entry in result.payload.company.regions_present
+    )
+    assert all(entry.sector_coverage == {} for entry in result.payload.company.regions_present)
     assert {r.region_id for r in result.payload.company.regions_hiring} == {
         "greater_boston",
     }
@@ -502,6 +509,10 @@ def test_build_comparison_category_winners_use_stored_scores_only(
     winners = result.payload.comparison.category_winners
     assert winners["objective_opportunity_score"] == "greater_boston"
     assert winners["early_career_accessibility_score"] == "greater_boston"
+    assert result.payload.comparison.region_a.coverage.heuristic is True
+    assert result.payload.comparison.region_b.coverage.heuristic is True
+    codes = [w.warning_code for w in result.payload.metadata.warnings]
+    assert "region_coverage_not_confident" in codes
 
 
 def test_build_comparison_handles_ties_with_none(session: Session) -> None:

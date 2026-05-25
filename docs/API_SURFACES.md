@@ -169,6 +169,8 @@ request. The response labels `canonical_default_scores` separately from
 `personalized_overlay_score`, includes component weights/evidence, and surfaces
 missing structured inputs as warnings. It does not create output metadata,
 recommendation snapshots, canonical scores, source records, or ingestion rows.
+Layer 12 Run 2 includes heuristic region `coverage` on each preview region so
+personalized scoring previews do not hide watchlist or placeholder markets.
 
 ### `POST /me/saved-market-artifacts`
 
@@ -455,9 +457,13 @@ UI batch rather than broadening this API-focused review foundation.
 
 ## Region Expansion Workflow Contract
 
-Layer 11B adds backend workflow metadata for planned region expansion across
-NYC, Seattle, Austin, DC/NoVA, Boston, SF, Atlanta, Chicago, and LA. The
-workflow states are `candidate`, `intake_started`, `normalized`,
+Layer 11B adds backend workflow metadata for planned region expansion. Layer 12
+derives the target candidate plan from the canonical priority market registry in
+`backend/geography/market_coverage.py`: NYC, Seattle, Austin, DC / NoVA,
+Atlanta, Chicago, Los Angeles, Raleigh-Durham, Denver / Boulder, Boston, SF Bay
+Area, Dallas, Miami, Pittsburgh, and Minneapolis.
+
+The workflow states are `candidate`, `intake_started`, `normalized`,
 `provenance_attached`, `review_ready`, `approved`, `published`, and
 `refresh_enabled`.
 
@@ -469,7 +475,49 @@ provenance, admin review, and refresh/output contracts; they do not create
 canonical regions, run ingestion, scrape sources, publish outputs, or bypass
 admin/provenance/freshness controls.
 
-No public or frontend route is exposed for this workflow in Batch 11B.
+Layer 12 also defines backend-only coverage tier, sector coverage, and
+heuristic coverage-quality metadata. These structures do not expose a broad API
+surface in Run 1 and must not be interpreted as a claim that every priority
+market is fully covered.
+
+No public or frontend route is exposed for this workflow in Batch 11B or Layer
+12 Run 1.
+
+Layer 12 Run 2 exposes coverage metadata additively on backend read models where
+region intelligence appears. The object shape is:
+
+```json
+{
+  "coverage": {
+    "tier": "tier_2",
+    "label": "Tier 2 - partial but useful market",
+    "quality_score": 0.58,
+    "components": {
+      "company_coverage": 0.72,
+      "hiring_coverage": 0.58,
+      "entry_level_coverage": 0.58,
+      "freshness": 0.8,
+      "source_diversity": 0.35,
+      "confidence": 0.58
+    },
+    "notes": ["Coverage is heuristic and source evidence may be incomplete."],
+    "heuristic": true,
+    "safe_for_confident_market_comparison": false,
+    "should_rank_as_confident_recommendation": false
+  },
+  "sector_coverage": {}
+}
+```
+
+Coverage scores are bounded heuristic completeness indicators in `[0, 1]`.
+They do not replace source/provenance/freshness metadata and must not be read as
+objective opportunity scores. Tier 3 and Tier 4 markets are not confident
+recommendation markets. `sector_coverage` is separate from overall region
+coverage and remains empty until sector-specific validation is available.
+
+`GET /metadata/coverage` returns the canonical coverage vocabulary: coverage
+tiers and semantics, sector coverage categories, priority markets, component
+names, and quality score bounds.
 
 ## Layer 11C Product Surface And Explanation
 
@@ -532,11 +580,33 @@ Response `data`:
       "parent_region_id": null,
       "labor_market_group": "boston_labor_market",
       "state": "fresh",
-      "version": 1
+      "version": 1,
+      "coverage": {
+        "tier": "tier_4",
+        "label": "Tier 4 - placeholder only",
+        "quality_score": 0.0,
+        "components": {
+          "company_coverage": 0.0,
+          "hiring_coverage": 0.0,
+          "entry_level_coverage": 0.0,
+          "freshness": 0.0,
+          "source_diversity": 0.0,
+          "confidence": 0.0
+        },
+        "notes": ["No coverage evidence is available on this surface."],
+        "heuristic": true,
+        "safe_for_confident_market_comparison": false,
+        "should_rank_as_confident_recommendation": false
+      },
+      "sector_coverage": {}
     }
   ]
 }
 ```
+
+`coverage` and `sector_coverage` are included per region. Lightweight list
+coverage is computed from already-loaded backend rows and remains heuristic; it
+does not promote identity-only regions into analyzed markets.
 
 ### `GET /regions/{region_id}`
 
@@ -551,6 +621,24 @@ Response `data`:
   "region_type": "greater_region",
   "parent_region_id": null,
   "labor_market_group": "boston_labor_market",
+  "coverage": {
+    "tier": "tier_2",
+    "label": "Tier 2 - partial but useful market",
+    "quality_score": 0.58,
+    "components": {
+      "company_coverage": 0.72,
+      "hiring_coverage": 0.58,
+      "entry_level_coverage": 0.58,
+      "freshness": 0.8,
+      "source_diversity": 0.35,
+      "confidence": 0.58
+    },
+    "notes": ["Coverage is heuristic and source evidence may be incomplete."],
+    "heuristic": true,
+    "safe_for_confident_market_comparison": false,
+    "should_rank_as_confident_recommendation": false
+  },
+  "sector_coverage": {},
   "summary": {
     "eligible_company_count": 6,
     "major_tech_count": 2,
@@ -588,6 +676,9 @@ Response `data`:
   }
 }
 ```
+
+Full region output carries coverage metadata beside the region identity and
+keeps `sector_coverage` separate from the overall region tier.
 
 ### `GET /companies/{company_id}`
 
@@ -642,6 +733,24 @@ Results are ordered deterministically and include `freshness` metadata:
         "source_count": 1,
         "low_confidence_warning": null
       },
+      "coverage": {
+        "tier": "tier_2",
+        "label": "Tier 2 - partial but useful market",
+        "quality_score": 0.58,
+        "components": {
+          "company_coverage": 0.72,
+          "hiring_coverage": 0.58,
+          "entry_level_coverage": 0.58,
+          "freshness": 0.8,
+          "source_diversity": 0.35,
+          "confidence": 0.58
+        },
+        "notes": [],
+        "heuristic": true,
+        "safe_for_confident_market_comparison": false,
+        "should_rank_as_confident_recommendation": false
+      },
+      "sector_coverage": {},
       "has_real_data": true
     }
   ],
@@ -652,17 +761,24 @@ Results are ordered deterministically and include `freshness` metadata:
 `GET /companies/search` supports optional `query`, `sector`, `industry`,
 `role_family`, `region_id`, `current_hiring`, `has_entry_level_access`, and
 `presence_status` filters. Company matches come from canonical company,
-presence, hiring, and entry-level rows, not region-output payload text.
+presence, hiring, and entry-level rows, not region-output payload text. When a
+company result includes matched regions, `matched_region_coverage` maps each
+matched region id to that region's coverage metadata.
 
 `GET /companies/{company_id}/regions` returns canonical region links for a
 company, including `presence_status`, `current_hiring`,
-`has_entry_level_access`, per-row freshness/source metadata, and `count`.
+`has_entry_level_access`, per-row freshness/source metadata, overall region
+`coverage`, distinct `sector_coverage`, and `count`.
 
 `GET /regions/{region_id}/sources` and `GET /companies/{company_id}/sources`
 return source explanations for the subject. Source details are built from
 explicit `FactSourceLink` evidence when present. Missing source evidence is
 represented honestly as an empty `sources` list with `source_count: 0` and
 unknown freshness/source basis.
+
+Source explanation endpoints are not coverage-bearing. They expose provenance
+and freshness evidence only; coverage metadata appears on region/search/output
+read models and must not replace these source summaries.
 
 ### `GET /compare`
 
@@ -681,12 +797,48 @@ Response `data`:
   "region_a": {
     "region_id": "greater_boston",
     "display_name": "Greater Boston",
-    "scores": {}
+    "scores": {},
+    "coverage": {
+      "tier": "tier_2",
+      "label": "Tier 2 - partial but useful market",
+      "quality_score": 0.58,
+      "components": {
+        "company_coverage": 0.72,
+        "hiring_coverage": 0.58,
+        "entry_level_coverage": 0.58,
+        "freshness": 0.8,
+        "source_diversity": 0.0,
+        "confidence": 0.58
+      },
+      "notes": [],
+      "heuristic": true,
+      "safe_for_confident_market_comparison": false,
+      "should_rank_as_confident_recommendation": false
+    },
+    "sector_coverage": {}
   },
   "region_b": {
     "region_id": "greater_sf",
     "display_name": "Greater San Francisco / Silicon Valley",
-    "scores": {}
+    "scores": {},
+    "coverage": {
+      "tier": "tier_4",
+      "label": "Tier 4 - placeholder only",
+      "quality_score": 0.0,
+      "components": {
+        "company_coverage": 0.0,
+        "hiring_coverage": 0.0,
+        "entry_level_coverage": 0.0,
+        "freshness": 0.0,
+        "source_diversity": 0.0,
+        "confidence": 0.0
+      },
+      "notes": ["No coverage evidence is available on this surface."],
+      "heuristic": true,
+      "safe_for_confident_market_comparison": false,
+      "should_rank_as_confident_recommendation": false
+    },
+    "sector_coverage": {}
   },
   "category_winners": {
     "structural_ecosystem_score": "greater_sf",
@@ -697,7 +849,10 @@ Response `data`:
 }
 ```
 
-`category_winners` maps score field name to winning `region_id`. A value of `null` means an honest tie. Categories with missing score values are omitted.
+`category_winners` maps score field name to winning `region_id`. A value of
+`null` means an honest tie. Categories with missing score values are omitted.
+Comparison payload metadata includes a `region_coverage_not_confident` warning
+when either side is Tier 3 or Tier 4.
 
 ### `POST /discover/personalized`
 
@@ -727,6 +882,23 @@ Response `data`:
       "display_name": "Greater Boston",
       "personal_market_score": 0.78,
       "objective_opportunity_score": 0.74,
+      "coverage": {
+        "tier": "tier_2",
+        "label": "Tier 2 - partial but useful market",
+        "quality_score": 0.58,
+        "components": {
+          "company_coverage": 0.72,
+          "hiring_coverage": 0.58,
+          "entry_level_coverage": 0.58,
+          "freshness": 0.8,
+          "source_diversity": 0.0,
+          "confidence": 0.58
+        },
+        "notes": [],
+        "heuristic": true,
+        "safe_for_confident_market_comparison": false,
+        "should_rank_as_confident_recommendation": false
+      },
       "match_notes": []
     }
   ],
@@ -746,6 +918,10 @@ Response `data`:
   ]
 }
 ```
+
+Personalized discovery keeps ranking behavior request-scoped and additive, but
+Tier 3 and Tier 4 ranked regions receive a `region_coverage_not_confident`
+warning and should not be treated as confident recommendations.
 
 ## Deferred Endpoints
 

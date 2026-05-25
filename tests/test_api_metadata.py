@@ -196,3 +196,55 @@ def test_response_model_is_serializable_and_stable() -> None:
     assert dumped["data_basis"] == "real_imported"
     assert dumped["last_collected_at"] == "2026-05-21T12:00:00Z"
     json.dumps(dumped)
+
+
+def test_coverage_metadata_route_exposes_canonical_vocabulary(api_client) -> None:
+    response = api_client.get("/metadata/coverage")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    data = body["data"]
+    assert data["heuristic"] is True
+    assert data["quality_score_bounds"] == {"min": 0.0, "max": 1.0}
+    assert data["score_components"] == [
+        "company_coverage",
+        "hiring_coverage",
+        "entry_level_coverage",
+        "freshness",
+        "source_diversity",
+        "confidence",
+    ]
+    assert [tier["tier"] for tier in data["coverage_tiers"]] == [
+        "tier_1",
+        "tier_2",
+        "tier_3",
+        "tier_4",
+    ]
+    assert {
+        tier["tier"]: tier["should_rank_as_confident_recommendation"]
+        for tier in data["coverage_tiers"]
+    } == {
+        "tier_1": True,
+        "tier_2": False,
+        "tier_3": False,
+        "tier_4": False,
+    }
+    assert {item["sector"] for item in data["sector_coverage_categories"]} == {
+        "ai",
+        "cloud",
+        "cybersecurity",
+        "fintech",
+        "healthtech",
+        "edtech",
+        "enterprise_saas",
+        "public_sector_tech",
+        "defense_tech",
+        "consumer_tech",
+    }
+    assert [market["display_name"] for market in data["priority_markets"]][:4] == [
+        "NYC",
+        "Seattle",
+        "Austin",
+        "DC / NoVA",
+    ]

@@ -11,6 +11,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.geography.market_coverage import (
+    CoverageMetadataPayload,
+    placeholder_coverage_metadata,
+)
 from backend.personalization.controls import ScoringWeightKey, ScoringWeightsInput
 from backend.personalization.types import CareerStage, PreferenceLevel
 
@@ -54,6 +58,9 @@ class PersonalizedRegionEntry(BaseModel):
     display_name: str
     personal_market_score: float
     objective_opportunity_score: float | None = None
+    coverage: CoverageMetadataPayload = Field(
+        default_factory=placeholder_coverage_metadata
+    )
     match_notes: list[str] = Field(default_factory=list)
 
 
@@ -156,6 +163,9 @@ class ScoringPreviewRegion(BaseModel):
     region_id: str
     display_name: str
     canonical_default_scores: CanonicalDefaultScoreSummary
+    coverage: CoverageMetadataPayload = Field(
+        default_factory=placeholder_coverage_metadata
+    )
     personalized_overlay_score: float | None = None
     components: dict[ScoringWeightKey, ScoringPreviewComponent]
     omitted_components: list[ScoringWeightKey] = Field(default_factory=list)

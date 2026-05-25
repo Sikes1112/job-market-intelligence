@@ -1,5 +1,9 @@
 import type {
   ApiEnvelope,
+  CoverageComponents,
+  CoverageMetadata,
+  CoverageScoreComponent,
+  CoverageTier,
   DataBasis,
   FreshnessSourceSummary,
   FreshnessStatus,
@@ -22,6 +26,16 @@ const FRESHNESS_STATUSES: FreshnessStatus[] = [
   "seeded_demo",
 ];
 const DATA_BASES: DataBasis[] = ["seeded_demo", "real_imported", "mixed", "unknown"];
+const COVERAGE_TIERS: CoverageTier[] = ["tier_1", "tier_2", "tier_3", "tier_4"];
+const COVERAGE_COMPONENT_LABELS: Record<CoverageScoreComponent, string> = {
+  company_coverage: "Company coverage",
+  hiring_coverage: "Hiring coverage",
+  entry_level_coverage: "Entry-level coverage",
+  freshness: "Freshness",
+  source_diversity: "Source diversity",
+  confidence: "Confidence",
+};
+const COVERAGE_COMPONENT_ORDER = Object.keys(COVERAGE_COMPONENT_LABELS) as CoverageScoreComponent[];
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -33,6 +47,10 @@ export function isFreshnessStatus(value: unknown): value is FreshnessStatus {
 
 export function isDataBasis(value: unknown): value is DataBasis {
   return typeof value === "string" && DATA_BASES.includes(value as DataBasis);
+}
+
+export function isCoverageTier(value: unknown): value is CoverageTier {
+  return typeof value === "string" && COVERAGE_TIERS.includes(value as CoverageTier);
 }
 
 export function isSeedDemoFreshness(value: string | null | undefined): boolean {
@@ -87,6 +105,92 @@ export function qualityTone(statusOrBasis: FreshnessStatus | DataBasis): Quality
   if (statusOrBasis === "seeded_demo") return "demo";
   if (statusOrBasis === "stale" || statusOrBasis === "partial" || statusOrBasis === "mixed") return "warning";
   return "unknown";
+}
+
+export function coverageTierLabel(tier: CoverageTier | string | null | undefined): string {
+  if (tier === "tier_1") return "Fully covered";
+  if (tier === "tier_2") return "Partial but useful";
+  if (tier === "tier_3") return "Watchlist / emerging";
+  if (tier === "tier_4") return "Placeholder only";
+  return "Coverage unavailable";
+}
+
+export function coverageDisplayLabel(coverage?: CoverageMetadata | null): string {
+  return isCoverageTier(coverage?.tier)
+    ? `Coverage: ${coverageTierLabel(coverage.tier)}`
+    : "Coverage unavailable";
+}
+
+export function coverageDescription(coverage?: CoverageMetadata | null): string {
+  if (coverage?.tier === "tier_1") {
+    return "This market has enough validated data for confident comparison.";
+  }
+  if (coverage?.tier === "tier_2") {
+    return "This market is directionally useful, but some signal categories are incomplete.";
+  }
+  if (coverage?.tier === "tier_3") {
+    return "This market is tracked for future expansion, but current data is not deep enough for confident recommendations.";
+  }
+  if (coverage?.tier === "tier_4") {
+    return "This market exists as a placeholder and should not be treated as analyzed.";
+  }
+  return "Coverage metadata is unavailable for this response.";
+}
+
+export function coverageTone(coverage?: CoverageMetadata | null): QualityTone {
+  if (coverage?.tier === "tier_1") return "real";
+  if (coverage?.tier === "tier_2") return "warning";
+  if (coverage?.tier === "tier_3") return "warning";
+  if (coverage?.tier === "tier_4") return "error";
+  return "unknown";
+}
+
+export function coverageIsWeak(coverage?: CoverageMetadata | null): boolean {
+  return coverage?.tier === "tier_3" || coverage?.tier === "tier_4";
+}
+
+function normalizeCoverageScore(value: number): number {
+  const clamped = Math.max(0, Math.min(1, value > 1 ? value / 100 : value));
+  return Math.round(clamped * 100);
+}
+
+export function coverageScoreText(coverage?: CoverageMetadata | null): string | null {
+  if (typeof coverage?.quality_score !== "number" || Number.isNaN(coverage.quality_score)) {
+    return null;
+  }
+  const score = normalizeCoverageScore(coverage.quality_score);
+  return coverage.heuristic
+    ? `Heuristic coverage score: ${score}%`
+    : `Coverage estimate: ${score}%`;
+}
+
+export function coverageComponentEntries(
+  coverage?: CoverageMetadata | null,
+): Array<{ key: string; label: string; value: number }> {
+  const components = coverage?.components;
+  if (!components || !isRecord(components)) return [];
+  const entries: Array<{ key: string; label: string; value: number }> = [];
+  const seen = new Set<string>();
+
+  function addEntry(key: string, value: unknown, label: string) {
+    if (typeof value !== "number" || Number.isNaN(value)) return;
+    seen.add(key);
+    entries.push({ key, label, value: normalizeCoverageScore(value) });
+  }
+
+  for (const key of COVERAGE_COMPONENT_ORDER) {
+    addEntry(key, (components as CoverageComponents)[key], COVERAGE_COMPONENT_LABELS[key]);
+  }
+  for (const [key, value] of Object.entries(components)) {
+    if (!seen.has(key)) addEntry(key, value, prettyCoverageComponentKey(key));
+  }
+  return entries;
+}
+
+function prettyCoverageComponentKey(value: string): string {
+  return value
+    .replaceAll("_", " ")
+    .replace(/^\w/, (letter) => letter.toUpperCase());
 }
 
 export function qualityBadges(

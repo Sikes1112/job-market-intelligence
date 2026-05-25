@@ -29,6 +29,10 @@ from sqlalchemy.orm import Session
 from backend.companies.repository import CompanyRepository
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.entry_level.repository import EntryLevelRepository
+from backend.geography.market_coverage import (
+    CoverageMetadataPayload,
+    build_region_coverage_metadata,
+)
 from backend.geography.models import Region
 from backend.geography.repository import RegionRepository
 from backend.hiring.models import CompanyRegionHiring
@@ -237,6 +241,10 @@ class OutputAssemblyService:
         hiring_rows = self._hiring_for_company(company_id)
         entry_level_rows = self._entry_level_for_company(company_id)
         regions = self._regions_for_pairs(presence_rows, hiring_rows, entry_level_rows)
+        coverage_by_region = {
+            region.region_id: self._coverage_for_region(region.region_id)
+            for region in regions
+        }
 
         result = build_company_output(
             company=company,
@@ -244,6 +252,7 @@ class OutputAssemblyService:
             hiring_rows=hiring_rows,
             entry_level_rows=entry_level_rows,
             regions=regions,
+            coverage_by_region=coverage_by_region,
             now=(now or _default_now)(),
         )
         return _AssembledOutput(
@@ -374,6 +383,18 @@ class OutputAssemblyService:
         hiring_b = self._score_repo.list_hiring_for_region(canonical_b)
         entry_a = self._score_repo.list_entry_level_for_region(canonical_a)
         entry_b = self._score_repo.list_entry_level_for_region(canonical_b)
+        coverage_a = self._coverage_for_region(
+            canonical_a,
+            score=score_a,
+            hiring_rows=hiring_a,
+            entry_level_rows=entry_a,
+        )
+        coverage_b = self._coverage_for_region(
+            canonical_b,
+            score=score_b,
+            hiring_rows=hiring_b,
+            entry_level_rows=entry_b,
+        )
         extra_freshness = (
             [h.freshness_expires_at for h in hiring_a]
             + [h.freshness_expires_at for h in hiring_b]
@@ -386,6 +407,8 @@ class OutputAssemblyService:
             region_b=region_b,
             score_a=score_a,
             score_b=score_b,
+            coverage_a=coverage_a,
+            coverage_b=coverage_b,
             extra_freshness_inputs=extra_freshness,
             now=(now or _default_now)(),
         )
@@ -567,6 +590,50 @@ class OutputAssemblyService:
         validate_transition(row.state, target)
         row.state = target.value
 
+    def _coverage_for_region(
+        self,
+        region_id: str,
+        *,
+        score=None,
+        hiring_rows: list[CompanyRegionHiring] | None = None,
+        entry_level_rows: list[CompanyRegionEntryLevel] | None = None,
+    ) -> CoverageMetadataPayload:
+        present_companies = self._score_repo.list_present_companies_for_region(region_id)
+        presence_rows = self._present_pairs_for_region(region_id)
+        if score is None:
+            score = self._score_repo.get_score_by_region(region_id)
+        if hiring_rows is None:
+            hiring_rows = self._score_repo.list_hiring_for_region(region_id)
+        if entry_level_rows is None:
+            entry_level_rows = self._score_repo.list_entry_level_for_region(region_id)
+        freshness_expires_at = _min_freshness_expires_at(
+            [h.freshness_expires_at for h in hiring_rows]
+            + [e.freshness_expires_at for e in entry_level_rows]
+        )
+        now = _default_now()
+        is_stale = (
+            freshness_expires_at is not None and freshness_expires_at <= now
+        )
+        return build_region_coverage_metadata(
+            present_company_count=len(present_companies),
+            presence_record_count=len(presence_rows),
+            hiring_record_count=len(hiring_rows),
+            entry_level_record_count=len(entry_level_rows),
+            has_region_score=score is not None,
+            freshness_expires_at_known=freshness_expires_at is not None,
+            freshness_is_stale=is_stale,
+            source_evidence_loaded=False,
+        )
+
 
 def _default_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _min_freshness_expires_at(values: list[datetime | None]) -> datetime | None:
+    non_null = [
+        value.replace(tzinfo=UTC) if value is not None and value.tzinfo is None else value
+        for value in values
+        if value is not None
+    ]
+    return min(non_null) if non_null else None

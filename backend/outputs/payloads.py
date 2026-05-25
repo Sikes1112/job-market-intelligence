@@ -26,6 +26,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.geography.market_coverage import (
+    CoverageMetadataPayload,
+    SectorCoverageMetadataPayload,
+    placeholder_coverage_metadata,
+)
 from backend.orchestration.jobs.errors import JobWarning
 
 # ---------------------------------------------------------------------------
@@ -137,6 +142,12 @@ class RegionOutputBody(BaseModel):
     region_type: str
     parent_region_id: str | None = None
     labor_market_group: str | None = None
+    coverage: CoverageMetadataPayload = Field(
+        default_factory=placeholder_coverage_metadata
+    )
+    sector_coverage: dict[str, SectorCoverageMetadataPayload] = Field(
+        default_factory=dict
+    )
     summary: RegionSummary
     scores: RegionScoresPayload | None = None
     top_companies_present: list[CompanyEntry] = Field(default_factory=list)
@@ -166,6 +177,12 @@ class CompanyRegionPresenceEntry(BaseModel):
     presence_status: str
     presence_basis: str | None = None
     presence_confidence: str | None = None
+    coverage: CoverageMetadataPayload = Field(
+        default_factory=placeholder_coverage_metadata
+    )
+    sector_coverage: dict[str, SectorCoverageMetadataPayload] = Field(
+        default_factory=dict
+    )
 
 
 class CompanyRegionHiringEntry(BaseModel):
@@ -177,6 +194,12 @@ class CompanyRegionHiringEntry(BaseModel):
     active_posting_count_now: int | None = None
     posting_count_30d: int | None = None
     posting_count_90d: int | None = None
+    coverage: CoverageMetadataPayload = Field(
+        default_factory=placeholder_coverage_metadata
+    )
+    sector_coverage: dict[str, SectorCoverageMetadataPayload] = Field(
+        default_factory=dict
+    )
 
 
 class CompanyRegionEntryLevelEntry(BaseModel):
@@ -190,6 +213,12 @@ class CompanyRegionEntryLevelEntry(BaseModel):
     formal_early_career_program_flag: bool = False
     entry_level_access_score: float | None = None
     entry_level_confidence: str | None = None
+    coverage: CoverageMetadataPayload = Field(
+        default_factory=placeholder_coverage_metadata
+    )
+    sector_coverage: dict[str, SectorCoverageMetadataPayload] = Field(
+        default_factory=dict
+    )
 
 
 class CompanyOutputBody(BaseModel):
@@ -229,6 +258,12 @@ class ComparisonRegionSide(BaseModel):
     region_id: str
     display_name: str
     scores: RegionScoresPayload | None = None
+    coverage: CoverageMetadataPayload = Field(
+        default_factory=placeholder_coverage_metadata
+    )
+    sector_coverage: dict[str, SectorCoverageMetadataPayload] = Field(
+        default_factory=dict
+    )
 
 
 class ComparisonOutputBody(BaseModel):

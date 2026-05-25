@@ -13,6 +13,11 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import NamedTuple
 
+from backend.geography.market_coverage import (
+    CoverageMetadataPayload,
+    CoverageTier,
+    build_region_coverage_metadata,
+)
 from backend.geography.models import Region
 from backend.orchestration.jobs.errors import JobWarning, WarningSeverity
 from backend.outputs.exceptions import InvalidComparisonInput
@@ -115,6 +120,8 @@ def build_comparison_output(
     region_b: Region,
     score_a: RegionMarketScore | None,
     score_b: RegionMarketScore | None,
+    coverage_a: CoverageMetadataPayload | None = None,
+    coverage_b: CoverageMetadataPayload | None = None,
     extra_freshness_inputs: Iterable[datetime | None] = (),
     now: datetime | None = None,
 ) -> ComparisonBuildResult:
@@ -151,17 +158,42 @@ def build_comparison_output(
             )
         )
 
+    coverage_a = coverage_a or build_region_coverage_metadata(
+        has_region_score=score_a is not None,
+        source_evidence_loaded=False,
+    )
+    coverage_b = coverage_b or build_region_coverage_metadata(
+        has_region_score=score_b is not None,
+        source_evidence_loaded=False,
+    )
+    _append_lower_tier_comparison_warning(
+        warnings,
+        subject_id=subject_id,
+        region_id=region_a.region_id,
+        coverage=coverage_a,
+    )
+    _append_lower_tier_comparison_warning(
+        warnings,
+        subject_id=subject_id,
+        region_id=region_b.region_id,
+        coverage=coverage_b,
+    )
+
     body = ComparisonOutputBody(
         comparison_id=subject_id,
         region_a=ComparisonRegionSide(
             region_id=region_a.region_id,
             display_name=region_a.display_name,
             scores=_scores_payload(score_a),
+            coverage=coverage_a,
+            sector_coverage={},
         ),
         region_b=ComparisonRegionSide(
             region_id=region_b.region_id,
             display_name=region_b.display_name,
             scores=_scores_payload(score_b),
+            coverage=coverage_b,
+            sector_coverage={},
         ),
         category_winners=_category_winners(
             score_a, score_b, region_a.region_id, region_b.region_id
@@ -217,4 +249,27 @@ def build_comparison_output(
         source_version_bundle=source_versions,
         freshness_expires_at=freshness_expires_at,
         warnings=tuple(warnings),
+    )
+
+
+def _append_lower_tier_comparison_warning(
+    warnings: list[JobWarning],
+    *,
+    subject_id: str,
+    region_id: str,
+    coverage: CoverageMetadataPayload,
+) -> None:
+    if coverage.tier not in {CoverageTier.TIER_3, CoverageTier.TIER_4}:
+        return
+    warnings.append(
+        JobWarning(
+            warning_code="region_coverage_not_confident",
+            severity=WarningSeverity.MEDIUM,
+            scope_type="comparison",
+            scope_ref=subject_id,
+            message=(
+                f"region {region_id!r} is {coverage.tier.value}; comparison "
+                "results should not be treated as a confident recommendation."
+            ),
+        )
     )

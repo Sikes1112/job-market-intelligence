@@ -66,6 +66,32 @@ exists. Explanation panels call protected deterministic guidance endpoints and
 render only supplied evidence-packet facts, limitations, and missing-data
 flags.
 
+## Market Coverage Disclosure
+
+Layer 12 coverage metadata is rendered as an API-supplied readiness label, not
+as source truth. Region-facing views show:
+
+- `Coverage: Fully covered` for Tier 1 markets with enough validated data for
+  confident comparison.
+- `Coverage: Partial but useful` for Tier 2 markets that are directionally
+  useful but incomplete.
+- `Coverage: Watchlist / emerging` for Tier 3 markets tracked for expansion
+  but not ready for confident recommendations.
+- `Coverage: Placeholder only` for Tier 4 markets that should not be treated as
+  analyzed.
+
+When a numeric coverage score appears, the UI labels it as a heuristic coverage
+score or estimate. The frontend does not infer coverage client-side. It renders
+the backend `coverage` object when present and falls back to "Coverage
+unavailable" for older responses.
+
+Coverage, freshness, and provenance are separate disclosures. Freshness/source
+badges remain visible beside coverage badges, and sector-specific coverage is
+shown under a separate "Sector coverage" section instead of replacing overall
+region coverage. Comparison and personalized discovery surfaces render
+`region_coverage_not_confident` warnings when the backend returns them for Tier
+3 or Tier 4 regions.
+
 ## Checks
 
 ```bash

@@ -5,12 +5,16 @@ Pure assembly. No service imports, no scoring recomputation.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from typing import NamedTuple
 
 from backend.companies.models import Company
 from backend.entry_level.models import CompanyRegionEntryLevel
+from backend.geography.market_coverage import (
+    CoverageMetadataPayload,
+    placeholder_coverage_metadata,
+)
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
 from backend.orchestration.jobs.errors import JobWarning, WarningSeverity
@@ -45,6 +49,7 @@ def build_company_output(
     hiring_rows: Iterable[CompanyRegionHiring],
     entry_level_rows: Iterable[CompanyRegionEntryLevel],
     regions: Iterable[Region],
+    coverage_by_region: Mapping[str, CoverageMetadataPayload] | None = None,
     now: datetime | None = None,
 ) -> CompanyBuildResult:
     if now is None:
@@ -56,6 +61,7 @@ def build_company_output(
     region_list = list(regions)
 
     region_by_id = {r.region_id: r for r in region_list}
+    coverage_by_region = dict(coverage_by_region or {})
     warnings: list[JobWarning] = []
 
     # --- presence section: only present pairs --------------------------
@@ -74,6 +80,8 @@ def build_company_output(
             presence_status=p.presence_status,
             presence_basis=p.presence_basis,
             presence_confidence=p.presence_confidence,
+            coverage=_coverage_for_region(coverage_by_region, p.region_id),
+            sector_coverage={},
         )
         for p in present_pairs
     ]
@@ -92,6 +100,8 @@ def build_company_output(
             active_posting_count_now=h.active_posting_count_now,
             posting_count_30d=h.posting_count_30d,
             posting_count_90d=h.posting_count_90d,
+            coverage=_coverage_for_region(coverage_by_region, h.region_id),
+            sector_coverage={},
         )
         for h in hiring_sorted
     ]
@@ -112,6 +122,8 @@ def build_company_output(
             formal_early_career_program_flag=e.formal_early_career_program_flag,
             entry_level_access_score=e.entry_level_access_score,
             entry_level_confidence=e.entry_level_confidence,
+            coverage=_coverage_for_region(coverage_by_region, e.region_id),
+            sector_coverage={},
         )
         for e in entry_sorted
     ]
@@ -201,4 +213,19 @@ def build_company_output(
         source_version_bundle=source_versions,
         freshness_expires_at=freshness_expires_at,
         warnings=tuple(warnings),
+    )
+
+
+def _coverage_for_region(
+    coverage_by_region: Mapping[str, CoverageMetadataPayload],
+    region_id: str,
+) -> CoverageMetadataPayload:
+    return coverage_by_region.get(
+        region_id,
+        placeholder_coverage_metadata(
+            note=(
+                "Region coverage metadata was not assembled for this company "
+                "output surface."
+            )
+        ),
     )

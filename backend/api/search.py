@@ -19,6 +19,11 @@ from backend.api.metadata import (
 )
 from backend.companies.models import Company
 from backend.entry_level.models import CompanyRegionEntryLevel
+from backend.geography.market_coverage import (
+    CoverageMetadataPayload,
+    SectorCoverageMetadataPayload,
+    build_region_coverage_metadata,
+)
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
 from backend.presence.models import CompanyRegionPresence
@@ -37,6 +42,10 @@ class RegionSearchResult(BaseModel):
     parent_region_id: str | None = None
     labor_market_group: str | None = None
     opportunity_score: float | None = None
+    coverage: CoverageMetadataPayload
+    sector_coverage: dict[str, SectorCoverageMetadataPayload] = Field(
+        default_factory=dict
+    )
     freshness: FreshnessSourceSummary
     has_real_data: bool = False
 
@@ -57,6 +66,9 @@ class CompanySearchResult(BaseModel):
     industry: str | None = None
     role_families: list[str] = Field(default_factory=list)
     matched_region_ids: list[str] = Field(default_factory=list)
+    matched_region_coverage: dict[str, CoverageMetadataPayload] = Field(
+        default_factory=dict
+    )
     current_hiring: bool = False
     has_entry_level_access: bool = False
     presence_status: str | None = None
@@ -79,6 +91,10 @@ class CompanyRegionGeographyResult(BaseModel):
     presence_status: str | None = None
     current_hiring: bool = False
     has_entry_level_access: bool = False
+    coverage: CoverageMetadataPayload
+    sector_coverage: dict[str, SectorCoverageMetadataPayload] = Field(
+        default_factory=dict
+    )
     freshness: FreshnessSourceSummary
     has_real_data: bool = False
 
@@ -179,6 +195,13 @@ def search_regions(
                 *(row.freshness_expires_at for row in entry_rows),
             ),
         )
+        coverage = _coverage_for_region_rows(
+            score=score,
+            presence_rows=presence_rows,
+            hiring_rows=hiring_rows,
+            entry_level_rows=entry_rows,
+            freshness=freshness,
+        )
         has_real = _has_real_data(freshness)
         if has_real_data is not None and has_real is not has_real_data:
             continue
@@ -197,6 +220,8 @@ def search_regions(
                 parent_region_id=region.parent_region_id,
                 labor_market_group=region.labor_market_group,
                 opportunity_score=opportunity_score,
+                coverage=coverage,
+                sector_coverage={},
                 freshness=freshness,
                 has_real_data=has_real,
             )
@@ -221,6 +246,7 @@ def search_companies(
     presence_by_company = _group_by_company(_list_presence(session))
     hiring_by_company = _group_by_company(_list_hiring(session))
     entry_by_company = _group_by_company(_list_entry_level(session))
+    region_coverage = region_coverage_lookup(session)
     links = _ProvenanceIndex(_list_fact_source_links(session))
 
     items: list[CompanySearchResult] = []
@@ -300,6 +326,15 @@ def search_companies(
                     hiring_rows,
                     entry_rows,
                 ),
+                matched_region_coverage={
+                    region_id: region_coverage[region_id]
+                    for region_id in _matched_region_ids(
+                        presence_rows,
+                        hiring_rows,
+                        entry_rows,
+                    )
+                    if region_id in region_coverage
+                },
                 current_hiring=company_current_hiring,
                 has_entry_level_access=company_has_entry_level,
                 presence_status=_presence_status(presence_rows),
@@ -321,6 +356,15 @@ def company_geography(
         return None
 
     regions_by_id = {region.region_id: region for region in _list_regions(session)}
+    scores_by_region = {
+        score.region_id: score
+        for score in session.execute(
+            select(RegionMarketScore).order_by(RegionMarketScore.region_id)
+        ).scalars()
+    }
+    all_presence_by_region = _group_by_region(_list_presence(session))
+    all_hiring_by_region = _group_by_region(_list_hiring(session))
+    all_entry_by_region = _group_by_region(_list_entry_level(session))
     presence_rows = tuple(
         row for row in _list_presence(session) if row.company_id == company.company_id
     )
@@ -338,17 +382,35 @@ def company_geography(
         if region is None:
             continue
 
-        region_presence_rows = _filter_region(presence_rows, region_id=region_id)
-        region_hiring_rows = _filter_region(hiring_rows, region_id=region_id)
-        region_entry_rows = _filter_region(entry_rows, region_id=region_id)
+        company_region_presence_rows = _filter_region(presence_rows, region_id=region_id)
+        company_region_hiring_rows = _filter_region(hiring_rows, region_id=region_id)
+        company_region_entry_rows = _filter_region(entry_rows, region_id=region_id)
         evidence = _company_region_evidence_links(
             links,
+            presence_rows=company_region_presence_rows,
+            hiring_rows=company_region_hiring_rows,
+            entry_level_rows=company_region_entry_rows,
+        )
+        freshness = build_freshness_source_summary(
+            evidence,
+            freshness_expires_at=_aggregate_freshness_expires_at(
+                *(row.freshness_expires_at for row in company_region_hiring_rows),
+                *(row.freshness_expires_at for row in company_region_entry_rows),
+            ),
+        )
+        region_presence_rows = all_presence_by_region.get(region.region_id, ())
+        region_hiring_rows = all_hiring_by_region.get(region.region_id, ())
+        region_entry_rows = all_entry_by_region.get(region.region_id, ())
+        region_evidence = _region_evidence_links(
+            links,
+            region=region,
+            score=scores_by_region.get(region.region_id),
             presence_rows=region_presence_rows,
             hiring_rows=region_hiring_rows,
             entry_level_rows=region_entry_rows,
         )
-        freshness = build_freshness_source_summary(
-            evidence,
+        region_freshness = build_freshness_source_summary(
+            region_evidence,
             freshness_expires_at=_aggregate_freshness_expires_at(
                 *(row.freshness_expires_at for row in region_hiring_rows),
                 *(row.freshness_expires_at for row in region_entry_rows),
@@ -358,11 +420,21 @@ def company_geography(
             CompanyRegionGeographyResult(
                 region_id=region.region_id,
                 region_name=region.display_name,
-                presence_status=_presence_status(region_presence_rows),
-                current_hiring=any(row.currently_hiring_flag for row in region_hiring_rows),
-                has_entry_level_access=any(
-                    _entry_level_access_present(row) for row in region_entry_rows
+                presence_status=_presence_status(company_region_presence_rows),
+                current_hiring=any(
+                    row.currently_hiring_flag for row in company_region_hiring_rows
                 ),
+                has_entry_level_access=any(
+                    _entry_level_access_present(row) for row in company_region_entry_rows
+                ),
+                coverage=_coverage_for_region_rows(
+                    score=scores_by_region.get(region.region_id),
+                    presence_rows=region_presence_rows,
+                    hiring_rows=region_hiring_rows,
+                    entry_level_rows=region_entry_rows,
+                    freshness=region_freshness,
+                ),
+                sector_coverage={},
                 freshness=freshness,
                 has_real_data=_has_real_data(freshness),
             )
@@ -458,6 +530,78 @@ def explain_company_sources(
         freshness=freshness,
         sources=_source_details(evidence),
         warnings=_warnings(freshness),
+    )
+
+
+def region_coverage_lookup(session: Session) -> dict[str, CoverageMetadataPayload]:
+    regions = _list_regions(session)
+    scores_by_region = {
+        score.region_id: score
+        for score in session.execute(
+            select(RegionMarketScore).order_by(RegionMarketScore.region_id)
+        ).scalars()
+    }
+    presence_by_region = _group_by_region(_list_presence(session))
+    hiring_by_region = _group_by_region(_list_hiring(session))
+    entry_by_region = _group_by_region(_list_entry_level(session))
+    links = _ProvenanceIndex(_list_fact_source_links(session))
+    coverage: dict[str, CoverageMetadataPayload] = {}
+    for region in regions:
+        presence_rows = presence_by_region.get(region.region_id, ())
+        hiring_rows = hiring_by_region.get(region.region_id, ())
+        entry_rows = entry_by_region.get(region.region_id, ())
+        score = scores_by_region.get(region.region_id)
+        evidence = _region_evidence_links(
+            links,
+            region=region,
+            score=score,
+            presence_rows=presence_rows,
+            hiring_rows=hiring_rows,
+            entry_level_rows=entry_rows,
+        )
+        freshness = build_freshness_source_summary(
+            evidence,
+            freshness_expires_at=_aggregate_freshness_expires_at(
+                *(row.freshness_expires_at for row in hiring_rows),
+                *(row.freshness_expires_at for row in entry_rows),
+            ),
+        )
+        coverage[region.region_id] = _coverage_for_region_rows(
+            score=score,
+            presence_rows=presence_rows,
+            hiring_rows=hiring_rows,
+            entry_level_rows=entry_rows,
+            freshness=freshness,
+        )
+    return coverage
+
+
+def _coverage_for_region_rows(
+    *,
+    score: RegionMarketScore | None,
+    presence_rows: Iterable[CompanyRegionPresence],
+    hiring_rows: Iterable[CompanyRegionHiring],
+    entry_level_rows: Iterable[CompanyRegionEntryLevel],
+    freshness: FreshnessSourceSummary,
+) -> CoverageMetadataPayload:
+    presence_tuple = tuple(presence_rows)
+    hiring_tuple = tuple(hiring_rows)
+    entry_tuple = tuple(entry_level_rows)
+    return build_region_coverage_metadata(
+        present_company_count=len(
+            {row.company_id for row in presence_tuple if row.presence_status == "present"}
+        ),
+        presence_record_count=len(presence_tuple),
+        hiring_record_count=len(hiring_tuple),
+        entry_level_record_count=len(entry_tuple),
+        has_region_score=score is not None,
+        freshness_expires_at_known=(
+            freshness.freshness_status is ApiFreshnessStatus.FRESH
+        ),
+        freshness_is_stale=freshness.freshness_status is ApiFreshnessStatus.STALE,
+        source_count=freshness.source_count,
+        source_data_basis=freshness.data_basis.value,
+        source_evidence_loaded=True,
     )
 
 

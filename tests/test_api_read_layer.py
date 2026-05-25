@@ -140,6 +140,10 @@ def test_get_regions_returns_lightweight_list(api_client, session) -> None:
     assert body["status"] == "success"
     region_ids = [r["region_id"] for r in body["data"]["regions"]]
     assert set(region_ids) == {"greater_boston", "greater_sf"}
+    for row in body["data"]["regions"]:
+        assert row["coverage"]["tier"] == "tier_4"
+        assert row["coverage"]["heuristic"] is True
+        assert row["sector_coverage"] == {}
     assert body["error"] is None
 
 
@@ -157,6 +161,7 @@ def test_get_regions_does_not_compute_full_outputs(api_client, session) -> None:
     entry = response.json()["data"]["regions"][0]
     assert "scores" not in entry
     assert "top_companies_present" not in entry
+    assert "coverage" in entry
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +182,9 @@ def test_get_region_returns_assembled_payload(api_client, session) -> None:
     assert body["status"] == "success"
     assert body["data"]["region_id"] == "greater_boston"
     assert body["data"]["display_name"] == "Greater Boston"
+    assert body["data"]["coverage"]["heuristic"] is True
+    assert body["data"]["coverage"]["tier"] in {"tier_2", "tier_3"}
+    assert body["data"]["sector_coverage"] == {}
     # Stored Slice 10 score values pass through Slice 11 unchanged.
     assert body["data"]["scores"]["objective_opportunity_score"] == 0.74
     assert body["data"]["scores"]["early_career_accessibility_score"] == 0.79
@@ -284,6 +292,10 @@ def test_get_compare_returns_comparison_payload(api_client, session) -> None:
     assert body["data"]["comparison_id"] == "greater_boston__greater_sf"
     winners = body["data"]["category_winners"]
     assert winners["objective_opportunity_score"] == "greater_boston"
+    assert body["data"]["region_a"]["coverage"]["heuristic"] is True
+    assert body["data"]["region_b"]["coverage"]["heuristic"] is True
+    warning_codes = [w["warning_code"] for w in body["metadata"]["warnings"]]
+    assert "region_coverage_not_confident" in warning_codes
 
 
 def test_get_compare_uses_canonical_subject_id(api_client, session) -> None:

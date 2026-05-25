@@ -81,6 +81,11 @@ def test_discover_endpoint_returns_envelope(api_client, session) -> None:
     assert "ranked_companies" in data
     assert data["ranked_regions"][0]["region_id"] == "greater_boston"
     assert data["ranked_regions"][0]["objective_opportunity_score"] == 0.74
+    assert data["ranked_regions"][0]["coverage"]["heuristic"] is True
+    assert data["ranked_regions"][0]["coverage"]["tier"] in {
+        "tier_2",
+        "tier_3",
+    }
     assert body["error"] is None
 
 
@@ -106,6 +111,12 @@ def test_discover_endpoint_warning_metadata_uses_standard_shape(
     assert response.status_code == 200
     warnings = response.json()["metadata"]["warnings"]
     assert warnings
+    assert "coverage" in response.json()["data"]["ranked_regions"][0]
+    assert response.json()["data"]["ranked_regions"][0]["coverage"]["tier"] == "tier_4"
+    assert any(
+        warning["warning_code"] == "region_coverage_not_confident"
+        for warning in warnings
+    )
     for warning in warnings:
         assert {"warning_code", "severity", "message"}.issubset(warning)
         assert isinstance(warning["warning_code"], str)

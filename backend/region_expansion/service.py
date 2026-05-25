@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.geography.market_coverage import PRIORITY_MARKETS
 from backend.region_expansion.models import RegionExpansionWorkflow
 from backend.region_expansion.repository import RegionExpansionRepository
 
@@ -38,16 +39,8 @@ class RegionExpansionNotFound(LookupError):
     pass
 
 
-TARGET_REGION_EXPANSION_PLAN: tuple[tuple[str, str], ...] = (
-    ("nyc", "NYC"),
-    ("seattle", "Seattle"),
-    ("austin", "Austin"),
-    ("dc_nova", "DC/NoVA"),
-    ("boston", "Boston"),
-    ("sf", "SF"),
-    ("atlanta", "Atlanta"),
-    ("chicago", "Chicago"),
-    ("la", "LA"),
+TARGET_REGION_EXPANSION_PLAN: tuple[tuple[str, str], ...] = tuple(
+    (market.market_id, market.display_name) for market in PRIORITY_MARKETS
 )
 
 CHECKLIST_FIELDS: tuple[str, ...] = (

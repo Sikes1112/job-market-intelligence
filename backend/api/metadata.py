@@ -13,6 +13,12 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.geography.market_coverage import (
+    COVERAGE_SCORE_DIMENSIONS,
+    COVERAGE_TIER_DEFINITIONS,
+    PRIORITY_MARKETS,
+    SECTOR_COVERAGE_DEFINITIONS,
+)
 from backend.shared.confidence import Confidence
 from backend.shared.freshness import FreshnessStatus, evaluate_freshness
 from backend.shared.provenance import (
@@ -260,3 +266,42 @@ def _ensure_aware(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value
+
+
+def build_coverage_metadata_vocabulary() -> dict[str, Any]:
+    """Stable public vocabulary for Layer 12 coverage read models."""
+
+    return {
+        "heuristic": True,
+        "quality_score_bounds": {"min": 0.0, "max": 1.0},
+        "score_components": list(COVERAGE_SCORE_DIMENSIONS),
+        "coverage_tiers": [
+            {
+                "tier": definition.tier.value,
+                "label": definition.label,
+                "meaning": definition.meaning,
+                "required_conditions": list(definition.required_conditions),
+                "safe_for_confident_market_comparison": (
+                    definition.safe_for_confident_market_comparison
+                ),
+                "directionally_useful_for_comparison": (
+                    definition.directionally_useful_for_comparison
+                ),
+                "requires_partial_label": definition.requires_partial_label,
+                "should_rank_as_confident_recommendation": (
+                    definition.should_rank_as_confident_recommendation
+                ),
+            }
+            for definition in COVERAGE_TIER_DEFINITIONS.values()
+        ],
+        "sector_coverage_categories": [
+            {
+                "sector": definition.sector.value,
+                "label": definition.label,
+            }
+            for definition in SECTOR_COVERAGE_DEFINITIONS.values()
+        ],
+        "priority_markets": [
+            market.model_dump(mode="json") for market in PRIORITY_MARKETS
+        ],
+    }

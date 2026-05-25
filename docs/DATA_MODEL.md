@@ -315,9 +315,53 @@ Required checklist fields:
 - `admin_approval_check`
 - `output_refresh_readiness_check`
 
-The initial planned target set is NYC, Seattle, Austin, DC/NoVA, Boston, SF,
-Atlanta, Chicago, and LA. Target candidates are not automatically approved,
-published, or refresh-enabled.
+Layer 12 expands the initial planned target set through the canonical priority
+market registry documented below. Target candidates are not automatically
+approved, published, or refresh-enabled.
+
+### Layer 12 Addendum: Market Coverage Foundation
+
+Layer 12 adds backend/domain coverage metadata only. It does not add a table,
+run scraping, ingest new sources, create canonical region rows, publish
+outputs, or claim that priority markets are fully researched.
+
+The canonical priority market registry lives in
+`backend/geography/market_coverage.py` as `PRIORITY_MARKETS`. The ordered list
+is NYC, Seattle, Austin, DC / NoVA, Atlanta, Chicago, Los Angeles,
+Raleigh-Durham, Denver / Boulder, Boston, SF Bay Area, Dallas, Miami,
+Pittsburgh, and Minneapolis.
+
+Coverage tiers:
+
+- `tier_1`: fully covered market. Requires strong company universe, validated
+  presence, hiring signals, entry-level signals, acceptable freshness, multiple
+  source types, and is safe for confident market comparison.
+- `tier_2`: partial but useful market. Directionally useful for comparison, but
+  incomplete and must be labeled partial.
+- `tier_3`: watchlist or emerging market. Tracked for expansion, not enough for
+  confident recommendations.
+- `tier_4`: placeholder only. Should not be presented as analyzed or ranked as
+  a confident recommendation.
+
+Sector-specific coverage is separate from overall region coverage. A region may
+be Tier 2 overall but Tier 1 for one sector, or Tier 1 overall while a specific
+sector remains weak. Canonical sector coverage categories are AI, cloud,
+cybersecurity, fintech, healthtech, edtech, enterprise SaaS, public sector tech,
+defense tech, and consumer tech.
+
+Coverage quality scoring is heuristic and bounded to `[0, 1]` per component.
+The dimensions are company coverage, hiring coverage, entry-level coverage,
+freshness, source diversity, and confidence. Component detail must be preserved
+so a market can explain why it is full, partial, watchlist, or placeholder.
+
+Layer 12 Run 2 exposes this coverage metadata additively on backend read models
+where region intelligence appears: region list/detail/search responses,
+comparison region sides, company-region geography entries, company output
+region lists, and request-scoped personalized discovery/scoring-preview region
+entries. The coverage object is a read-model explanation, not provenance and
+not a replacement for source/freshness summaries. `sector_coverage` is exposed
+as a distinct field and remains empty until sector-specific validation exists.
+Tier 3 and Tier 4 coverage objects are not confident recommendation markets.
 
 ### Layer 11C Addendum: Product Surface And Explanation
 

@@ -42,6 +42,7 @@ BACKEND_PACKAGES = [
     "backend.entry_level.types",
     "backend.geography",
     "backend.geography.exceptions",
+    "backend.geography.market_coverage",
     "backend.geography.repository",
     "backend.geography.service",
     "backend.geography.types",
