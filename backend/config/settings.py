@@ -10,17 +10,53 @@ from sqlalchemy.engine import make_url
 
 
 class AppEnv(StrEnum):
+    # Local developer mode. May use the local SQLite default and leaves
+    # public-demo read-only enforcement disabled.
     LOCAL = "local"
+    # Test-only mode used by the pytest suite.
     TEST = "test"
-    DEV = "dev"
+    # Private demo mode is for restricted demos where authenticated mutation
+    # workflows may still be exercised against an explicitly configured DB.
+    PRIVATE_DEMO = "private_demo"
+    # Public demo mode is externally viewable and fail-closed read-only for
+    # durable API mutation surfaces. It is stricter than private_demo/staging
+    # for writes, but it is not production.
+    PUBLIC_DEMO = "public_demo"
+    # Staging mirrors production infrastructure posture without being public
+    # production.
     STAGING = "staging"
+    # Production is the external-production mode.
+    PRODUCTION = "production"
+    # Backward-compatible legacy environment strings.
+    DEV = "dev"
     PROD = "prod"
 
 
 LOCAL_DATABASE_URL = "sqlite:///./jmi.db"
 LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
-NON_LOCAL_ENVS = frozenset({AppEnv.DEV, AppEnv.STAGING, AppEnv.PROD})
-STRICT_DEFAULT_ENABLED_ENVS = frozenset({AppEnv.STAGING, AppEnv.PROD})
+NON_LOCAL_ENVS = frozenset(
+    {
+        AppEnv.PRIVATE_DEMO,
+        AppEnv.PUBLIC_DEMO,
+        AppEnv.STAGING,
+        AppEnv.PRODUCTION,
+        AppEnv.DEV,
+        AppEnv.PROD,
+    }
+)
+STRICT_DEFAULT_ENABLED_ENVS = frozenset(
+    {AppEnv.STAGING, AppEnv.PRODUCTION, AppEnv.PROD}
+)
+PUBLIC_DEMO_READ_ONLY_ENVS = frozenset({AppEnv.PUBLIC_DEMO})
+RATE_LIMIT_DEFAULT_ENABLED_ENVS = STRICT_DEFAULT_ENABLED_ENVS | PUBLIC_DEMO_READ_ONLY_ENVS
+SECURITY_HEADERS_DEFAULT_ENABLED_ENVS = (
+    STRICT_DEFAULT_ENABLED_ENVS | PUBLIC_DEMO_READ_ONLY_ENVS
+)
+DEFAULT_MAX_REQUEST_BODY_BYTES = 1_048_576
+PUBLIC_DEMO_MAX_REQUEST_BODY_BYTES = 65_536
+DEFAULT_RATE_LIMIT_REQUESTS = 120
+PUBLIC_DEMO_RATE_LIMIT_REQUESTS = 60
+DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60
 MAX_REQUEST_BODY_BYTES_LIMIT = 10 * 1024 * 1024
 RATE_LIMIT_REQUESTS_LIMIT = 10_000
 RATE_LIMIT_WINDOW_SECONDS_LIMIT = 3_600
@@ -41,15 +77,19 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = Field(default="")
     rate_limit_enabled: bool | None = Field(default=None)
     security_headers_enabled: bool | None = Field(default=None)
-    max_request_body_bytes: int = Field(default=1_048_576)
-    rate_limit_requests: int = Field(default=120)
-    rate_limit_window_seconds: int = Field(default=60)
+    max_request_body_bytes: int | None = Field(default=None)
+    rate_limit_requests: int | None = Field(default=None)
+    rate_limit_window_seconds: int | None = Field(default=None)
+    auth0_issuer: str = Field(default="")
+    auth0_audience: str = Field(default="")
+    auth0_jwks_url: str = Field(default="")
+    auth0_jwks_cache_seconds: int = Field(default=300)
 
     @field_validator("app_env", mode="before")
     @classmethod
     def _normalize_app_env(cls, value: AppEnv | str) -> AppEnv | str:
         if isinstance(value, str):
-            return value.strip().lower()
+            return value.strip().lower().replace("-", "_")
         return value
 
     @field_validator("database_url", mode="before")
@@ -86,6 +126,15 @@ class Settings(BaseSettings):
             raise ValueError("SERVICE_NAME must not be empty")
         return normalized
 
+    @field_validator("auth0_issuer", "auth0_audience", "auth0_jwks_url", mode="before")
+    @classmethod
+    def _normalize_optional_auth0_string(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise ValueError("Auth0 settings must be strings")
+        return value.strip()
+
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def _normalize_cors_allowed_origins(cls, value: Any) -> str:
@@ -117,53 +166,100 @@ class Settings(BaseSettings):
         "max_request_body_bytes",
         "rate_limit_requests",
         "rate_limit_window_seconds",
+        mode="before",
     )
     @classmethod
-    def _validate_positive_int(cls, value: int, info: ValidationInfo) -> int:
-        if value < 1:
+    def _validate_positive_int(cls, value: int | None, info: ValidationInfo) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("value must be an integer") from exc
+        if normalized < 1:
             raise ValueError("value must be >= 1")
         limits = {
             "max_request_body_bytes": MAX_REQUEST_BODY_BYTES_LIMIT,
             "rate_limit_requests": RATE_LIMIT_REQUESTS_LIMIT,
             "rate_limit_window_seconds": RATE_LIMIT_WINDOW_SECONDS_LIMIT,
+            "auth0_jwks_cache_seconds": 86_400,
         }
         limit = limits.get(info.field_name)
-        if limit is not None and value > limit:
+        if limit is not None and normalized > limit:
             raise ValueError(f"value must be <= {limit}")
-        return value
+        return normalized
 
     @model_validator(mode="after")
     def _apply_environment_defaults(self) -> Self:
         if not self.database_url:
             if self.app_env in NON_LOCAL_ENVS:
                 raise ValueError(
-                    "DATABASE_URL is required when APP_ENV is dev, staging, or prod"
+                    "DATABASE_URL is required when APP_ENV is private_demo, "
+                    "public_demo, staging, production, dev, or prod"
                 )
             self.database_url = LOCAL_DATABASE_URL
 
         if self.rate_limit_enabled is None:
-            self.rate_limit_enabled = self.app_env in STRICT_DEFAULT_ENABLED_ENVS
+            self.rate_limit_enabled = self.app_env in RATE_LIMIT_DEFAULT_ENABLED_ENVS
         if self.security_headers_enabled is None:
-            self.security_headers_enabled = self.app_env in STRICT_DEFAULT_ENABLED_ENVS
+            self.security_headers_enabled = self.app_env in SECURITY_HEADERS_DEFAULT_ENABLED_ENVS
+        if self.max_request_body_bytes is None:
+            self.max_request_body_bytes = (
+                PUBLIC_DEMO_MAX_REQUEST_BODY_BYTES
+                if self.app_env == AppEnv.PUBLIC_DEMO
+                else DEFAULT_MAX_REQUEST_BODY_BYTES
+            )
+        if self.rate_limit_requests is None:
+            self.rate_limit_requests = (
+                PUBLIC_DEMO_RATE_LIMIT_REQUESTS
+                if self.app_env == AppEnv.PUBLIC_DEMO
+                else DEFAULT_RATE_LIMIT_REQUESTS
+            )
+        if self.rate_limit_window_seconds is None:
+            self.rate_limit_window_seconds = DEFAULT_RATE_LIMIT_WINDOW_SECONDS
+
+        if self.app_env == AppEnv.PUBLIC_DEMO:
+            if not self.cors_allowed_origin_list:
+                raise ValueError(
+                    "CORS_ALLOWED_ORIGINS must list the exact public frontend "
+                    "origin when APP_ENV is public_demo"
+                )
+            if self.rate_limit_enabled is not True:
+                raise ValueError(
+                    "RATE_LIMIT_ENABLED must be true when APP_ENV is public_demo"
+                )
+            if self.security_headers_enabled is not True:
+                raise ValueError(
+                    "SECURITY_HEADERS_ENABLED must be true when APP_ENV is public_demo"
+                )
 
         if self.app_env in STRICT_DEFAULT_ENABLED_ENVS:
             if is_sqlite_database_url(self.database_url):
                 raise ValueError(
-                    "DATABASE_URL must not use SQLite when APP_ENV is staging or prod"
+                    "DATABASE_URL must not use SQLite when APP_ENV is staging, "
+                    "production, or prod"
                 )
             if self.rate_limit_enabled is not True:
                 raise ValueError(
-                    "RATE_LIMIT_ENABLED must be true when APP_ENV is staging or prod"
+                    "RATE_LIMIT_ENABLED must be true when APP_ENV is staging, "
+                    "production, or prod"
                 )
             if self.security_headers_enabled is not True:
                 raise ValueError(
-                    "SECURITY_HEADERS_ENABLED must be true when APP_ENV is staging or prod"
+                    "SECURITY_HEADERS_ENABLED must be true when APP_ENV is staging, "
+                    "production, or prod"
                 )
         return self
 
     @property
     def cors_allowed_origin_list(self) -> list[str]:
         return list(_parse_cors_allowed_origins(self.cors_allowed_origins))
+
+    @property
+    def is_public_demo_read_only(self) -> bool:
+        return self.app_env in PUBLIC_DEMO_READ_ONLY_ENVS
 
 
 def _parse_cors_allowed_origins(value: Any) -> tuple[str, ...]:

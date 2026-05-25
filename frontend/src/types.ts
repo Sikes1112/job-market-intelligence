@@ -12,7 +12,7 @@ export type ApiEnvelope<T> = {
     source_versions?: Record<string, unknown>;
     warnings?: WarningItem[];
   };
-  error: { code: string; message: string } | null;
+  error: { code?: string; type?: string; message: string; request_id?: string } | null;
 };
 
 export type FreshnessStatus = "fresh" | "stale" | "partial" | "unknown" | "seeded_demo";
@@ -277,6 +277,14 @@ export type PreferenceLevel = "low" | "medium" | "high";
 export type CareerStage = "entry_level";
 export type RemoteHybridPreference = "remote" | "hybrid" | "onsite" | "flexible";
 
+export type ScoringWeights = {
+  entry_level_access: number;
+  hiring_density: number;
+  prestige: number;
+  industry_fit: number;
+  role_fit: number;
+};
+
 export type UserPreferenceProfileInput = {
   role_interests?: string[];
   industry_interests?: string[];
@@ -285,14 +293,16 @@ export type UserPreferenceProfileInput = {
   brand_weighting?: PreferenceLevel | null;
   career_stage?: CareerStage | null;
   remote_hybrid_preference?: RemoteHybridPreference | null;
+  scoring_weights?: ScoringWeights | null;
 };
 
-export type UserPreferenceProfile = Required<UserPreferenceProfileInput> & {
+export type UserPreferenceProfile = Required<Omit<UserPreferenceProfileInput, "scoring_weights">> & {
   user_id: string;
   persisted: boolean;
+  scoring_weights: ScoringWeights;
 };
 
-export type SavedMarketArtifactType = "region" | "company" | "comparison" | "discovery_result";
+export type SavedMarketArtifactType = "region" | "company" | "role_family" | "comparison" | "discovery_result";
 
 export type SavedMarketArtifactInput = {
   artifact_type: SavedMarketArtifactType;
@@ -335,6 +345,163 @@ export type RecommendationSnapshotList = {
   personalized_recommendation_snapshots: PersonalizedRecommendationSnapshot[];
 };
 
+export type ScoringPreviewRequest = {
+  region_ids: string[];
+  role_interests?: string[] | null;
+  industry_interests?: string[] | null;
+  scoring_weights?: ScoringWeights | null;
+};
+
+export type ScoringPreviewComponent = {
+  value: number | null;
+  raw_weight: number;
+  effective_weight: number;
+  status: "used" | "missing" | string;
+  evidence: string[];
+};
+
+export type ScoringPreviewRegion = {
+  region_id: string;
+  display_name: string;
+  canonical_default_scores: {
+    objective_opportunity_score: number | null;
+    raw_total_score: number | null;
+    early_career_accessibility_score: number | null;
+    live_market_score: number | null;
+    score_ruleset_version: string | null;
+  };
+  personalized_overlay_score: number | null;
+  components: Record<keyof ScoringWeights, ScoringPreviewComponent>;
+  omitted_components: Array<keyof ScoringWeights>;
+};
+
+export type ScoringPreviewResult = {
+  scoring_weights: ScoringWeights;
+  normalized_weights: ScoringWeights;
+  regions: ScoringPreviewRegion[];
+};
+
+export type AlertEventType =
+  | "new_hiring_activity"
+  | "entry_level_signal_changed"
+  | "company_expanded_in_region"
+  | "region_score_changed"
+  | "internship_window_opened";
+
+export type UserAlertRelevance = {
+  reason:
+    | "saved_company"
+    | "saved_region"
+    | "saved_comparison"
+    | "saved_role_family"
+    | "preferred_region"
+    | "role_interest"
+    | string;
+  artifact_id: string | null;
+  artifact_type: SavedMarketArtifactType | string | null;
+  artifact_ref: string | null;
+};
+
+export type AlertEvent = {
+  alert_event_id: string;
+  event_type: AlertEventType | string;
+  company_id: string | null;
+  region_id: string | null;
+  role_family: string | null;
+  previous_value: Record<string, unknown> | unknown[] | null;
+  new_value: Record<string, unknown> | unknown[] | null;
+  change_summary: Record<string, unknown> | unknown[] | null;
+  freshness_status: string | null;
+  freshness_observed_at: string | null;
+  freshness_expires_at: string | null;
+  source_refs: string[];
+  change_basis_refs: string[];
+  detection_basis: string;
+  created_at: string | null;
+};
+
+export type UserAlert = {
+  user_alert_id: string;
+  user_id: string;
+  alert_event_id: string;
+  is_read: boolean;
+  dismissed: boolean;
+  read_at: string | null;
+  dismissed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  relevance: UserAlertRelevance;
+  event: AlertEvent;
+};
+
+export type UserAlertList = {
+  alerts: UserAlert[];
+};
+
+export type ExplanationEntityType = "region" | "company" | "comparison" | "alert";
+
+export type ExplanationFreshnessEvidence = {
+  freshness_status?: string | null;
+  data_basis?: string | null;
+  last_updated_at?: string | null;
+  freshness_expires_at?: string | null;
+  source_count?: number | null;
+};
+
+export type ExplanationScoringFactor = {
+  factor: string;
+  label?: string | null;
+  value?: number | null;
+  weight?: number | null;
+  status?: string | null;
+};
+
+export type ExplanationEvidencePacket = {
+  entity_type: ExplanationEntityType;
+  subject_refs?: Record<string, string>;
+  display_label?: string | null;
+  canonical_scores?: Record<string, number | null>;
+  personalized_overlay?: Record<string, number | null>;
+  scoring_factors?: ExplanationScoringFactor[];
+  freshness?: ExplanationFreshnessEvidence | null;
+  source_refs?: string[];
+  alert?: {
+    event_type: string;
+    relevance_reason?: string | null;
+    changed_fields?: string[];
+    detection_basis?: string | null;
+  } | null;
+  watchlist_context?: string[];
+  missing_data?: string[];
+  unsupported_data?: string[];
+  demo_or_seeded?: boolean;
+  notes?: string[];
+};
+
+export type ExplanationRequest = {
+  evidence: ExplanationEvidencePacket;
+};
+
+export type ExplanationResult = {
+  provider_mode: "deterministic_structured_guidance" | string;
+  status: "ok" | "constrained" | "refused" | string;
+  entity_type: ExplanationEntityType;
+  subject_refs: Record<string, string>;
+  sections: Array<{
+    section_type:
+      | "structured_fact"
+      | "score_interpretation"
+      | "freshness_limitation"
+      | "missing_unsupported_data"
+      | "personalized_overlay"
+      | string;
+    title: string;
+    statements: string[];
+  }>;
+  limitations: string[];
+  evidence_refs: string[];
+};
+
 export type UserDataExport = {
   export_schema_version: string;
   user: UserAccount;
@@ -346,6 +513,7 @@ export type UserDataExport = {
   }) | null;
   saved_market_artifacts: SavedMarketArtifact[];
   personalized_recommendation_snapshots: PersonalizedRecommendationSnapshot[];
+  user_alerts?: Array<Record<string, unknown>>;
 };
 
 export type AccountDeactivationResult = {
@@ -354,6 +522,7 @@ export type AccountDeactivationResult = {
   deleted_preference_profiles: number;
   deleted_saved_market_artifacts: number;
   deleted_recommendation_snapshots: number;
+  deleted_user_alerts?: number;
   deleted_profiles: number;
   deleted_external_auth_identities: number;
 };

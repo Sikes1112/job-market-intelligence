@@ -134,8 +134,9 @@ def test_compute_scores_for_empty_region_is_partial(session: Session) -> None:
     result = svc.compute_scores("greater_boston")
     assert result.partial is True
     assert result.structural_ecosystem_score == 0.0
-    assert result.live_market_score == 0.0
-    assert result.early_career_accessibility_score == 0.0
+    assert result.live_market_score is None
+    assert result.early_career_accessibility_score is None
+    assert any("not collected" in warning for warning in result.warnings)
 
 
 def test_compute_scores_writes_nothing(session: Session) -> None:
@@ -187,6 +188,23 @@ def test_partial_when_companies_lack_prestige(session: Session) -> None:
     result = svc.compute_scores("greater_boston")
     assert result.partial is True
     assert any("prestige" in w for w in result.warnings)
+
+
+def test_scoring_input_preparation_does_not_zero_unknown_counts(
+    session: Session,
+) -> None:
+    _seed_region(session)
+    _seed_present_company(session, company_id="comp_a", prestige_score=0.5)
+    _seed_hiring(session, company_id="comp_a", active_posting_count_now=None)
+    _seed_entry_level(session, company_id="comp_a", score=None)
+
+    svc = _service(session)
+    result = svc.compute_scores("greater_boston")
+
+    assert result.partial is True
+    assert result.source_version_bundle["active_posting_count_status"] == "unknown"
+    assert result.early_career_accessibility_score is None
+    assert any("not treated as zero" in warning for warning in result.warnings)
 
 
 def test_partial_when_no_present_companies(session: Session) -> None:

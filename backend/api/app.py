@@ -6,11 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import Engine, text
 
+from backend.api.admin import router as admin_router
+from backend.api.auth0_middleware import Auth0JWTMiddleware
 from backend.api.errors import register_exception_handlers
 from backend.api.observability import RequestObservabilityMiddleware
 from backend.api.personalized import router as personalized_router
 from backend.api.protection import APIProtectionMiddleware
 from backend.api.routes import router as read_router
+from backend.api.user import router as user_router
 from backend.config.settings import Settings, get_settings
 from backend.shared.db import make_engine, make_session_factory
 from backend.shared.logging import configure_logging
@@ -45,9 +48,10 @@ def create_app(
             CORSMiddleware,
             allow_origins=allowed_origins,
             allow_credentials=False,
-            allow_methods=["GET", "POST"],
-            allow_headers=["Content-Type"],
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
         )
+    app.add_middleware(Auth0JWTMiddleware, settings=settings)
     app.add_middleware(RequestObservabilityMiddleware)
     register_exception_handlers(app)
 
@@ -88,6 +92,8 @@ def create_app(
 
     app.include_router(read_router)
     app.include_router(personalized_router)
+    app.include_router(user_router)
+    app.include_router(admin_router)
 
     return app
 

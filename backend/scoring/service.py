@@ -30,15 +30,11 @@ from backend.scoring.exceptions import (
     RegionScoreNotFound,
 )
 from backend.scoring.models import RegionMarketScore
-from backend.scoring.normalization import (
-    general_density_score,
-    raw_total_score,
-    saturate,
-    tech_market_density_score,
-)
+from backend.scoring.normalization import saturate
 from backend.scoring.repository import RegionScoreRepository
 from backend.scoring.rulesets import ScoringRuleset, default_ruleset
 from backend.shared.state import ObjectState, validate_transition
+from backend.shared.value_semantics import CountSemantics, aggregate_counts
 from backend.shared.versioning import next_version
 
 UpsertOutcome = Literal["created", "updated", "unchanged"]
@@ -47,6 +43,39 @@ UpsertOutcome = Literal["created", "updated", "unchanged"]
 # ---------------------------------------------------------------------------
 # Per-component formula functions
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class LiveMarketInputs:
+    currently_hiring_count: int
+    active_postings: CountSemantics
+    hiring_programs: CountSemantics
+
+
+def _weighted_known_score(
+    components: tuple[tuple[float, float | None], ...],
+) -> float | None:
+    known = [(weight, value) for weight, value in components if value is not None]
+    if not known:
+        return None
+    known_weight = sum(weight for weight, _ in known)
+    return sum(weight * value for weight, value in known) / known_weight
+
+
+def prepare_live_market_inputs(
+    hiring_records: list[CompanyRegionHiring],
+) -> LiveMarketInputs:
+    return LiveMarketInputs(
+        currently_hiring_count=sum(
+            1 for h in hiring_records if h.currently_hiring_flag
+        ),
+        active_postings=aggregate_counts(
+            [h.active_posting_count_now for h in hiring_records]
+        ),
+        hiring_programs=aggregate_counts(
+            [h.hiring_program_count for h in hiring_records]
+        ),
+    )
 
 
 def compute_structural_ecosystem(
@@ -73,30 +102,45 @@ def compute_structural_ecosystem(
 
 def compute_live_market(
     hiring_records: list[CompanyRegionHiring], *, ruleset: ScoringRuleset
-) -> float:
+) -> float | None:
     """Live activity: actively-hiring company count, current postings,
     formal hiring program counts.
 
-    Treats unknown counts (``None``) as 0 only after at least one record
-    establishes that hiring is being tracked. The score reflects current
-    activity only — no personalization, no entry-level extraction.
+    Unknown count components are omitted from the weighted combination rather
+    than treated as zero. A region with no hiring records has no live-market
+    input and returns ``None``.
     """
-    currently_hiring_count = sum(
-        1 for h in hiring_records if h.currently_hiring_flag
-    )
-    total_active_postings = sum(
-        (h.active_posting_count_now or 0) for h in hiring_records
-    )
-    total_hiring_programs = sum(
-        (h.hiring_program_count or 0) for h in hiring_records
-    )
-    return (
-        ruleset.w_live_hiring_count
-        * saturate(currently_hiring_count, ruleset.cap_currently_hiring_count)
-        + ruleset.w_live_postings
-        * saturate(total_active_postings, ruleset.cap_total_active_postings)
-        + ruleset.w_live_programs
-        * saturate(total_hiring_programs, ruleset.cap_total_hiring_programs)
+    if not hiring_records:
+        return None
+    inputs = prepare_live_market_inputs(hiring_records)
+    active_postings = inputs.active_postings.value
+    hiring_programs = inputs.hiring_programs.value
+    return _weighted_known_score(
+        (
+            (
+                ruleset.w_live_hiring_count,
+                saturate(
+                    inputs.currently_hiring_count,
+                    ruleset.cap_currently_hiring_count,
+                ),
+            ),
+            (
+                ruleset.w_live_postings,
+                (
+                    saturate(active_postings, ruleset.cap_total_active_postings)
+                    if active_postings is not None
+                    else None
+                ),
+            ),
+            (
+                ruleset.w_live_programs,
+                (
+                    saturate(hiring_programs, ruleset.cap_total_hiring_programs)
+                    if hiring_programs is not None
+                    else None
+                ),
+            ),
+        )
     )
 
 
@@ -104,7 +148,7 @@ def compute_early_career_accessibility(
     entry_level_records: list[CompanyRegionEntryLevel],
     *,
     ruleset: ScoringRuleset,
-) -> float:
+) -> float | None:
     """Early-career region view, derived from stored
     ``entry_level_access_score`` values on
     :class:`CompanyRegionEntryLevel`.
@@ -113,11 +157,16 @@ def compute_early_career_accessibility(
     Combines a saturation-capped count of pairs with non-zero access with
     the average access score across those pairs.
     """
-    nonzero = [
+    if not entry_level_records:
+        return None
+    known_scores = [
         r.entry_level_access_score
         for r in entry_level_records
-        if r.entry_level_access_score is not None and r.entry_level_access_score > 0
+        if r.entry_level_access_score is not None
     ]
+    if not known_scores:
+        return None
+    nonzero = [score for score in known_scores if score > 0]
     if not nonzero:
         return 0.0
     count_factor = saturate(len(nonzero), ruleset.cap_entry_level_nonzero_pairs)
@@ -125,7 +174,7 @@ def compute_early_career_accessibility(
     return count_factor * avg_score
 
 
-def compute_prestige_aggregate(companies: list[Company]) -> tuple[float, bool]:
+def compute_prestige_aggregate(companies: list[Company]) -> tuple[float | None, bool]:
     """Average ``prestige_score`` across companies.
 
     Returns ``(score, is_partial)``. ``is_partial`` is True when no company
@@ -134,26 +183,28 @@ def compute_prestige_aggregate(companies: list[Company]) -> tuple[float, bool]:
     """
     scores = [c.prestige_score for c in companies if c.prestige_score is not None]
     if not scores:
-        return 0.0, True
+        return None, True
     return sum(scores) / len(scores), False
 
 
 def compute_objective_opportunity(
     *,
-    early_career: float,
-    live_market: float,
-    prestige: float,
+    early_career: float | None,
+    live_market: float | None,
+    prestige: float | None,
     ruleset: ScoringRuleset,
-) -> float:
+) -> float | None:
     """Objective opportunity = entry-level access (lead) + live market + prestige.
 
     Weights enforce: entry-level > live market > prestige, modestly. The
     ruleset's ``__post_init__`` rejects rulesets that violate the ordering.
     """
-    return (
-        ruleset.w_obj_entry_level * early_career
-        + ruleset.w_obj_live_market * live_market
-        + ruleset.w_obj_prestige * prestige
+    return _weighted_known_score(
+        (
+            (ruleset.w_obj_entry_level, early_career),
+            (ruleset.w_obj_live_market, live_market),
+            (ruleset.w_obj_prestige, prestige),
+        )
     )
 
 
@@ -166,12 +217,12 @@ def compute_objective_opportunity(
 class RegionScoreComputation:
     region_id: str
     structural_ecosystem_score: float
-    live_market_score: float
-    objective_opportunity_score: float
-    raw_total_score: float
-    general_density_score: float
-    tech_market_density_score: float
-    early_career_accessibility_score: float
+    live_market_score: float | None
+    objective_opportunity_score: float | None
+    raw_total_score: float | None
+    general_density_score: float | None
+    tech_market_density_score: float | None
+    early_career_accessibility_score: float | None
     score_ruleset_version: str
     source_version_bundle: dict
     partial: bool
@@ -227,6 +278,7 @@ class RegionScoringService:
 
         # Per-component aggregates
         structural = compute_structural_ecosystem(companies, ruleset=self._ruleset)
+        live_inputs = prepare_live_market_inputs(hiring_records)
         live_market = compute_live_market(hiring_records, ruleset=self._ruleset)
         early_career = compute_early_career_accessibility(
             entry_level_records, ruleset=self._ruleset
@@ -235,8 +287,33 @@ class RegionScoringService:
         if prestige_partial and companies:
             partial = True
             warnings.append(
-                "no companies in region carry prestige_score; prestige aggregate "
-                "fell back to 0.0"
+                "no companies in region carry prestige_score; prestige aggregate is unknown"
+            )
+        if live_market is None:
+            partial = True
+            warnings.append("hiring counts not collected; live_market_score is unknown")
+        elif not (
+            live_inputs.active_postings.has_current_observed_value
+            and live_inputs.hiring_programs.has_current_observed_value
+        ):
+            partial = True
+            warnings.append(
+                "one or more live-market count inputs are unknown and were not "
+                "treated as zero"
+            )
+        if early_career is None:
+            partial = True
+            warnings.append(
+                "entry-level score inputs not collected; "
+                "early_career_accessibility_score is unknown"
+            )
+        elif any(
+            row.entry_level_access_score is None for row in entry_level_records
+        ):
+            partial = True
+            warnings.append(
+                "one or more entry-level score inputs are unknown and were not "
+                "treated as zero"
             )
 
         objective = compute_objective_opportunity(
@@ -250,38 +327,82 @@ class RegionScoringService:
         eligible_count = sum(
             1 for c in companies if c.eligibility_status == "eligible"
         )
-        total_active_postings = sum(
-            (h.active_posting_count_now or 0) for h in hiring_records
+        total_active_postings = (
+            sum(
+                h.active_posting_count_now
+                for h in hiring_records
+                if h.active_posting_count_now is not None
+            )
+            if live_inputs.active_postings.has_current_observed_value
+            else None
         )
         major_tech_company_ids = {
             c.company_id for c in companies if c.is_major_tech
         }
-        major_tech_active_postings = sum(
-            (h.active_posting_count_now or 0)
-            for h in hiring_records
-            if h.company_id in major_tech_company_ids
+        major_tech_posting_semantics = aggregate_counts(
+            [
+                h.active_posting_count_now
+                for h in hiring_records
+                if h.company_id in major_tech_company_ids
+            ]
+        )
+        major_tech_active_postings = (
+            major_tech_posting_semantics.value
+            if major_tech_posting_semantics.has_current_observed_value
+            else None
         )
 
-        general_density = general_density_score(
-            eligible_count=eligible_count,
-            total_active_postings=total_active_postings,
-            cap_eligible=self._ruleset.cap_density_eligible_count,
-            cap_postings=self._ruleset.cap_density_total_postings,
+        general_density = _weighted_known_score(
+            (
+                (
+                    0.5,
+                    saturate(
+                        eligible_count,
+                        self._ruleset.cap_density_eligible_count,
+                    ),
+                ),
+                (
+                    0.5,
+                    (
+                        saturate(
+                            total_active_postings,
+                            self._ruleset.cap_density_total_postings,
+                        )
+                        if total_active_postings is not None
+                        else None
+                    ),
+                ),
+            )
         )
-        tech_density = tech_market_density_score(
-            major_tech_company_count=len(major_tech_company_ids),
-            major_tech_active_postings=major_tech_active_postings,
-            cap_major_companies=self._ruleset.cap_tech_major_companies,
-            cap_major_postings=self._ruleset.cap_tech_major_postings,
+        tech_density = _weighted_known_score(
+            (
+                (
+                    0.5,
+                    saturate(
+                        len(major_tech_company_ids),
+                        self._ruleset.cap_tech_major_companies,
+                    ),
+                ),
+                (
+                    0.5,
+                    (
+                        saturate(
+                            major_tech_active_postings,
+                            self._ruleset.cap_tech_major_postings,
+                        )
+                        if major_tech_active_postings is not None
+                        else None
+                    ),
+                ),
+            )
         )
 
-        raw_total = raw_total_score(
-            structural_ecosystem=structural,
-            live_market=live_market,
-            objective_opportunity=objective,
-            w_structural=self._ruleset.w_raw_structural,
-            w_live=self._ruleset.w_raw_live,
-            w_objective=self._ruleset.w_raw_objective,
+        raw_total = _weighted_known_score(
+            (
+                (self._ruleset.w_raw_structural, structural),
+                (self._ruleset.w_raw_live, live_market),
+                (self._ruleset.w_raw_objective, objective),
+            )
         )
 
         if not companies:
@@ -303,6 +424,8 @@ class RegionScoringService:
                 "present_company_count": len(companies),
                 "hiring_record_count": len(hiring_records),
                 "entry_level_record_count": len(entry_level_records),
+                "active_posting_count_status": live_inputs.active_postings.status.value,
+                "hiring_program_count_status": live_inputs.hiring_programs.status.value,
             },
             partial=partial,
             warnings=tuple(warnings),

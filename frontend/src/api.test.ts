@@ -3,10 +3,19 @@ import {
   ApiError,
   createSavedMarketArtifact,
   deleteSavedMarketArtifact,
+  dismissAlert,
+  explainAlert,
+  explainComparison,
+  explainCompany,
+  explainRegion,
   getCurrentUser,
   getRegions,
+  listAlerts,
   listSavedMarketArtifacts,
+  markAlertRead,
+  previewScoringOverlay,
 } from "./api";
+import { configureFrontendErrorReporter } from "./errorMonitoring";
 
 function envelope(data: unknown) {
   return {
@@ -34,6 +43,7 @@ describe("frontend API client auth boundary", () => {
   });
 
   afterEach(() => {
+    configureFrontendErrorReporter(null);
     vi.unstubAllGlobals();
   });
 
@@ -71,7 +81,7 @@ describe("frontend API client auth boundary", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  test("saved artifact calls stay under /me and use the bearer token", async () => {
+  test("account calls stay under /me and use the bearer token", async () => {
     const fetchMock = mockFetch({
       saved_market_artifacts: [],
       saved_artifact_id: "saved_artifact_1",
@@ -83,14 +93,60 @@ describe("frontend API client auth boundary", () => {
     await createSavedMarketArtifact({ artifact_type: "region", artifact_ref: "greater_boston" }, auth);
     await listSavedMarketArtifacts(auth, "region");
     await deleteSavedMarketArtifact("saved_artifact_1", auth);
+    await previewScoringOverlay({ region_ids: ["greater_boston"] }, auth);
+    await listAlerts(auth);
+    await markAlertRead("user_alert_1", auth);
+    await dismissAlert("user_alert_1", auth);
+    await explainRegion({ evidence: { entity_type: "region", subject_refs: { region_id: "greater_boston" } } }, auth);
+    await explainCompany({ evidence: { entity_type: "company", subject_refs: { company_id: "comp_a" } } }, auth);
+    await explainComparison({ evidence: { entity_type: "comparison", subject_refs: { comparison_id: "a__b" } } }, auth);
+    await explainAlert({ evidence: { entity_type: "alert", subject_refs: { alert_event_id: "event_1" } } }, auth);
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "/me/saved-market-artifacts",
       "/me/saved-market-artifacts?artifact_type=region",
       "/me/saved-market-artifacts/saved_artifact_1",
+      "/me/scoring-preview",
+      "/me/alerts?include_dismissed=false",
+      "/me/alerts/user_alert_1/read",
+      "/me/alerts/user_alert_1/dismiss",
+      "/me/explanations/region",
+      "/me/explanations/company",
+      "/me/explanations/comparison",
+      "/me/explanations/alert",
     ]);
     for (const [, init] of fetchMock.mock.calls) {
       expect((init as RequestInit).headers).toMatchObject({ "Authorization": "Bearer token" });
     }
+  });
+
+  test("API failures carry safe request IDs and report provider-neutral events", async () => {
+    const reporter = vi.fn();
+    configureFrontendErrorReporter(reporter);
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(JSON.stringify({
+        error: {
+          type: "database_error",
+          message: "Database unavailable",
+          request_id: "api-req-1",
+        },
+      }), {
+        headers: { "Content-Type": "application/json", "X-Request-ID": "api-req-1" },
+        status: 503,
+      })
+    ));
+
+    await expect(getRegions()).rejects.toMatchObject({
+      name: "ApiError",
+      requestId: "api-req-1",
+      statusCode: 503,
+      message: "Database unavailable Reference ID: api-req-1",
+    });
+    expect(reporter).toHaveBeenCalledWith(expect.objectContaining({
+      source: "api_request",
+      path: "/regions",
+      requestId: "api-req-1",
+      statusCode: 503,
+    }));
   });
 });

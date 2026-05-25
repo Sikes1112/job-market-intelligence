@@ -305,6 +305,7 @@ def test_build_region_changed_bumps_version_and_keeps_fresh(session: Session) ->
     _seed_region(session)
     _seed_company(session, company_id="comp_a")
     _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+    _seed_entry_level(session, company_id="comp_a", region_id="greater_boston")
     _seed_score(session, region_id="greater_boston")
 
     svc = _service(session)
@@ -346,6 +347,35 @@ def test_build_region_does_not_mutate_upstream_rows(session: Session) -> None:
     assert score.version == score_version_before
     assert score.state == score_state_before
     assert score.objective_opportunity_score == objective_before
+
+
+def test_build_region_unknown_entry_counts_are_not_reported_as_zero(
+    session: Session,
+) -> None:
+    _seed_region(session)
+    _seed_company(session, company_id="comp_a")
+    _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+    _seed_entry_level(
+        session,
+        company_id="comp_a",
+        region_id="greater_boston",
+        internship_count=None,
+        coop_count=None,
+        entry_level_full_time_count=None,
+        entry_level_access_score=None,
+    )
+    _seed_score(session, region_id="greater_boston")
+
+    svc = _service(session)
+    result = svc.build_region("greater_boston")
+
+    summary = result.payload.region.entry_level_summary
+    assert summary.internship_count_total is None
+    assert summary.coop_count_total is None
+    assert summary.entry_level_full_time_count_total is None
+    assert result.metadata.state == "partial"
+    codes = [w.warning_code for w in result.payload.metadata.warnings]
+    assert "entry_level_counts_not_fully_observed" in codes
 
 
 # --- company build --------------------------------------------------------
@@ -562,6 +592,7 @@ def test_first_region_build_walks_to_fresh(session: Session) -> None:
     _seed_region(session)
     _seed_company(session, company_id="comp_a")
     _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+    _seed_entry_level(session, company_id="comp_a", region_id="greater_boston")
     _seed_score(session, region_id="greater_boston")
 
     svc = _service(session)
@@ -588,6 +619,7 @@ def test_changed_region_build_fresh_to_stale_updates_state(session: Session) -> 
         region_id="greater_boston",
         freshness_expires_at=datetime(2026, 6, 1, tzinfo=UTC),
     )
+    _seed_entry_level(session, company_id="comp_a", region_id="greater_boston")
     _seed_score(session, region_id="greater_boston")
 
     svc = _service(session)
@@ -617,6 +649,7 @@ def test_changed_region_build_stale_to_fresh_updates_state(session: Session) -> 
         region_id="greater_boston",
         freshness_expires_at=datetime(2026, 4, 1, tzinfo=UTC),
     )
+    _seed_entry_level(session, company_id="comp_a", region_id="greater_boston")
     _seed_score(session, region_id="greater_boston")
 
     svc = _service(session)
@@ -646,6 +679,7 @@ def test_changed_region_build_partial_to_fresh_updates_state(session: Session) -
     assert first.metadata.state == "partial"
 
     _seed_score(session, region_id="greater_boston")
+    _seed_entry_level(session, company_id="comp_a", region_id="greater_boston")
     second = svc.build_region("greater_boston")
 
     assert second.action == "updated"
@@ -659,6 +693,7 @@ def test_changed_region_build_fresh_to_partial_updates_state(
     _seed_region(session)
     _seed_company(session, company_id="comp_a")
     _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+    _seed_entry_level(session, company_id="comp_a", region_id="greater_boston")
     score = _seed_score(session, region_id="greater_boston")
 
     svc = _service(session)
@@ -684,6 +719,7 @@ def test_changed_region_build_stale_to_partial_updates_state(session: Session) -
         region_id="greater_boston",
         freshness_expires_at=datetime(2026, 4, 1, tzinfo=UTC),
     )
+    _seed_entry_level(session, company_id="comp_a", region_id="greater_boston")
     score = _seed_score(session, region_id="greater_boston")
 
     svc = _service(session)

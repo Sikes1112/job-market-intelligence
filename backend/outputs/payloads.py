@@ -100,9 +100,9 @@ class HiringCompanyEntry(BaseModel):
 class EntryLevelSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    internship_count_total: int = 0
-    coop_count_total: int = 0
-    entry_level_full_time_count_total: int = 0
+    internship_count_total: int | None = None
+    coop_count_total: int | None = None
+    entry_level_full_time_count_total: int | None = None
     formal_early_career_program_count: int = 0
     average_entry_level_access_score: float | None = None
     pairs_with_entry_level_access: int = 0

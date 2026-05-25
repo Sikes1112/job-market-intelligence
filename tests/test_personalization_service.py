@@ -10,8 +10,9 @@ from backend.geography.models import Region
 from backend.geography.repository import RegionRepository
 from backend.hiring.models import CompanyRegionHiring
 from backend.outputs.repository import OutputMetadataRepository
+from backend.personalization.controls import ScoringWeightsInput
 from backend.personalization.exceptions import MissingRegionForPersonalization
-from backend.personalization.payloads import UserPreferences
+from backend.personalization.payloads import ScoringPreviewRequest, UserPreferences
 from backend.personalization.service import PersonalizationService
 from backend.personalization.types import CareerStage, PreferenceLevel
 from backend.presence.models import CompanyRegionPresence
@@ -386,3 +387,59 @@ def test_discover_passes_through_objective_score_unchanged(session: Session) -> 
     svc = _service(session)
     result = svc.discover(UserPreferences(region_ids=["greater_boston"]))
     assert result.personalized.ranked_regions[0].objective_opportunity_score == 99.0
+
+
+def test_scoring_preview_labels_canonical_and_personal_overlay(
+    session: Session,
+) -> None:
+    _seed_region(session)
+    _seed_company(
+        session,
+        company_id="comp_a",
+        sector_primary="ai",
+        prestige_score=0.8,
+    )
+    _seed_presence(session, company_id="comp_a")
+    _seed_hiring(session, company_id="comp_a", role_family_summary={"product": 5})
+    _seed_score(session, objective=0.74)
+    score = session.get(RegionMarketScore, "rms_greater_boston")
+    score.live_market_score = 0.6
+    score.early_career_accessibility_score = 0.7
+    session.flush()
+
+    result = _service(session).scoring_preview(
+        ScoringPreviewRequest(
+            region_ids=["greater_boston"],
+            role_interests=["product"],
+            industry_interests=["ai"],
+            scoring_weights=ScoringWeightsInput(
+                entry_level_access=0.4,
+                hiring_density=0.2,
+                prestige=0.1,
+                industry_fit=0.2,
+                role_fit=0.1,
+            ),
+        )
+    )
+
+    region = result.regions[0]
+    assert region.canonical_default_scores.objective_opportunity_score == 0.74
+    assert region.personalized_overlay_score is not None
+    assert region.components["role_fit"].value == 1.0
+    assert region.components["industry_fit"].value == 1.0
+    assert region.omitted_components == []
+
+
+def test_scoring_preview_does_not_write_outputs_or_scores(session: Session) -> None:
+    _seed_region(session)
+    _seed_score(session)
+    score = session.get(RegionMarketScore, "rms_greater_boston")
+    before = (score.version, score.objective_opportunity_score)
+
+    _service(session).scoring_preview(
+        ScoringPreviewRequest(region_ids=["greater_boston"])
+    )
+
+    session.refresh(score)
+    assert (score.version, score.objective_opportunity_score) == before
+    assert OutputMetadataRepository(session).list() == []

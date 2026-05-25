@@ -33,6 +33,13 @@ from backend.geography.models import Region
 from backend.geography.repository import RegionRepository
 from backend.hiring.models import CompanyRegionHiring
 from backend.hiring.repository import HiringRepository
+from backend.outputs.cache import (
+    load_cached_output,
+    mark_rebuild_succeeded,
+    payload_json,
+    source_bundle_ref_for_bundle,
+    source_version_refs_for_bundle,
+)
 from backend.outputs.company_output import build_company_output
 from backend.outputs.comparison_output import (
     build_comparison_output,
@@ -59,7 +66,7 @@ from backend.scoring.repository import RegionScoreRepository
 from backend.shared.state import ObjectState, validate_transition
 
 UpsertOutcome = Literal["created", "updated", "unchanged"]
-AssemblyAction = Literal["created", "updated", "unchanged", "read_only"]
+AssemblyAction = Literal["created", "updated", "unchanged", "read_only", "cached"]
 
 
 class _AssembledOutput(NamedTuple):
@@ -131,6 +138,10 @@ class OutputAssemblyService:
     def read_region(
         self, region_id: str, *, now: Callable[[], datetime] | None = None
     ) -> RegionAssemblyResult:
+        cached = self._cached_region(region_id)
+        if cached is not None:
+            row, payload = cached
+            return RegionAssemblyResult(metadata=row, payload=payload, action="cached")
         assembled = self._assemble_region(region_id, now=now)
         row = self._output_repo.get_by_type_and_subject(
             OutputType.REGION_OUTPUT.value, assembled.subject_id
@@ -203,6 +214,10 @@ class OutputAssemblyService:
     def read_company(
         self, company_id: str, *, now: Callable[[], datetime] | None = None
     ) -> CompanyAssemblyResult:
+        cached = self._cached_company(company_id)
+        if cached is not None:
+            row, payload = cached
+            return CompanyAssemblyResult(metadata=row, payload=payload, action="cached")
         assembled = self._assemble_company(company_id, now=now)
         row = self._output_repo.get_by_type_and_subject(
             OutputType.COMPANY_OUTPUT.value, assembled.subject_id
@@ -312,6 +327,11 @@ class OutputAssemblyService:
         *,
         now: Callable[[], datetime] | None = None,
     ) -> ComparisonAssemblyResult:
+        subject_id = canonical_comparison_id(region_a_id, region_b_id)
+        cached = self._cached_comparison(subject_id)
+        if cached is not None:
+            row, payload = cached
+            return ComparisonAssemblyResult(metadata=row, payload=payload, action="cached")
         assembled = self._assemble_comparison(region_a_id, region_b_id, now=now)
         row = self._output_repo.get_by_type_and_subject(
             OutputType.COMPARISON_OUTPUT.value, assembled.subject_id
@@ -392,12 +412,23 @@ class OutputAssemblyService:
         freshness_expires_at: datetime | None,
         output_id_default: str,
     ) -> tuple[OutputMetadata, UpsertOutcome]:
-        ah = compute_artifact_hash(payload.model_dump(mode="json"))
+        payload_data = payload_json(payload)
+        ah = compute_artifact_hash(payload_data)
 
         existing = self._output_repo.get_by_type_and_subject(
             output_type.value, subject_id
         )
         if existing is not None and existing.artifact_hash == ah:
+            self._apply_cache_fields(
+                existing,
+                payload_data=payload_data,
+                source_version_bundle=source_version_bundle,
+                freshness_expires_at=freshness_expires_at,
+            )
+            if existing.state != outcome.value:
+                self._walk_changed_rebuild_state(existing, outcome)
+            mark_rebuild_succeeded(existing)
+            self._output_repo.flush()
             return existing, "unchanged"
 
         if existing is None:
@@ -407,24 +438,80 @@ class OutputAssemblyService:
                 subject_id=subject_id,
                 artifact_uri=None,
                 artifact_hash=ah,
+                cached_payload=payload_data,
                 source_version_bundle=source_version_bundle,
+                source_version_refs=list(source_version_refs_for_bundle(source_version_bundle)),
+                source_bundle_ref=source_bundle_ref_for_bundle(source_version_bundle),
                 freshness_expires_at=freshness_expires_at,
             )
             self._output_repo.add(row)
             self._output_repo.flush()
             self._walk_first_build_state(row, outcome)
+            mark_rebuild_succeeded(row)
             self._output_repo.flush()
             return row, "created"
 
         existing.artifact_hash = ah
-        existing.source_version_bundle = source_version_bundle
-        existing.freshness_expires_at = freshness_expires_at
+        self._apply_cache_fields(
+            existing,
+            payload_data=payload_data,
+            source_version_bundle=source_version_bundle,
+            freshness_expires_at=freshness_expires_at,
+        )
         from backend.shared.versioning import next_version
 
         existing.version = next_version(existing.version)
         self._walk_changed_rebuild_state(existing, outcome)
+        mark_rebuild_succeeded(existing)
         self._output_repo.flush()
         return existing, "updated"
+
+    def _apply_cache_fields(
+        self,
+        row: OutputMetadata,
+        *,
+        payload_data: dict,
+        source_version_bundle: dict,
+        freshness_expires_at: datetime | None,
+    ) -> None:
+        row.cached_payload = payload_data
+        row.source_version_bundle = source_version_bundle
+        row.source_version_refs = list(source_version_refs_for_bundle(source_version_bundle))
+        row.source_bundle_ref = source_bundle_ref_for_bundle(source_version_bundle)
+        row.freshness_expires_at = freshness_expires_at
+
+    def _cached_region(self, region_id: str):
+        row = self._output_repo.get_by_type_and_subject(
+            OutputType.REGION_OUTPUT.value, region_id
+        )
+        if row is None:
+            return None
+        payload = load_cached_output(row)
+        if not isinstance(payload, RegionOutput):
+            return None
+        return row, payload
+
+    def _cached_company(self, company_id: str):
+        row = self._output_repo.get_by_type_and_subject(
+            OutputType.COMPANY_OUTPUT.value, company_id
+        )
+        if row is None:
+            return None
+        payload = load_cached_output(row)
+        if not isinstance(payload, CompanyOutput):
+            return None
+        return row, payload
+
+    def _cached_comparison(self, subject_id: str):
+        row = self._output_repo.get_by_type_and_subject(
+            OutputType.COMPARISON_OUTPUT.value, subject_id
+        )
+        if row is None:
+            return None
+        payload = load_cached_output(row)
+        if not isinstance(payload, ComparisonOutput):
+            return None
+        return row, payload
 
     def _walk_first_build_state(
         self, row: OutputMetadata, outcome: BuildOutcome

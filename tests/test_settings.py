@@ -53,23 +53,97 @@ def test_explicit_test_settings_can_use_local_database_default() -> None:
 
 
 def test_invalid_app_env_is_rejected() -> None:
-    with pytest.raises(ValidationError, match="local|test|dev|staging|prod"):
+    with pytest.raises(
+        ValidationError,
+        match="local|test|private_demo|public_demo|staging|production|dev|prod",
+    ):
         Settings(app_env="qa", _env_file=None)
 
 
-@pytest.mark.parametrize("app_env", [AppEnv.DEV, AppEnv.STAGING, AppEnv.PROD])
+@pytest.mark.parametrize(
+    "app_env",
+    [
+        AppEnv.PRIVATE_DEMO,
+        AppEnv.PUBLIC_DEMO,
+        AppEnv.DEV,
+        AppEnv.STAGING,
+        AppEnv.PRODUCTION,
+        AppEnv.PROD,
+    ],
+)
 def test_non_local_environments_require_database_url(app_env: AppEnv) -> None:
     with pytest.raises(ValidationError, match="DATABASE_URL is required"):
         Settings(app_env=app_env, database_url="", _env_file=None)
 
 
+def test_public_demo_requires_explicit_database_and_is_read_only() -> None:
+    settings = Settings(
+        app_env="public-demo",
+        database_url="sqlite:///public-demo.db",
+        cors_allowed_origins="https://demo.example",
+        _env_file=None,
+    )
+
+    assert settings.app_env == AppEnv.PUBLIC_DEMO
+    assert settings.is_public_demo_read_only is True
+    assert settings.cors_allowed_origin_list == ["https://demo.example"]
+    assert settings.rate_limit_enabled is True
+    assert settings.security_headers_enabled is True
+    assert settings.max_request_body_bytes == 65_536
+    assert settings.rate_limit_requests == 60
+    assert settings.rate_limit_window_seconds == 60
+
+
+def test_public_demo_requires_explicit_cors_origin() -> None:
+    with pytest.raises(ValidationError, match="CORS_ALLOWED_ORIGINS"):
+        Settings(
+            app_env="public_demo",
+            database_url="sqlite:///public-demo.db",
+            _env_file=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("setting_name", "error_message"),
+    [
+        ("rate_limit_enabled", "RATE_LIMIT_ENABLED must be true"),
+        ("security_headers_enabled", "SECURITY_HEADERS_ENABLED must be true"),
+    ],
+)
+def test_public_demo_requires_abuse_protection_flags_enabled(
+    setting_name: str, error_message: str
+) -> None:
+    kwargs = {
+        "app_env": "public_demo",
+        "database_url": "sqlite:///public-demo.db",
+        "cors_allowed_origins": "https://demo.example",
+        setting_name: False,
+        "_env_file": None,
+    }
+
+    with pytest.raises(ValidationError, match=error_message):
+        Settings(**kwargs)
+
+
+def test_private_demo_is_not_public_demo_read_only() -> None:
+    settings = Settings(
+        app_env="private_demo",
+        database_url="sqlite:///private-demo.db",
+        _env_file=None,
+    )
+
+    assert settings.app_env == AppEnv.PRIVATE_DEMO
+    assert settings.is_public_demo_read_only is False
+
+
 def test_non_local_database_url_is_accepted_without_exposing_repr() -> None:
     settings = Settings(
-        app_env="prod",
+        app_env="production",
         database_url="postgresql://user:secret@example.test/db",
         _env_file=None,
     )
 
+    assert settings.app_env == AppEnv.PRODUCTION
     assert settings.database_url == "postgresql://user:secret@example.test/db"
     assert "secret" not in repr(settings)
 
@@ -181,9 +255,23 @@ def test_api_protection_numeric_settings_have_sane_upper_bounds() -> None:
         Settings(rate_limit_window_seconds=3_601, _env_file=None)
 
 
-def test_dev_defaults_deferred_flags_to_disabled() -> None:
+def test_blank_api_protection_numeric_settings_use_environment_defaults() -> None:
     settings = Settings(
-        app_env="dev",
+        max_request_body_bytes="",
+        rate_limit_requests="",
+        rate_limit_window_seconds="",
+        _env_file=None,
+    )
+
+    assert settings.max_request_body_bytes == 1_048_576
+    assert settings.rate_limit_requests == 120
+    assert settings.rate_limit_window_seconds == 60
+
+
+@pytest.mark.parametrize("app_env", [AppEnv.DEV, AppEnv.PRIVATE_DEMO])
+def test_non_strict_non_local_defaults_deferred_flags_to_disabled(app_env: AppEnv) -> None:
+    settings = Settings(
+        app_env=app_env,
         database_url="sqlite:///dev.db",
         _env_file=None,
     )
@@ -192,13 +280,18 @@ def test_dev_defaults_deferred_flags_to_disabled() -> None:
     assert settings.security_headers_enabled is False
 
 
-def test_staging_and_prod_default_deferred_flags_to_enabled() -> None:
+def test_staging_production_and_legacy_prod_default_deferred_flags_to_enabled() -> None:
     staging = Settings(
         app_env="staging",
         database_url="postgresql://user:secret@example.test/staging",
         _env_file=None,
     )
-    prod = Settings(
+    production = Settings(
+        app_env="production",
+        database_url="postgresql://user:secret@example.test/prod",
+        _env_file=None,
+    )
+    legacy_prod = Settings(
         app_env="prod",
         database_url="postgresql://user:secret@example.test/prod",
         _env_file=None,
@@ -206,11 +299,13 @@ def test_staging_and_prod_default_deferred_flags_to_enabled() -> None:
 
     assert staging.rate_limit_enabled is True
     assert staging.security_headers_enabled is True
-    assert prod.rate_limit_enabled is True
-    assert prod.security_headers_enabled is True
+    assert production.rate_limit_enabled is True
+    assert production.security_headers_enabled is True
+    assert legacy_prod.rate_limit_enabled is True
+    assert legacy_prod.security_headers_enabled is True
 
 
-@pytest.mark.parametrize("app_env", [AppEnv.STAGING, AppEnv.PROD])
+@pytest.mark.parametrize("app_env", [AppEnv.STAGING, AppEnv.PRODUCTION, AppEnv.PROD])
 def test_staging_and_prod_reject_sqlite_database_url(app_env: AppEnv) -> None:
     with pytest.raises(ValidationError, match="must not use SQLite"):
         Settings(app_env=app_env, database_url="sqlite:///prod.db", _env_file=None)

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -41,8 +42,23 @@ from backend.outputs.repository import OutputMetadataRepository
 from backend.outputs.service import OutputAssemblyService
 from backend.presence.repository import PresenceRepository
 from backend.presence.service import PresenceService
+from backend.provenance.repository import ProvenanceRepository
+from backend.provenance.service import (
+    FactSourceLinkDefinition,
+    ProvenanceService,
+    SourceObservationDefinition,
+    SourceRefDefinition,
+)
 from backend.scoring.repository import RegionScoreRepository
 from backend.scoring.service import RegionScoringService
+from backend.shared.confidence import Confidence
+from backend.shared.provenance import (
+    DataOrigin,
+    FactBindingType,
+    LicenseTermsCategory,
+    ObservationStatus,
+    SourceType,
+)
 from seeds.mvp_data import (
     COMPANIES,
     COMPARISON_PAIRS,
@@ -50,6 +66,14 @@ from seeds.mvp_data import (
     HIRING,
     PRESENCE,
     REGIONS,
+)
+
+_DEMO_SOURCE_ID = "mvp_demo_seed"
+_DEMO_OBSERVATION_ID = "mvp_demo_seed_observation"
+_DEMO_OBSERVED_AT = datetime(2026, 5, 20, tzinfo=UTC)
+_DEMO_NOTES = (
+    "MVP demo seed dataset; synthetic_or_curated_demo; "
+    "not factual public market coverage."
 )
 
 
@@ -110,20 +134,34 @@ def run_seed(session: Session) -> SeedResult:
     happen at the boundary.
     """
     result = SeedResult()
+    provenance_service = ProvenanceService(ProvenanceRepository(session))
+    demo_observation_id = _ensure_demo_provenance(provenance_service)
 
     # 1) Regions ---------------------------------------------------------
     region_repo = RegionRepository(session)
     geography_service = GeographyService(region_repo)
     for definition in REGIONS:
-        _, outcome = geography_service.upsert_for_build(definition)
+        region, outcome = geography_service.upsert_for_build(definition)
         result.regions[outcome] += 1
+        _link_demo_fact(
+            provenance_service,
+            observation_id=demo_observation_id,
+            fact_type=FactBindingType.REGION,
+            fact_id=region.region_id,
+        )
 
     # 2) Companies -------------------------------------------------------
     company_repo = CompanyRepository(session)
     company_service = CompanyService(company_repo)
     for definition in COMPANIES:
-        _, outcome = company_service.upsert_for_classify(definition)
+        company, outcome = company_service.upsert_for_classify(definition)
         result.companies[outcome] += 1
+        _link_demo_fact(
+            provenance_service,
+            observation_id=demo_observation_id,
+            fact_type=FactBindingType.COMPANY,
+            fact_id=company.company_id,
+        )
 
     # 3) Presence --------------------------------------------------------
     presence_repo = PresenceRepository(session)
@@ -131,15 +169,27 @@ def run_seed(session: Session) -> SeedResult:
         presence_repo, company_repo=company_repo, region_repo=region_repo
     )
     for definition in PRESENCE:
-        _, outcome = presence_service.upsert_for_mapping(definition)
+        presence, outcome = presence_service.upsert_for_mapping(definition)
         result.presence[outcome] += 1
+        _link_demo_fact(
+            provenance_service,
+            observation_id=demo_observation_id,
+            fact_type=FactBindingType.COMPANY_REGION_PRESENCE,
+            fact_id=presence.presence_id,
+        )
 
     # 4) Hiring ----------------------------------------------------------
     hiring_repo = HiringRepository(session)
     hiring_service = HiringService(hiring_repo, presence_repo=presence_repo)
     for definition in HIRING:
-        _, outcome = hiring_service.upsert_for_refresh(definition)
+        hiring, outcome = hiring_service.upsert_for_refresh(definition)
         result.hiring[outcome] += 1
+        _link_demo_fact(
+            provenance_service,
+            observation_id=demo_observation_id,
+            fact_type=FactBindingType.COMPANY_REGION_HIRING,
+            fact_id=hiring.hiring_id,
+        )
 
     # 5) Entry-level -----------------------------------------------------
     entry_level_repo = EntryLevelRepository(session)
@@ -147,15 +197,27 @@ def run_seed(session: Session) -> SeedResult:
         entry_level_repo, hiring_repo=hiring_repo
     )
     for definition in ENTRY_LEVEL:
-        _, outcome = entry_level_service.upsert_for_refresh(definition)
+        entry_level, outcome = entry_level_service.upsert_for_refresh(definition)
         result.entry_level[outcome] += 1
+        _link_demo_fact(
+            provenance_service,
+            observation_id=demo_observation_id,
+            fact_type=FactBindingType.COMPANY_REGION_ENTRY_LEVEL,
+            fact_id=entry_level.entry_level_id,
+        )
 
     # 6) Region scores ---------------------------------------------------
     score_repo = RegionScoreRepository(session)
     scoring_service = RegionScoringService(score_repo, region_repo=region_repo)
     for region_def in REGIONS:
-        _, outcome = scoring_service.upsert_for_recompute(region_def.region_id)
+        score, outcome = scoring_service.upsert_for_recompute(region_def.region_id)
         result.region_scores[outcome] += 1
+        _link_demo_fact(
+            provenance_service,
+            observation_id=demo_observation_id,
+            fact_type=FactBindingType.SCORE_INPUT,
+            fact_id=score.region_score_id,
+        )
 
     # 7-9) Output assembly ----------------------------------------------
     output_repo = OutputMetadataRepository(session)
@@ -194,3 +256,54 @@ def run_seed(session: Session) -> SeedResult:
         result.contextual_outputs[contextual_result.action] += 1
 
     return result
+
+
+def _ensure_demo_provenance(provenance_service: ProvenanceService) -> str:
+    provenance_service.upsert_source_ref(
+        SourceRefDefinition(
+            source_id=_DEMO_SOURCE_ID,
+            source_type=SourceType.MANUAL_RESEARCH,
+            source_name="MVP demo seed dataset",
+            url_or_provider="seeds.mvp_data",
+            collected_at=_DEMO_OBSERVED_AT,
+            observed_at=_DEMO_OBSERVED_AT,
+            license_or_terms_category=LicenseTermsCategory.PERMISSIVE,
+            confidence=Confidence.UNKNOWN,
+            data_origin=DataOrigin.DEMO_SEED,
+            notes=_DEMO_NOTES,
+        )
+    )
+    provenance_service.upsert_observation(
+        SourceObservationDefinition(
+            observation_id=_DEMO_OBSERVATION_ID,
+            source_id=_DEMO_SOURCE_ID,
+            collected_at=_DEMO_OBSERVED_AT,
+            observed_at=_DEMO_OBSERVED_AT,
+            data_origin=DataOrigin.SYNTHETIC_OR_CURATED_DEMO,
+            observation_status=ObservationStatus.NOT_APPLICABLE,
+            confidence=Confidence.UNKNOWN,
+            notes=_DEMO_NOTES,
+        )
+    )
+    return _DEMO_OBSERVATION_ID
+
+
+def _link_demo_fact(
+    provenance_service: ProvenanceService,
+    *,
+    observation_id: str,
+    fact_type: FactBindingType,
+    fact_id: str,
+) -> None:
+    provenance_service.upsert_fact_source_link(
+        FactSourceLinkDefinition(
+            link_id=f"demo_seed:{fact_type.value}:{fact_id}",
+            observation_id=observation_id,
+            fact_type=fact_type,
+            fact_id=fact_id,
+            data_origin=DataOrigin.DEMO_SEED,
+            observation_status=ObservationStatus.NOT_APPLICABLE,
+            confidence=Confidence.UNKNOWN,
+            notes=_DEMO_NOTES,
+        )
+    )

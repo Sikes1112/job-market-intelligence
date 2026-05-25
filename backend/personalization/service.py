@@ -19,20 +19,34 @@ Architectural rules pinned by the layer-isolation test:
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.companies.models import Company
 from backend.geography.repository import RegionRepository
 from backend.hiring.models import CompanyRegionHiring
+from backend.personalization.controls import (
+    SCORING_WEIGHT_KEYS,
+    ScoringWeightKey,
+    coerce_scoring_weights,
+    normalize_weights,
+    weighted_overlay_score,
+)
 from backend.personalization.exceptions import (
     MissingRegionForPersonalization,
 )
 from backend.personalization.payloads import (
+    CanonicalDefaultScoreSummary,
     PersonalizedCompanyEntry,
     PersonalizedDiscoveryBody,
     PersonalizedDiscoveryResult,
     PersonalizedRegionEntry,
+    ScoringPreviewComponent,
+    ScoringPreviewRegion,
+    ScoringPreviewRequest,
+    ScoringPreviewResult,
     UserPreferences,
 )
 from backend.personalization.scoring import (
@@ -241,6 +255,130 @@ class PersonalizationService:
             warnings=warnings,
         )
 
+    def scoring_preview(self, request: ScoringPreviewRequest) -> ScoringPreviewResult:
+        """Preview personalized region scores without writing any rows."""
+
+        weights = coerce_scoring_weights(request.scoring_weights)
+        raw_weights = weights.as_dict()
+        default_normalized = normalize_weights(weights)
+        warnings: list[dict[str, Any]] = []
+        regions: list[ScoringPreviewRegion] = []
+
+        for region_id in request.region_ids:
+            region = self._region_repo.get(region_id)
+            if region is None:
+                raise MissingRegionForPersonalization(region_id)
+
+            score_row = self._score_repo.get_score_by_region(region.region_id)
+            present_companies = self._score_repo.list_present_companies_for_region(
+                region.region_id
+            )
+            hiring_rows = self._score_repo.list_hiring_for_region(region.region_id)
+
+            components: dict[ScoringWeightKey, float | None] = {
+                "entry_level_access": (
+                    score_row.early_career_accessibility_score
+                    if score_row is not None
+                    else None
+                ),
+                "hiring_density": (
+                    score_row.live_market_score if score_row is not None else None
+                ),
+                "prestige": _average_known(
+                    [company.prestige_score for company in present_companies]
+                ),
+                "industry_fit": _region_industry_fit(
+                    present_companies,
+                    request.industry_interests or [],
+                ),
+                "role_fit": _region_role_fit(
+                    hiring_rows,
+                    request.role_interests or [],
+                ),
+            }
+            overlay_score, effective_weights = weighted_overlay_score(
+                components,
+                weights,
+            )
+            omitted = [
+                key
+                for key in SCORING_WEIGHT_KEYS
+                if components[key] is None and raw_weights[key] > 0
+            ]
+            for key in omitted:
+                warnings.append(
+                    _warning(
+                        "scoring_preview_component_missing",
+                        message=(
+                            f"Personalized scoring preview omitted {key!r} for "
+                            f"{region.region_id!r} because no structured value was "
+                            "available."
+                        ),
+                        scope_type="region",
+                        scope_ref=region.region_id,
+                        severity="low",
+                    )
+                )
+
+            regions.append(
+                ScoringPreviewRegion(
+                    region_id=region.region_id,
+                    display_name=region.display_name,
+                    canonical_default_scores=CanonicalDefaultScoreSummary(
+                        objective_opportunity_score=(
+                            score_row.objective_opportunity_score
+                            if score_row is not None
+                            else None
+                        ),
+                        raw_total_score=(
+                            score_row.raw_total_score if score_row is not None else None
+                        ),
+                        early_career_accessibility_score=components[
+                            "entry_level_access"
+                        ],
+                        live_market_score=components["hiring_density"],
+                        score_ruleset_version=(
+                            score_row.score_ruleset_version
+                            if score_row is not None
+                            else None
+                        ),
+                    ),
+                    personalized_overlay_score=overlay_score,
+                    components={
+                        key: ScoringPreviewComponent(
+                            value=components[key],
+                            raw_weight=raw_weights[key],
+                            effective_weight=effective_weights[key],
+                            status="used" if components[key] is not None else "missing",
+                            evidence=_preview_evidence(
+                                key,
+                                score_id=(
+                                    score_row.region_score_id
+                                    if score_row is not None
+                                    else None
+                                ),
+                                company_count=len(present_companies),
+                                hiring_count=len(hiring_rows),
+                                has_preferences=bool(
+                                    request.role_interests
+                                    if key == "role_fit"
+                                    else request.industry_interests
+                                ),
+                            ),
+                        )
+                        for key in SCORING_WEIGHT_KEYS
+                    },
+                    omitted_components=omitted,
+                )
+            )
+
+        return ScoringPreviewResult(
+            scoring_weights=weights,
+            normalized_weights=default_normalized,
+            regions=regions,
+            warnings=warnings,
+        )
+
     # The presence query is encapsulated here so the service stays
     # repository-only with respect to upstream domains.
     def _present_pairs_for_region(self, region_id: str) -> list[Company]:
@@ -256,3 +394,71 @@ class PersonalizationService:
             .order_by(Company.company_id)
         )
         return list(self._session.execute(stmt).scalars())
+
+
+def _average_known(values: list[float | None]) -> float | None:
+    known = [float(value) for value in values if value is not None]
+    if not known:
+        return None
+    return max(0.0, min(1.0, sum(known) / len(known)))
+
+
+def _region_industry_fit(
+    companies: list[Company],
+    industry_preferences: list[str],
+) -> float | None:
+    if not companies:
+        return None
+    scores = [
+        industry_fit_component(
+            industry_preferences=industry_preferences,
+            sector_primary=company.sector_primary,
+            sector_secondary=company.sector_secondary,
+        )[0]
+        for company in companies
+    ]
+    return _average_known(scores)
+
+
+def _region_role_fit(
+    hiring_rows: list[CompanyRegionHiring],
+    role_interests: list[str],
+) -> float | None:
+    rows_with_summary = [
+        row for row in hiring_rows if row.role_family_summary is not None
+    ]
+    if not rows_with_summary:
+        return 0.5 if not role_interests and hiring_rows else None
+    scores = [
+        role_fit_component(
+            role_targets=role_interests,
+            role_family_summary=row.role_family_summary,
+        )[0]
+        for row in rows_with_summary
+    ]
+    return _average_known(scores)
+
+
+def _preview_evidence(
+    key: ScoringWeightKey,
+    *,
+    score_id: str | None,
+    company_count: int,
+    hiring_count: int,
+    has_preferences: bool,
+) -> list[str]:
+    if key == "entry_level_access":
+        if score_id is None:
+            return []
+        return [f"region_market_scores:{score_id}:early_career_accessibility_score"]
+    if key == "hiring_density":
+        return [f"region_market_scores:{score_id}:live_market_score"] if score_id else []
+    if key == "prestige":
+        return [f"companies:prestige_score:present_company_count={company_count}"]
+    if key == "industry_fit":
+        basis = "saved_industry_interests" if has_preferences else "neutral_no_industry_interests"
+        return [f"companies:sector_fields:{basis}:present_company_count={company_count}"]
+    if key == "role_fit":
+        basis = "saved_role_interests" if has_preferences else "neutral_no_role_interests"
+        return [f"company_region_hiring:role_family_summary:{basis}:hiring_rows={hiring_count}"]
+    return []

@@ -119,17 +119,17 @@ def test_handler_creates_score_row(session: Session) -> None:
     result = response.outputs["region_scores"][0]
     assert result["state"] == "fresh"
     assert result["score_ruleset_version"] == "marketscore_v1"
-    # All seven score columns must be populated.
-    for col in (
-        "structural_ecosystem_score",
-        "live_market_score",
-        "objective_opportunity_score",
-        "raw_total_score",
-        "general_density_score",
-        "tech_market_density_score",
-        "early_career_accessibility_score",
-    ):
-        assert result[col] is not None
+    assert result["structural_ecosystem_score"] is not None
+    assert result["raw_total_score"] is not None
+    assert result["general_density_score"] is not None
+    assert result["tech_market_density_score"] is not None
+    # No hiring or entry-level rows were seeded, so those score inputs are
+    # unknown/not-collected rather than forced to numeric zero.
+    assert result["live_market_score"] is None
+    # Objective can still be computed from the known prestige input; missing
+    # live/entry-level inputs are omitted rather than zeroed.
+    assert result["objective_opportunity_score"] == 0.6
+    assert result["early_career_accessibility_score"] is None
 
 
 def test_handler_unchanged_does_not_bump_version(session: Session) -> None:

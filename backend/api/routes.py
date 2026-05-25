@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
 from backend.api.dependencies import (
     get_output_service,
     get_region_repository,
+    get_session,
 )
 from backend.api.envelope import (
     NOT_FOUND,
@@ -22,6 +24,14 @@ from backend.api.envelope import (
     error_envelope,
     lightweight_success_envelope,
     success_envelope,
+)
+from backend.api.metadata import ApiFreshnessStatus
+from backend.api.search import (
+    company_geography,
+    explain_company_sources,
+    explain_region_sources,
+    search_companies,
+    search_regions,
 )
 from backend.geography.repository import RegionRepository
 from backend.outputs.exceptions import (
@@ -59,6 +69,26 @@ def list_regions(
     return lightweight_success_envelope(data={"regions": regions})
 
 
+@router.get("/regions/search")
+def search_regions_route(
+    query: str | None = Query(default=None, min_length=1),
+    region_type: str | None = Query(default=None, min_length=1),
+    has_real_data: bool | None = Query(default=None),
+    freshness_status: ApiFreshnessStatus | None = Query(default=None),
+    min_opportunity_score: float | None = Query(default=None),
+    session: Session = Depends(get_session),
+) -> dict:
+    result = search_regions(
+        session,
+        query=query,
+        region_type=region_type,
+        has_real_data=has_real_data,
+        freshness_status=freshness_status,
+        min_opportunity_score=min_opportunity_score,
+    )
+    return lightweight_success_envelope(data=result.model_dump(mode="json"))
+
+
 # ---------------------------------------------------------------------------
 # /regions/{region_id} — full region output via Slice 11
 # ---------------------------------------------------------------------------
@@ -86,9 +116,51 @@ def get_region(
     )
 
 
+@router.get("/regions/{region_id}/sources")
+def explain_region_sources_route(
+    region_id: str,
+    session: Session = Depends(get_session),
+):
+    result = explain_region_sources(session, region_id=region_id)
+    if result is None:
+        return JSONResponse(
+            status_code=404,
+            content=error_envelope(
+                code=NOT_FOUND, message=f"Region not found: {region_id!r}"
+            ),
+        )
+    return lightweight_success_envelope(data=result.model_dump(mode="json"))
+
+
 # ---------------------------------------------------------------------------
 # /companies/{company_id} — full company output via Slice 11
 # ---------------------------------------------------------------------------
+
+
+@router.get("/companies/search")
+def search_companies_route(
+    query: str | None = Query(default=None, min_length=1),
+    sector: str | None = Query(default=None, min_length=1),
+    industry: str | None = Query(default=None, min_length=1),
+    role_family: str | None = Query(default=None, min_length=1),
+    region_id: str | None = Query(default=None, min_length=1),
+    current_hiring: bool | None = Query(default=None),
+    has_entry_level_access: bool | None = Query(default=None),
+    presence_status: str | None = Query(default=None, min_length=1),
+    session: Session = Depends(get_session),
+) -> dict:
+    result = search_companies(
+        session,
+        query=query,
+        sector=sector,
+        industry=industry,
+        role_family=role_family,
+        region_id=region_id,
+        current_hiring=current_hiring,
+        has_entry_level_access=has_entry_level_access,
+        presence_status=presence_status,
+    )
+    return lightweight_success_envelope(data=result.model_dump(mode="json"))
 
 
 @router.get("/companies/{company_id}")
@@ -111,6 +183,38 @@ def get_company(
         output_metadata_row=result.metadata,
         payload_metadata=payload.metadata,
     )
+
+
+@router.get("/companies/{company_id}/regions")
+def company_geography_route(
+    company_id: str,
+    session: Session = Depends(get_session),
+):
+    result = company_geography(session, company_id=company_id)
+    if result is None:
+        return JSONResponse(
+            status_code=404,
+            content=error_envelope(
+                code=NOT_FOUND, message=f"Company not found: {company_id!r}"
+            ),
+        )
+    return lightweight_success_envelope(data=result.model_dump(mode="json"))
+
+
+@router.get("/companies/{company_id}/sources")
+def explain_company_sources_route(
+    company_id: str,
+    session: Session = Depends(get_session),
+):
+    result = explain_company_sources(session, company_id=company_id)
+    if result is None:
+        return JSONResponse(
+            status_code=404,
+            content=error_envelope(
+                code=NOT_FOUND, message=f"Company not found: {company_id!r}"
+            ),
+        )
+    return lightweight_success_envelope(data=result.model_dump(mode="json"))
 
 
 # ---------------------------------------------------------------------------
@@ -155,4 +259,3 @@ def get_comparison(
         output_metadata_row=result.metadata,
         payload_metadata=payload.metadata,
     )
-

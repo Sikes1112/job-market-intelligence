@@ -93,18 +93,15 @@ def test_request_size_limit_replaces_invalid_request_id() -> None:
 
 def test_rate_limiting_returns_429_when_enabled() -> None:
     client = TestClient(
-        create_app(
-            settings=_settings(
-                rate_limit_enabled=True,
-                rate_limit_requests=2,
-                rate_limit_window_seconds=60,
-            )
+        _limited_get_app(
+            rate_limit_requests=2,
+            rate_limit_window_seconds=60,
         )
     )
 
-    assert client.get("/health").status_code == 200
-    assert client.get("/health").status_code == 200
-    response = client.get("/health", headers={"X-Request-ID": "rate-req-1"})
+    assert client.get("/limited").status_code == 200
+    assert client.get("/limited").status_code == 200
+    response = client.get("/limited", headers={"X-Request-ID": "rate-req-1"})
 
     assert response.status_code == 429
     assert response.headers["x-request-id"] == "rate-req-1"
@@ -136,27 +133,21 @@ def test_rate_limiting_is_disabled_when_setting_is_false() -> None:
 
 def test_rate_limiting_state_is_per_app_instance() -> None:
     first_client = TestClient(
-        create_app(
-            settings=_settings(
-                rate_limit_enabled=True,
-                rate_limit_requests=1,
-                rate_limit_window_seconds=60,
-            )
+        _limited_get_app(
+            rate_limit_requests=1,
+            rate_limit_window_seconds=60,
         )
     )
     second_client = TestClient(
-        create_app(
-            settings=_settings(
-                rate_limit_enabled=True,
-                rate_limit_requests=1,
-                rate_limit_window_seconds=60,
-            )
+        _limited_get_app(
+            rate_limit_requests=1,
+            rate_limit_window_seconds=60,
         )
     )
 
-    assert first_client.get("/health").status_code == 200
-    assert first_client.get("/health").status_code == 429
-    assert second_client.get("/health").status_code == 200
+    assert first_client.get("/limited").status_code == 200
+    assert first_client.get("/limited").status_code == 429
+    assert second_client.get("/limited").status_code == 200
 
 
 def test_malformed_content_length_does_not_crash_size_check() -> None:
@@ -204,6 +195,57 @@ def test_rate_limiter_prunes_expired_buckets() -> None:
     assert set(middleware._rate_limits) == {"active"}
 
 
+def test_public_demo_cors_allows_exact_configured_origin() -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                app_env="public_demo",
+                database_url="sqlite:///public-demo.db",
+                cors_allowed_origins="https://demo.example",
+                _env_file=None,
+            )
+        )
+    )
+
+    response = client.options(
+        "/regions",
+        headers={
+            "Origin": "https://demo.example",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "X-Request-ID",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://demo.example"
+    assert "*" not in response.headers["access-control-allow-origin"]
+    assert "X-Request-ID" in response.headers["access-control-allow-headers"]
+
+
+def test_public_demo_cors_rejects_unconfigured_origin() -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                app_env="public_demo",
+                database_url="sqlite:///public-demo.db",
+                cors_allowed_origins="https://demo.example",
+                _env_file=None,
+            )
+        )
+    )
+
+    response = client.options(
+        "/regions",
+        headers={
+            "Origin": "https://other.example",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+
+
 def _body_echo_app(
     *,
     max_request_body_bytes: int,
@@ -220,6 +262,26 @@ def _body_echo_app(
     async def echo_body(request: Request) -> dict[str, int]:
         body = await request.body()
         return {"size": len(body)}
+
+    return app
+
+
+def _limited_get_app(
+    *,
+    rate_limit_requests: int,
+    rate_limit_window_seconds: int,
+):
+    app = create_app(
+        settings=_settings(
+            rate_limit_enabled=True,
+            rate_limit_requests=rate_limit_requests,
+            rate_limit_window_seconds=rate_limit_window_seconds,
+        )
+    )
+
+    @app.get("/limited")
+    def limited() -> dict[str, bool]:
+        return {"ok": True}
 
     return app
 

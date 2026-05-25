@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "smoke:public-demo": "node scripts/public-demo-smoke.mjs",
     "test": "vitest run"
   },
   "dependencies": {

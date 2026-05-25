@@ -42,6 +42,7 @@ from backend.outputs.payloads import (
 from backend.outputs.types import BuildOutcome
 from backend.presence.models import CompanyRegionPresence
 from backend.scoring.models import RegionMarketScore
+from backend.shared.value_semantics import aggregate_counts
 
 _TOP_LIST_LIMIT = 25
 
@@ -165,9 +166,30 @@ def build_region_output(
     ]
 
     # --- entry-level summary --------------------------------------------
-    internship_total = sum((e.internship_count or 0) for e in entry_level_list)
-    coop_total = sum((e.coop_count or 0) for e in entry_level_list)
-    ft_total = sum((e.entry_level_full_time_count or 0) for e in entry_level_list)
+    internship_semantics = aggregate_counts(
+        [e.internship_count for e in entry_level_list]
+    )
+    coop_semantics = aggregate_counts([e.coop_count for e in entry_level_list])
+    ft_semantics = aggregate_counts(
+        [e.entry_level_full_time_count for e in entry_level_list]
+    )
+    if not (
+        internship_semantics.has_current_observed_value
+        and coop_semantics.has_current_observed_value
+        and ft_semantics.has_current_observed_value
+    ):
+        warnings.append(
+            JobWarning(
+                warning_code="entry_level_counts_not_fully_observed",
+                severity=WarningSeverity.MEDIUM,
+                scope_type="region",
+                scope_ref=region.region_id,
+                message=(
+                    "one or more entry-level count totals are unknown, "
+                    "not collected, or stale; totals are not reported as zero"
+                ),
+            )
+        )
     formal_count = sum(
         1 for e in entry_level_list if e.formal_early_career_program_flag
     )
@@ -180,9 +202,9 @@ def build_region_output(
         sum(nonzero_scores) / len(nonzero_scores) if nonzero_scores else None
     )
     entry_level_summary = EntryLevelSummary(
-        internship_count_total=internship_total,
-        coop_count_total=coop_total,
-        entry_level_full_time_count_total=ft_total,
+        internship_count_total=internship_semantics.value,
+        coop_count_total=coop_semantics.value,
+        entry_level_full_time_count_total=ft_semantics.value,
         formal_early_career_program_count=formal_count,
         average_entry_level_access_score=avg_score,
         pairs_with_entry_level_access=len(nonzero_scores),
@@ -236,6 +258,9 @@ def build_region_output(
     is_partial = (
         region_market_score is None
         or not companies
+        or not internship_semantics.has_current_observed_value
+        or not coop_semantics.has_current_observed_value
+        or not ft_semantics.has_current_observed_value
     )
 
     if is_stale:

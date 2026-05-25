@@ -16,6 +16,20 @@ class RequestBodyTooLarge(Exception):
     pass
 
 
+PUBLIC_DEMO_READ_ONLY_ERROR_TYPE = "public_demo_read_only"
+PUBLIC_DEMO_EXACT_ALLOWLIST = frozenset(
+    {
+        ("GET", "/health"),
+        ("GET", "/ready"),
+        ("GET", "/regions"),
+        ("GET", "/regions/search"),
+        ("GET", "/companies/search"),
+        ("GET", "/compare"),
+        ("POST", "/discover/personalized"),
+    }
+)
+
+
 @dataclass
 class RateLimitBucket:
     count: int
@@ -34,6 +48,17 @@ class APIProtectionMiddleware:
             return
 
         request_id = request_id_from_scope(scope)
+
+        if self._public_demo_request_denied(scope):
+            scope.setdefault("state", {})["error_type"] = PUBLIC_DEMO_READ_ONLY_ERROR_TYPE
+            response = safe_error_response_for_request_id(
+                request_id,
+                status_code=403,
+                error_type=PUBLIC_DEMO_READ_ONLY_ERROR_TYPE,
+                message="Public demo mode exposes only approved read-only routes",
+            )
+            await response(scope, receive, send)
+            return
 
         retry_after = self._rate_limit_retry_after(scope)
         if retry_after is not None:
@@ -74,23 +99,38 @@ class APIProtectionMiddleware:
     def _rate_limit_retry_after(self, scope: Scope) -> int | None:
         if not self.settings.rate_limit_enabled:
             return None
+        if _rate_limit_exempt(scope):
+            return None
 
         now = time.monotonic()
         self._prune_expired_rate_limits(now)
         key = _client_key(scope)
         bucket = self._rate_limits.get(key)
+        limit = int(self.settings.rate_limit_requests or 1)
+        window_seconds = int(self.settings.rate_limit_window_seconds or 60)
         if bucket is None or bucket.reset_at <= now:
             self._rate_limits[key] = RateLimitBucket(
                 count=1,
-                reset_at=now + self.settings.rate_limit_window_seconds,
+                reset_at=now + window_seconds,
             )
             return None
 
-        if bucket.count >= self.settings.rate_limit_requests:
+        if bucket.count >= limit:
             return max(1, math.ceil(bucket.reset_at - now))
 
         bucket.count += 1
         return None
+
+    def _public_demo_request_denied(self, scope: Scope) -> bool:
+        if not self.settings.is_public_demo_read_only:
+            return False
+
+        method = str(scope.get("method", "")).upper()
+        if method == "OPTIONS":
+            return False
+
+        path = _normalized_path(scope)
+        return not _public_demo_route_allowed(method, path)
 
     def _prune_expired_rate_limits(self, now: float) -> None:
         expired_keys = [
@@ -110,7 +150,7 @@ class APIProtectionMiddleware:
 
     def _limited_receive(self, receive: Receive) -> Receive:
         received = 0
-        limit = self.settings.max_request_body_bytes
+        limit = int(self.settings.max_request_body_bytes or 1)
 
         async def limited_receive() -> Message:
             nonlocal received
@@ -140,3 +180,41 @@ def _client_key(scope: Scope) -> str:
     if client and client[0]:
         return str(client[0])
     return "unknown"
+
+
+def _rate_limit_exempt(scope: Scope) -> bool:
+    method = str(scope.get("method", "")).upper()
+    if method == "OPTIONS":
+        return True
+    return _normalized_path(scope) in {"/health", "/ready"}
+
+
+def _normalized_path(scope: Scope) -> str:
+    raw_path = str(scope.get("path") or "/")
+    if raw_path == "/":
+        return raw_path
+    return raw_path.rstrip("/")
+
+
+def _public_demo_route_allowed(method: str, path: str) -> bool:
+    if (method, path) in PUBLIC_DEMO_EXACT_ALLOWLIST:
+        return True
+    if method != "GET":
+        return False
+
+    parts = path.strip("/").split("/")
+    if len(parts) == 2 and parts[0] in {"regions", "companies"} and parts[1]:
+        return parts[1] != "search"
+    if (
+        len(parts) == 3
+        and parts[0] == "regions"
+        and parts[1]
+        and parts[2] == "sources"
+    ):
+        return True
+    return (
+        len(parts) == 3
+        and parts[0] == "companies"
+        and parts[1]
+        and parts[2] in {"regions", "sources"}
+    )

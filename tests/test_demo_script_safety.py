@@ -13,15 +13,18 @@ def test_demo_database_target_allows_local_sqlite() -> None:
     ensure_demo_database_target_allowed(settings, "sqlite:///demo.db")
 
 
-@pytest.mark.parametrize("app_env", ["staging", "prod"])
+@pytest.mark.parametrize("app_env", ["public_demo", "staging", "production", "prod"])
 def test_demo_database_target_blocks_production_environments(app_env: str) -> None:
     settings = Settings(
         app_env=app_env,
         database_url="postgresql://user:secret@example.test/db",
+        cors_allowed_origins=(
+            "https://demo.example" if app_env == "public_demo" else ""
+        ),
         _env_file=None,
     )
 
-    with pytest.raises(SystemExit, match="blocked when APP_ENV is staging or prod"):
+    with pytest.raises(SystemExit, match="blocked when APP_ENV is public_demo"):
         ensure_demo_database_target_allowed(settings, settings.database_url)
 
 

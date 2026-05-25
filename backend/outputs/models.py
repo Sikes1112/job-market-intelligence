@@ -17,9 +17,9 @@ from backend.shared.db import Base, CanonicalMixin
 class OutputMetadata(Base, CanonicalMixin):
     """Metadata pointing at derived output artifacts.
 
-    The actual payloads (region/company/comparison/contextual challenge JSON)
-    live in object storage or cache; this row is the queryable index. Slice 11
-    populates these records during output assembly.
+    Region/company/comparison payloads may be stored directly in
+    ``cached_payload`` for the DB-backed cache. ``artifact_uri`` remains the
+    future hook for object storage if payloads move out of the database.
     """
 
     __tablename__ = "output_metadata"
@@ -36,8 +36,23 @@ class OutputMetadata(Base, CanonicalMixin):
 
     artifact_uri: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     artifact_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    cached_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source_version_bundle: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_version_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    source_bundle_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     freshness_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    invalidated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rebuilt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    stale_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    rebuild_job_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    latest_rebuild_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    latest_rebuild_failure_reason: Mapped[str | None] = mapped_column(
+        String(2048), nullable=True
     )

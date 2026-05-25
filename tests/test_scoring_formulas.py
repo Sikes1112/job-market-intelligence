@@ -18,7 +18,9 @@ from backend.scoring.service import (
     compute_objective_opportunity,
     compute_prestige_aggregate,
     compute_structural_ecosystem,
+    prepare_live_market_inputs,
 )
+from backend.shared.provenance import ObservationStatus
 
 
 # Light-weight stand-in for Company. We only read a handful of attributes
@@ -78,25 +80,29 @@ def test_structural_score_is_deterministic() -> None:
 # --- live market --------------------------------------------------------
 
 
-def test_live_market_zero_for_no_records() -> None:
-    assert compute_live_market([], ruleset=DEFAULT_RULESET) == 0.0
+def test_live_market_unknown_when_no_records() -> None:
+    assert compute_live_market([], ruleset=DEFAULT_RULESET) is None
 
 
-def test_live_market_unknown_counts_treated_as_zero_when_record_present() -> None:
-    """If a hiring record exists but counts are unknown, the live market
-    score reflects only what is known. The ``currently_hiring_flag`` still
-    contributes because it is explicitly recorded."""
+def test_live_market_unknown_counts_are_not_treated_as_zero() -> None:
+    """Unknown count components are omitted rather than converted to zero.
+
+    The ``currently_hiring_flag`` still contributes because it is explicitly
+    recorded.
+    """
     h = CompanyRegionHiring(
         hiring_id="h1",
         company_id="c1",
         region_id="r1",
         currently_hiring_flag=True,
     )
+    prepared = prepare_live_market_inputs([h])
+    assert prepared.active_postings.status is ObservationStatus.UNKNOWN
+    assert prepared.hiring_programs.status is ObservationStatus.UNKNOWN
+
     score = compute_live_market([h], ruleset=DEFAULT_RULESET)
-    # currently_hiring_count = 1, postings = 0, programs = 0
-    expected = DEFAULT_RULESET.w_live_hiring_count * (
-        1 / DEFAULT_RULESET.cap_currently_hiring_count
-    )
+    # Only the observed currently_hiring component participates.
+    expected = 1 / DEFAULT_RULESET.cap_currently_hiring_count
     assert score == pytest.approx(expected)
 
 
@@ -118,8 +124,8 @@ def test_live_market_does_not_consider_personalization() -> None:
 # --- early career accessibility ----------------------------------------
 
 
-def test_early_career_zero_for_no_pairs() -> None:
-    assert compute_early_career_accessibility([], ruleset=DEFAULT_RULESET) == 0.0
+def test_early_career_not_collected_for_no_pairs() -> None:
+    assert compute_early_career_accessibility([], ruleset=DEFAULT_RULESET) is None
 
 
 def test_early_career_uses_stored_access_score() -> None:
@@ -150,7 +156,7 @@ def test_early_career_ignores_zero_scored_pairs() -> None:
     assert compute_early_career_accessibility(rows, ruleset=DEFAULT_RULESET) == 0.0
 
 
-def test_early_career_ignores_none_scored_pairs() -> None:
+def test_early_career_unknown_score_is_not_converted_to_zero() -> None:
     rows = [
         CompanyRegionEntryLevel(
             entry_level_id="e1",
@@ -159,7 +165,7 @@ def test_early_career_ignores_none_scored_pairs() -> None:
             entry_level_access_score=None,
         )
     ]
-    assert compute_early_career_accessibility(rows, ruleset=DEFAULT_RULESET) == 0.0
+    assert compute_early_career_accessibility(rows, ruleset=DEFAULT_RULESET) is None
 
 
 # --- prestige -----------------------------------------------------------
@@ -169,7 +175,7 @@ def test_prestige_aggregate_partial_when_all_none() -> None:
     score, partial = compute_prestige_aggregate(
         [_CompanyStub(company_id="c1", eligibility_status="eligible")]
     )
-    assert score == 0.0
+    assert score is None
     assert partial is True
 
 
@@ -245,3 +251,13 @@ def test_objective_is_bounded() -> None:
         ruleset=DEFAULT_RULESET,
     )
     assert score == pytest.approx(1.0)
+
+
+def test_objective_omits_unknown_inputs_instead_of_zeroing_them() -> None:
+    score = compute_objective_opportunity(
+        early_career=None,
+        live_market=0.5,
+        prestige=None,
+        ruleset=DEFAULT_RULESET,
+    )
+    assert score == pytest.approx(0.5)

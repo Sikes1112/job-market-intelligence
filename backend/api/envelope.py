@@ -101,9 +101,11 @@ def success_envelope(
                 if freshness_expires_at is not None
                 else None
             ),
-            "is_stale": _is_stale(freshness_expires_at, now=now),
-            "freshness_status": _freshness_status(
-                freshness_expires_at, now=now
+            "is_stale": state == "stale" or _is_stale(freshness_expires_at, now=now),
+            "freshness_status": (
+                FreshnessStatus.STALE
+                if state == "stale"
+                else _freshness_status(freshness_expires_at, now=now)
             ).value,
         },
         "source_versions": source_versions,

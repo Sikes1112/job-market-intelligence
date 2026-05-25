@@ -123,14 +123,20 @@ def import_all_models() -> None:
     """Register every canonical SQLAlchemy model with ``Base.metadata``."""
     # Importing every domain models module registers its mappers with
     # Base.metadata. Keep this list in sync as canonical entities are added.
+    from backend.admin import models as _admin  # noqa: F401
+    from backend.alerts import models as _alerts  # noqa: F401
     from backend.companies import models as _companies  # noqa: F401
     from backend.entry_level import models as _entry_level  # noqa: F401
     from backend.geography import models as _geography  # noqa: F401
     from backend.hiring import models as _hiring  # noqa: F401
+    from backend.ingestion import models as _ingestion  # noqa: F401
     from backend.orchestration.jobs import models as _jobs  # noqa: F401
     from backend.outputs import models as _outputs  # noqa: F401
     from backend.presence import models as _presence  # noqa: F401
+    from backend.provenance import models as _provenance  # noqa: F401
+    from backend.region_expansion import models as _region_expansion  # noqa: F401
     from backend.scoring import models as _scoring  # noqa: F401
+    from backend.users import models as _users  # noqa: F401
 
 
 def create_all(engine: Engine) -> None:

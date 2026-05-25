@@ -6,6 +6,8 @@ import type {
   CompanySearchResponse,
   ComparisonDetail,
   CurrentUserProfile,
+  ExplanationRequest,
+  ExplanationResult,
   FreshnessStatus,
   PersonalizedRecommendationSnapshot,
   PersonalizedRecommendationSnapshotInput,
@@ -18,13 +20,18 @@ import type {
   SavedMarketArtifact,
   SavedMarketArtifactInput,
   SavedMarketArtifactList,
+  ScoringPreviewRequest,
+  ScoringPreviewResult,
   SourceExplanation,
+  UserAlert,
+  UserAlertList,
   UserDataExport,
   UserPreferenceProfile,
   UserPreferenceProfileInput,
   WarningItem,
 } from "./types";
 import { isFreshnessStatus, isRecord } from "./dataQuality";
+import { reportFrontendError } from "./errorMonitoring";
 
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "");
 
@@ -34,12 +41,17 @@ export const API_TARGET_LABEL =
 
 export class ApiError extends Error {
   envelope?: ApiEnvelope<unknown>;
+  requestId?: string;
   statusCode?: number;
 
-  constructor(message: string, options?: { envelope?: ApiEnvelope<unknown>; statusCode?: number }) {
+  constructor(
+    message: string,
+    options?: { envelope?: ApiEnvelope<unknown>; requestId?: string; statusCode?: number },
+  ) {
     super(message);
     this.name = "ApiError";
     this.envelope = options?.envelope;
+    this.requestId = options?.requestId;
     this.statusCode = options?.statusCode;
   }
 }
@@ -125,31 +137,69 @@ async function request<T>(
       ...options,
     });
   } catch (error) {
-    throw new ApiError(
+    const apiError = new ApiError(
       error instanceof Error
         ? error.message
         : `Network request failed for ${path}`,
     );
+    reportApiFailure(path, apiError);
+    throw apiError;
   }
 
   let envelope: ApiEnvelope<T>;
   try {
     envelope = normalizeEnvelope<T>(await response.json(), response.ok);
   } catch (error) {
-    if (error instanceof ApiError) throw error;
-    throw new ApiError(`Invalid JSON response from ${path}`, {
+    const requestId = response.headers.get("x-request-id") ?? undefined;
+    const message = error instanceof ApiError
+      ? error.message
+      : `Invalid JSON response from ${path}`;
+    const apiError = new ApiError(publicApiErrorMessage(message, requestId), {
+      requestId,
       statusCode: response.status,
     });
+    reportApiFailure(path, apiError);
+    throw apiError;
   }
 
   if (!response.ok || envelope.status === "error") {
-    throw new ApiError(envelope.error?.message ?? `Request failed: ${path}`, {
-      envelope: envelope as ApiEnvelope<unknown>,
-      statusCode: response.status,
-    });
+    const requestId = apiErrorRequestId(envelope, response);
+    const apiError = new ApiError(
+      publicApiErrorMessage(envelope.error?.message ?? `Request failed: ${path}`, requestId),
+      {
+        envelope: envelope as ApiEnvelope<unknown>,
+        requestId,
+        statusCode: response.status,
+      },
+    );
+    reportApiFailure(path, apiError);
+    throw apiError;
   }
 
   return envelope;
+}
+
+function apiErrorRequestId(envelope: ApiEnvelope<unknown>, response: Response): string | undefined {
+  return envelope.error?.request_id ?? response.headers.get("x-request-id") ?? undefined;
+}
+
+function publicApiErrorMessage(message: string, requestId: string | undefined): string {
+  return requestId ? `${message} Reference ID: ${requestId}` : message;
+}
+
+function reportApiFailure(path: string, error: ApiError): void {
+  reportFrontendError(error, {
+    source: "api_request",
+    path,
+    route: currentFrontendRoute(),
+    requestId: error.requestId,
+    statusCode: error.statusCode,
+  });
+}
+
+function currentFrontendRoute(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return `${window.location.pathname}${window.location.search}`;
 }
 
 async function protectedRequest<T>(
@@ -270,6 +320,16 @@ export function deletePreferences(auth: ProtectedRequestOptions) {
   });
 }
 
+export function previewScoringOverlay(
+  body: ScoringPreviewRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<ScoringPreviewResult>("/me/scoring-preview", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export function createSavedMarketArtifact(
   body: SavedMarketArtifactInput,
   auth: ProtectedRequestOptions,
@@ -303,6 +363,57 @@ export function deleteSavedMarketArtifact(savedArtifactId: string, auth: Protect
     auth,
     { method: "DELETE" },
   );
+}
+
+export function listAlerts(auth: ProtectedRequestOptions, includeDismissed = false) {
+  const params = new URLSearchParams();
+  appendOptionalParam(params, "include_dismissed", includeDismissed);
+  const query = params.toString();
+  return protectedRequest<UserAlertList>(`/me/alerts${query ? `?${query}` : ""}`, auth);
+}
+
+export function markAlertRead(userAlertId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<UserAlert>(
+    `/me/alerts/${encodeURIComponent(userAlertId)}/read`,
+    auth,
+    { method: "POST" },
+  );
+}
+
+export function dismissAlert(userAlertId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<UserAlert>(
+    `/me/alerts/${encodeURIComponent(userAlertId)}/dismiss`,
+    auth,
+    { method: "POST" },
+  );
+}
+
+export function explainRegion(body: ExplanationRequest, auth: ProtectedRequestOptions) {
+  return protectedRequest<ExplanationResult>("/me/explanations/region", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function explainCompany(body: ExplanationRequest, auth: ProtectedRequestOptions) {
+  return protectedRequest<ExplanationResult>("/me/explanations/company", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function explainComparison(body: ExplanationRequest, auth: ProtectedRequestOptions) {
+  return protectedRequest<ExplanationResult>("/me/explanations/comparison", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function explainAlert(body: ExplanationRequest, auth: ProtectedRequestOptions) {
+  return protectedRequest<ExplanationResult>("/me/explanations/alert", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export function createRecommendationSnapshot(

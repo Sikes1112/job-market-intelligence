@@ -27,7 +27,9 @@ from backend.hiring.models import CompanyRegionHiring
 from backend.outputs.models import OutputMetadata
 from backend.outputs.types import OutputType
 from backend.presence.models import CompanyRegionPresence
+from backend.provenance.models import FactSourceLink, SourceObservation, SourceRef
 from backend.scoring.models import RegionMarketScore
+from backend.shared.provenance import DataOrigin, FactBindingType
 from seeds import mvp_seed
 from seeds.mvp_data import (
     COMPANIES,
@@ -173,6 +175,43 @@ def test_seed_creates_region_scores(seeded_session: Session) -> None:
         assert r.early_career_accessibility_score is not None
 
 
+def test_seed_labels_demo_provenance(seeded_session: Session) -> None:
+    source_ref = seeded_session.get(SourceRef, "mvp_demo_seed")
+    observation = seeded_session.get(
+        SourceObservation,
+        "mvp_demo_seed_observation",
+    )
+    links = seeded_session.query(FactSourceLink).all()
+
+    assert source_ref is not None
+    assert source_ref.data_origin == DataOrigin.DEMO_SEED.value
+    assert "not factual public market coverage" in (source_ref.notes or "")
+
+    assert observation is not None
+    assert observation.data_origin == DataOrigin.SYNTHETIC_OR_CURATED_DEMO.value
+    assert "not factual public market coverage" in (observation.notes or "")
+
+    expected_count = (
+        len(REGIONS)
+        + len(COMPANIES)
+        + len(PRESENCE)
+        + len(HIRING)
+        + len(ENTRY_LEVEL)
+        + len(REGIONS)
+    )
+    assert len(links) == expected_count
+    assert {link.data_origin for link in links} == {DataOrigin.DEMO_SEED.value}
+    assert {link.fact_type for link in links} == {
+        FactBindingType.COMPANY.value,
+        FactBindingType.REGION.value,
+        FactBindingType.COMPANY_REGION_PRESENCE.value,
+        FactBindingType.COMPANY_REGION_HIRING.value,
+        FactBindingType.COMPANY_REGION_ENTRY_LEVEL.value,
+        FactBindingType.SCORE_INPUT.value,
+    }
+    assert all("not factual public market coverage" in (link.notes or "") for link in links)
+
+
 def test_seed_creates_output_metadata(seeded_session: Session) -> None:
     rows = seeded_session.query(OutputMetadata).all()
     pairs = {(r.output_type, r.subject_id) for r in rows}
@@ -240,6 +279,16 @@ def test_run_seed_is_idempotent(session: Session) -> None:
     assert session.query(CompanyRegionHiring).count() == len(HIRING)
     assert session.query(CompanyRegionEntryLevel).count() == len(ENTRY_LEVEL)
     assert session.query(RegionMarketScore).count() == len(REGIONS)
+    assert session.query(SourceRef).count() == 1
+    assert session.query(SourceObservation).count() == 1
+    assert session.query(FactSourceLink).count() == (
+        len(REGIONS)
+        + len(COMPANIES)
+        + len(PRESENCE)
+        + len(HIRING)
+        + len(ENTRY_LEVEL)
+        + len(REGIONS)
+    )
 
 
 # ---------------------------------------------------------------------------

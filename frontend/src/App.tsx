@@ -4,9 +4,14 @@ import {
   createRecommendationSnapshot,
   createSavedMarketArtifact,
   deactivateAccount,
+  dismissAlert,
   deletePreferences,
   deleteSavedMarketArtifact,
   discoverPersonalized,
+  explainAlert,
+  explainComparison,
+  explainCompany,
+  explainRegion,
   exportUserData,
   getCompany,
   getCompanyGeography,
@@ -18,8 +23,11 @@ import {
   getRegion,
   getRegionSources,
   getRegions,
+  listAlerts,
   listRecommendationSnapshots,
   listSavedMarketArtifacts,
+  markAlertRead,
+  previewScoringOverlay,
   searchCompanies,
   searchRegions,
   updatePreferences,
@@ -42,6 +50,8 @@ import type {
   CompanySearchResponse,
   ComparisonDetail,
   CurrentUserProfile,
+  ExplanationEvidencePacket,
+  ExplanationResult,
   FreshnessSourceSummary,
   FreshnessStatus,
   PersonalizedRecommendationSnapshot,
@@ -56,7 +66,11 @@ import type {
   RemoteHybridPreference,
   SavedMarketArtifact,
   SavedMarketArtifactInput,
+  ScoringPreviewResult,
+  ScoringWeights,
   SourceExplanation,
+  UserAlert,
+  UserAlertList,
   UserDataExport,
   UserPreferenceProfile,
   UserPreferenceProfileInput,
@@ -73,13 +87,24 @@ import {
   companyGeographyUrl,
   compareMarketsUrl,
   exploreUrl,
+  isProductPage,
+  landingUrl,
   parseRoute,
   personalizedDiscoveryUrl,
+  publicPageUrl,
   regionDetailUrl,
   type DiscoveryFilters,
   type ProductPage,
+  type PublicPage,
   type RouteState,
 } from "./urlState";
+import {
+  DEMO_DISCLOSURE_COPY,
+  LANDING_COPY,
+  LEGAL_PAGE_COPY,
+  PUBLIC_INFO_LINKS,
+  type LegalPublicPage,
+} from "./publicContent";
 
 const SCORE_FIELDS: Array<{ key: keyof RegionScores; label: string; short: string }> = [
   {
@@ -106,6 +131,20 @@ const SCORE_FIELDS: Array<{ key: keyof RegionScores; label: string; short: strin
     short: "Early career",
   },
 ];
+const SCORING_WEIGHT_FIELDS: Array<{ key: keyof ScoringWeights; label: string }> = [
+  { key: "entry_level_access", label: "Entry-level access" },
+  { key: "hiring_density", label: "Hiring density" },
+  { key: "prestige", label: "Prestige" },
+  { key: "industry_fit", label: "Industry fit" },
+  { key: "role_fit", label: "Role fit" },
+];
+const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
+  entry_level_access: 0.30,
+  hiring_density: 0.25,
+  prestige: 0.15,
+  industry_fit: 0.15,
+  role_fit: 0.15,
+};
 
 type LoadState<T> = {
   loading: boolean;
@@ -129,6 +168,7 @@ type PreferenceDraft = {
   brandWeighting: "" | PreferenceLevel;
   careerStage: "" | "entry_level";
   remoteHybridPreference: "" | RemoteHybridPreference;
+  scoringWeights: ScoringWeights;
 };
 type AccountActionState = {
   loading: boolean;
@@ -219,6 +259,7 @@ function emptyPreferenceDraft(): PreferenceDraft {
     brandWeighting: "",
     careerStage: "",
     remoteHybridPreference: "",
+    scoringWeights: { ...DEFAULT_SCORING_WEIGHTS },
   };
 }
 
@@ -243,6 +284,7 @@ function preferenceDraftFromProfile(profile?: UserPreferenceProfile | null): Pre
     brandWeighting: profile.brand_weighting ?? "",
     careerStage: profile.career_stage ?? "",
     remoteHybridPreference: profile.remote_hybrid_preference ?? "",
+    scoringWeights: normalizeScoringWeights(profile.scoring_weights),
   };
 }
 
@@ -255,11 +297,71 @@ function preferenceInputFromDraft(draft: PreferenceDraft): UserPreferenceProfile
     brand_weighting: draft.brandWeighting || null,
     career_stage: draft.careerStage || null,
     remote_hybrid_preference: draft.remoteHybridPreference || null,
+    scoring_weights: normalizeScoringWeights(draft.scoringWeights),
   };
 }
 
 function savedArtifactKey(type: SavedMarketArtifactInput["artifact_type"], ref: string): string {
   return `${type}:${ref}`;
+}
+
+function watchlistGroupLabel(type: SavedMarketArtifact["artifact_type"]): string {
+  if (type === "region") return "Regions";
+  if (type === "company") return "Companies";
+  if (type === "role_family") return "Role families";
+  if (type === "comparison") return "Comparison sets";
+  return "Discovery results";
+}
+
+function watchlistGroups(artifacts: SavedMarketArtifact[]): Array<{
+  type: SavedMarketArtifact["artifact_type"];
+  label: string;
+  items: SavedMarketArtifact[];
+}> {
+  const order: SavedMarketArtifact["artifact_type"][] = [
+    "region",
+    "company",
+    "role_family",
+    "comparison",
+    "discovery_result",
+  ];
+  return order
+    .map((type) => ({
+      type,
+      label: watchlistGroupLabel(type),
+      items: artifacts.filter((artifact) => artifact.artifact_type === type),
+    }))
+    .filter((group) => group.items.length);
+}
+
+function normalizeScoringWeights(weights?: Partial<ScoringWeights> | null): ScoringWeights {
+  return {
+    entry_level_access: clampWeight(weights?.entry_level_access ?? DEFAULT_SCORING_WEIGHTS.entry_level_access),
+    hiring_density: clampWeight(weights?.hiring_density ?? DEFAULT_SCORING_WEIGHTS.hiring_density),
+    prestige: clampWeight(weights?.prestige ?? DEFAULT_SCORING_WEIGHTS.prestige),
+    industry_fit: clampWeight(weights?.industry_fit ?? DEFAULT_SCORING_WEIGHTS.industry_fit),
+    role_fit: clampWeight(weights?.role_fit ?? DEFAULT_SCORING_WEIGHTS.role_fit),
+  };
+}
+
+function clampWeight(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+function updateScoringWeight(
+  weights: ScoringWeights,
+  key: keyof ScoringWeights,
+  percentValue: number,
+): ScoringWeights {
+  return normalizeScoringWeights({
+    ...weights,
+    [key]: percentValue / 100,
+  });
+}
+
+function canonicalComparisonRef(regionA: string, regionB: string): string {
+  return [regionA, regionB].filter(Boolean).sort().join("__");
 }
 
 async function sha256Label(value: unknown): Promise<string> {
@@ -536,6 +638,182 @@ function comparisonDataLimitations(
   for (const notice of qualityNotices(undefined, sourceA)) notices.add(`Region A: ${notice}`);
   for (const notice of qualityNotices(undefined, sourceB)) notices.add(`Region B: ${notice}`);
   return Array.from(notices);
+}
+
+function missingScoreLabels(scores?: RegionScores | null): string[] {
+  if (!scores) return SCORE_FIELDS.map((score) => score.label);
+  return SCORE_FIELDS
+    .filter((score) => typeof scores[score.key] !== "number")
+    .map((score) => score.label);
+}
+
+function sourceRefsFromExplanation(source?: SourceExplanation | null): string[] {
+  return (source?.sources ?? []).map((item) => `${item.source_type}:${item.source_id}`);
+}
+
+function compactSubjectRefs(refs: Record<string, string | null | undefined>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(refs).filter((entry): entry is [string, string] =>
+      typeof entry[1] === "string" && entry[1].trim().length > 0,
+    ),
+  );
+}
+
+function explanationFreshness(
+  envelope?: ApiEnvelope<unknown> | null,
+  source?: SourceExplanation | FreshnessSourceSummary | null,
+) {
+  const envelopeFreshness = envelope?.metadata.freshness;
+  const summary = getSourceSummary(source);
+  const freshnessStatus = summary?.freshness_status ?? envelopeFreshness?.freshness_status ?? null;
+  const dataBasis = summary?.data_basis ?? null;
+  if (!freshnessStatus && !dataBasis && !envelopeFreshness) return null;
+  return {
+    freshness_status: freshnessStatus,
+    data_basis: dataBasis,
+    last_updated_at: envelopeFreshness?.last_updated_at ?? summary?.last_collected_at ?? null,
+    freshness_expires_at: envelopeFreshness?.freshness_expires_at ?? null,
+    source_count: summary?.source_count ?? null,
+  };
+}
+
+function regionExplanationEvidence(
+  region: RegionDetail,
+  envelope?: ApiEnvelope<RegionDetail> | null,
+  source?: SourceExplanation | null,
+): ExplanationEvidencePacket {
+  const freshness = explanationFreshness(envelope, source);
+  return {
+    entity_type: "region",
+    subject_refs: { region_id: region.region_id },
+    display_label: region.display_name,
+    canonical_scores: Object.fromEntries(
+      SCORE_FIELDS.map((score) => {
+        const value = region.scores?.[score.key];
+        return [score.key, typeof value === "number" ? value : null];
+      }),
+    ) as Record<string, number | null>,
+    freshness,
+    source_refs: sourceRefsFromExplanation(source),
+    missing_data: missingScoreLabels(region.scores),
+    unsupported_data: [
+      "historical trend",
+      "map geometry",
+      "opportunity heatmap density",
+      "company-region network layout",
+    ],
+    demo_or_seeded: Boolean(
+      freshness?.freshness_status === "seeded_demo"
+        || freshness?.data_basis === "seeded_demo",
+    ),
+    notes: ["Current snapshot only"],
+  };
+}
+
+function companyExplanationEvidence(
+  company: CompanyDetail,
+  envelope?: ApiEnvelope<CompanyDetail> | null,
+  source?: SourceExplanation | null,
+): ExplanationEvidencePacket {
+  const freshness = explanationFreshness(envelope, source);
+  const missingData = [
+    company.prestige_score === null ? "prestige score" : null,
+    (company.regions_present ?? []).length ? null : "presence rows",
+    (company.regions_hiring ?? []).length ? null : "hiring rows",
+    (company.entry_level_regions ?? []).length ? null : "entry-level rows",
+  ].filter(Boolean) as string[];
+  return {
+    entity_type: "company",
+    subject_refs: { company_id: company.company_id },
+    display_label: company.company_name,
+    canonical_scores: { prestige_score: company.prestige_score },
+    freshness,
+    source_refs: sourceRefsFromExplanation(source),
+    missing_data: missingData,
+    unsupported_data: ["market-wide company ranking", "unobserved region presence"],
+    demo_or_seeded: Boolean(
+      freshness?.freshness_status === "seeded_demo"
+        || freshness?.data_basis === "seeded_demo",
+    ),
+    notes: [
+      `Presence rows: ${(company.regions_present ?? []).length}`,
+      `Hiring rows: ${(company.regions_hiring ?? []).length}`,
+      `Entry-level rows: ${(company.entry_level_regions ?? []).length}`,
+    ],
+  };
+}
+
+function comparisonExplanationEvidence(
+  comparison: ComparisonDetail,
+  envelope?: ApiEnvelope<ComparisonDetail> | null,
+  sourceA?: SourceExplanation | null,
+  sourceB?: SourceExplanation | null,
+): ExplanationEvidencePacket {
+  const freshness = explanationFreshness(envelope, sourceA ?? sourceB);
+  const missing = [
+    ...missingScoreLabels(comparison.region_a?.scores).map((label) => `Region A ${label}`),
+    ...missingScoreLabels(comparison.region_b?.scores).map((label) => `Region B ${label}`),
+  ];
+  return {
+    entity_type: "comparison",
+    subject_refs: compactSubjectRefs({
+      comparison_id: comparison.comparison_id,
+      region_a: comparison.region_a?.region_id ?? "",
+      region_b: comparison.region_b?.region_id ?? "",
+    }),
+    display_label: `${comparison.region_a?.display_name ?? "Region A"} vs ${comparison.region_b?.display_name ?? "Region B"}`,
+    canonical_scores: {
+      region_a_objective_opportunity_score: comparison.region_a?.scores?.objective_opportunity_score ?? null,
+      region_b_objective_opportunity_score: comparison.region_b?.scores?.objective_opportunity_score ?? null,
+      region_a_early_career_accessibility_score: comparison.region_a?.scores?.early_career_accessibility_score ?? null,
+      region_b_early_career_accessibility_score: comparison.region_b?.scores?.early_career_accessibility_score ?? null,
+    },
+    freshness,
+    source_refs: [
+      ...sourceRefsFromExplanation(sourceA),
+      ...sourceRefsFromExplanation(sourceB),
+    ],
+    missing_data: missing,
+    unsupported_data: ["historical trend", "geographic distance or commute comparison"],
+    notes: comparison.notes ?? [],
+  };
+}
+
+function alertExplanationEvidence(alert: UserAlert): ExplanationEvidencePacket {
+  const summary = alert.event.change_summary;
+  const changedFields = summary && !Array.isArray(summary) && Array.isArray(summary.changed_fields)
+    ? summary.changed_fields.filter((item): item is string => typeof item === "string")
+    : [];
+  return {
+    entity_type: "alert",
+    subject_refs: compactSubjectRefs({
+      user_alert_id: alert.user_alert_id,
+      alert_event_id: alert.alert_event_id,
+      company_id: alert.event.company_id ?? "",
+      region_id: alert.event.region_id ?? "",
+    }),
+    display_label: alertEventLabel(alert),
+    freshness: {
+      freshness_status: alert.event.freshness_status,
+      freshness_expires_at: alert.event.freshness_expires_at,
+      last_updated_at: alert.event.freshness_observed_at,
+      source_count: alert.event.source_refs.length,
+    },
+    source_refs: [...alert.event.source_refs, ...alert.event.change_basis_refs],
+    alert: {
+      event_type: alert.event.event_type,
+      relevance_reason: alert.relevance.reason,
+      changed_fields: changedFields,
+      detection_basis: alert.event.detection_basis,
+    },
+    watchlist_context: [
+      alert.relevance.reason,
+      alert.relevance.artifact_type ?? "",
+      alert.relevance.artifact_ref ?? "",
+    ].filter(Boolean),
+    missing_data: alert.event.freshness_status ? [] : ["freshness status"],
+    unsupported_data: ["unobserved future hiring changes"],
+  };
 }
 
 function recommendationNotes(notes: string[] | undefined): string[] {
@@ -866,8 +1144,237 @@ function AuthStatusPanel({
   );
 }
 
+type LinkClickHandler = (event: MouseEvent<HTMLAnchorElement>, url: string) => void;
+
+function DemoDisclosure({ compact = false }: { compact?: boolean }) {
+  return (
+    <aside className={compact ? "demo-disclosure demo-disclosure-compact" : "demo-disclosure"}>
+      <div>
+        <strong>{DEMO_DISCLOSURE_COPY.title}</strong>
+        <p>{DEMO_DISCLOSURE_COPY.summary}</p>
+      </div>
+      {!compact ? (
+        <ul>
+          {DEMO_DISCLOSURE_COPY.bullets.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : null}
+    </aside>
+  );
+}
+
+function PublicInfoLinks({
+  activePage,
+  onNavigate,
+  variant,
+  includeOverview = false,
+}: {
+  activePage: PublicPage | null;
+  onNavigate: LinkClickHandler;
+  variant: "sidebar" | "footer" | "top";
+  includeOverview?: boolean;
+}) {
+  return (
+    <nav className={`public-link-list public-link-list-${variant}`} aria-label="Public information">
+      {includeOverview ? (
+        <a
+          className={activePage === "landing" ? "public-link-active" : ""}
+          href={landingUrl()}
+          onClick={(event) => onNavigate(event, landingUrl())}
+        >
+          Overview
+        </a>
+      ) : null}
+      {PUBLIC_INFO_LINKS.map((item) => (
+        <a
+          className={activePage === item.page ? "public-link-active" : ""}
+          href={item.href}
+          key={item.page}
+          onClick={(event) => onNavigate(event, item.href)}
+        >
+          {item.label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+function PublicFooter({
+  activePage,
+  onNavigate,
+}: {
+  activePage: PublicPage | null;
+  onNavigate: LinkClickHandler;
+}) {
+  return (
+    <footer className="public-footer">
+      <p>Public demo only. Verify important decisions independently.</p>
+      <PublicInfoLinks activePage={activePage} includeOverview onNavigate={onNavigate} variant="footer" />
+    </footer>
+  );
+}
+
+function PublicShell({
+  activePage,
+  children,
+  onNavigate,
+}: {
+  activePage: PublicPage;
+  children: ReactNode;
+  onNavigate: LinkClickHandler;
+}) {
+  return (
+    <main className="public-shell">
+      <header className="public-header">
+        <a className="public-brand" href={landingUrl()} onClick={(event) => onNavigate(event, landingUrl())}>
+          <span className="brand-mark">JM</span>
+          <span>
+            <strong>Job Market Intelligence</strong>
+            <small>Public demo</small>
+          </span>
+        </a>
+        <div className="public-header-actions">
+          <PublicInfoLinks activePage={activePage} onNavigate={onNavigate} variant="top" />
+          <a className="primary-button" href={exploreUrl()} onClick={(event) => onNavigate(event, exploreUrl())}>
+            Enter demo
+          </a>
+        </div>
+      </header>
+      <section className="public-content">
+        {children}
+      </section>
+      <PublicFooter activePage={activePage} onNavigate={onNavigate} />
+    </main>
+  );
+}
+
+function LandingPage({
+  onNavigate,
+  unknownPath,
+}: {
+  onNavigate: LinkClickHandler;
+  unknownPath?: string;
+}) {
+  return (
+    <div className="public-page">
+      <section className="public-intro">
+        <p className="eyebrow">{LANDING_COPY.eyebrow}</p>
+        <h1>{LANDING_COPY.title}</h1>
+        <p className="public-lead">{LANDING_COPY.intro}</p>
+        {unknownPath ? (
+          <p className="meta-copy">Unknown public path opened the overview: {unknownPath}</p>
+        ) : null}
+        <div className="hero-actions">
+          <a className="primary-button" href={exploreUrl()} onClick={(event) => onNavigate(event, exploreUrl())}>
+            {LANDING_COPY.ctaLabel}
+          </a>
+          <a
+            className="secondary-button"
+            href={publicPageUrl("data-limitations")}
+            onClick={(event) => onNavigate(event, publicPageUrl("data-limitations"))}
+          >
+            {LANDING_COPY.secondaryCtaLabel}
+          </a>
+        </div>
+      </section>
+
+      <DemoDisclosure />
+
+      <section className="public-section-grid" aria-label="Demo overview">
+        {LANDING_COPY.sections.map((section) => (
+          <article className="public-section" key={section.title}>
+            <h2>{section.title}</h2>
+            <p>{section.body}</p>
+          </article>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function LegalPage({ page }: { page: LegalPublicPage }) {
+  const copy = LEGAL_PAGE_COPY[page];
+  return (
+    <div className="public-page public-document">
+      <section className="public-intro public-document-intro">
+        <p className="eyebrow">{copy.eyebrow}</p>
+        <h1>{copy.title}</h1>
+        <p className="public-lead">{copy.intro}</p>
+      </section>
+      <DemoDisclosure compact />
+      <section className="public-document-list" aria-label={copy.title}>
+        {copy.sections.map((section) => (
+          <article className="public-section" key={section.title}>
+            <h2>{section.title}</h2>
+            <p>{section.body}</p>
+            {section.bullets?.length ? (
+              <ul>
+                {section.bullets.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : null}
+          </article>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function PublicRouteView({
+  route,
+  onNavigate,
+}: {
+  route: RouteState;
+  onNavigate: LinkClickHandler;
+}) {
+  const activePage = route.page as PublicPage;
+  return (
+    <PublicShell activePage={activePage} onNavigate={onNavigate}>
+      {activePage === "landing" ? (
+        <LandingPage onNavigate={onNavigate} unknownPath={route.unknownPath} />
+      ) : (
+        <LegalPage page={activePage as LegalPublicPage} />
+      )}
+    </PublicShell>
+  );
+}
+
 function JsonBlock({ value }: { value: unknown }) {
   return <pre className="json-block">{JSON.stringify(value, null, 2)}</pre>;
+}
+
+function alertEventLabel(alert: UserAlert): string {
+  return prettyKey(alert.event.event_type);
+}
+
+function alertFreshnessText(alert: UserAlert): string {
+  const status = alert.event.freshness_status ? prettyKey(alert.event.freshness_status) : "Freshness unknown";
+  const observed = formatDateTime(alert.event.freshness_observed_at);
+  const expires = formatDateTime(alert.event.freshness_expires_at);
+  if (alert.event.freshness_observed_at || alert.event.freshness_expires_at) {
+    return `${status} · observed ${observed} · expires ${expires}`;
+  }
+  return status;
+}
+
+function alertScopeText(alert: UserAlert): string {
+  const parts = [
+    alert.event.company_id ? `Company ${alert.event.company_id}` : null,
+    alert.event.region_id ? `Region ${alert.event.region_id}` : null,
+    alert.event.role_family ? `Role ${alert.event.role_family}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "System event";
+}
+
+function alertChangeText(alert: UserAlert): string {
+  const summary = alert.event.change_summary;
+  if (!summary || Array.isArray(summary)) return "Structured change metadata only.";
+  const changed = Array.isArray(summary.changed_fields)
+    ? summary.changed_fields.join(", ")
+    : null;
+  return changed ? `Changed fields: ${changed}` : "Structured change metadata only.";
 }
 
 function AccountView({
@@ -876,7 +1383,10 @@ function AccountView({
   preferenceState,
   preferenceDraft,
   artifactsState,
+  alertsState,
   snapshotsState,
+  scoringPreviewState,
+  alertExplanationStates,
   exportState,
   deactivationResult,
   actionState,
@@ -885,8 +1395,12 @@ function AccountView({
   onRefresh,
   onPreferenceDraft,
   onSavePreferences,
+  onPreviewScoring,
   onDeletePreferences,
   onDeleteArtifact,
+  onMarkAlertRead,
+  onDismissAlert,
+  onExplainAlert,
   onExport,
   onDeactivate,
   onDeactivateConfirmed,
@@ -896,7 +1410,10 @@ function AccountView({
   preferenceState: LoadState<UserPreferenceProfile>;
   preferenceDraft: PreferenceDraft;
   artifactsState: LoadState<{ saved_market_artifacts: SavedMarketArtifact[] }>;
+  alertsState: LoadState<UserAlertList>;
   snapshotsState: LoadState<{ personalized_recommendation_snapshots: PersonalizedRecommendationSnapshot[] }>;
+  scoringPreviewState: LoadState<ScoringPreviewResult>;
+  alertExplanationStates: Record<string, LoadState<ExplanationResult>>;
   exportState: LoadState<UserDataExport>;
   deactivationResult: AccountDeactivationResult | null;
   actionState: AccountActionState;
@@ -905,8 +1422,12 @@ function AccountView({
   onRefresh: () => void;
   onPreferenceDraft: (draft: PreferenceDraft) => void;
   onSavePreferences: () => void;
+  onPreviewScoring: () => void;
   onDeletePreferences: () => void;
   onDeleteArtifact: (savedArtifactId: string) => void;
+  onMarkAlertRead: (userAlertId: string) => void;
+  onDismissAlert: (userAlertId: string) => void;
+  onExplainAlert: (alert: UserAlert) => void;
   onExport: () => void;
   onDeactivate: () => void;
   onDeactivateConfirmed: (confirmed: boolean) => void;
@@ -914,6 +1435,8 @@ function AccountView({
   const currentUser = currentUserState.envelope?.data;
   const preferences = preferenceState.envelope?.data;
   const artifacts = artifactsState.envelope?.data?.saved_market_artifacts ?? [];
+  const alerts = alertsState.envelope?.data?.alerts ?? [];
+  const groupedWatchlists = watchlistGroups(artifacts);
   const snapshots = snapshotsState.envelope?.data?.personalized_recommendation_snapshots ?? [];
 
   if (!auth.isConfigured) {
@@ -1018,6 +1541,75 @@ function AccountView({
         </ShellCard>
       </div>
 
+      <ShellCard title="Alerts" eyebrow="In-app change feed">
+        {alertsState.loading ? <LoadingBlock label="Loading alerts" /> : null}
+        {alertsState.error ? <ErrorState message={alertsState.error} /> : null}
+        <AlertSummaryVisualization alerts={alerts} />
+        {alerts.length ? (
+          <div className="account-list alert-feed">
+            {alerts.map((alert) => (
+              <div
+                className={alert.is_read ? "account-list-row alert-row" : "account-list-row alert-row alert-row-unread"}
+                key={alert.user_alert_id}
+              >
+                <div>
+                  <div className="metadata-row">
+                    <span className="badge">{alertEventLabel(alert)}</span>
+                    <span className={alert.is_read ? "badge badge-unknown" : "badge badge-success"}>
+                      {alert.is_read ? "Read" : "Unread"}
+                    </span>
+                    <span className="badge badge-unknown">{alertFreshnessText(alert)}</span>
+                  </div>
+                  <strong>{alertScopeText(alert)}</strong>
+                  <small>
+                    Relevance: {prettyKey(alert.relevance.reason)}
+                    {alert.relevance.artifact_ref ? ` · ${alert.relevance.artifact_ref}` : ""}
+                    {" · "}
+                    created {formatDateTime(alert.created_at)}
+                  </small>
+                  <p className="meta-copy">{alertChangeText(alert)}</p>
+                </div>
+                <div className="alert-actions">
+                  <button
+                    className="secondary-button"
+                    disabled={actionState.loading || alert.is_read}
+                    type="button"
+                    onClick={() => onMarkAlertRead(alert.user_alert_id)}
+                  >
+                    Mark read
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={actionState.loading || alert.dismissed}
+                    type="button"
+                    onClick={() => onDismissAlert(alert.user_alert_id)}
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={actionState.loading}
+                    type="button"
+                    onClick={() => onExplainAlert(alert)}
+                  >
+                    Explain
+                  </button>
+                </div>
+                <ExplanationResultPanel
+                  emptyCopy="Use Explain to render alert guidance from this alert event packet."
+                  state={alertExplanationStates[alert.user_alert_id]}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title="No alerts"
+            body="Alerts appear here when structured market changes match saved watchlists or preferences."
+          />
+        )}
+      </ShellCard>
+
       <ShellCard title="Saved preferences" eyebrow="User-owned inputs">
         {preferenceState.loading ? <LoadingBlock label="Loading preferences" /> : null}
         {preferenceState.error ? <ErrorState message={preferenceState.error} /> : null}
@@ -1119,9 +1711,43 @@ function AccountView({
             </select>
           </label>
         </div>
+        <div className="scoring-control-grid">
+          {SCORING_WEIGHT_FIELDS.map((field) => (
+            <label className="range-label" key={field.key}>
+              <span>
+                {field.label}
+                <strong>{Math.round(preferenceDraft.scoringWeights[field.key] * 100)}%</strong>
+              </span>
+              <input
+                max={100}
+                min={0}
+                onChange={(event) =>
+                  onPreferenceDraft({
+                    ...preferenceDraft,
+                    scoringWeights: updateScoringWeight(
+                      preferenceDraft.scoringWeights,
+                      field.key,
+                      Number(event.target.value),
+                    ),
+                  })
+                }
+                type="range"
+                value={Math.round(preferenceDraft.scoringWeights[field.key] * 100)}
+              />
+            </label>
+          ))}
+        </div>
         <div className="account-button-row">
           <button disabled={actionState.loading} type="button" onClick={onSavePreferences}>
             Save preferences
+          </button>
+          <button
+            className="secondary-button"
+            disabled={actionState.loading || scoringPreviewState.loading}
+            type="button"
+            onClick={onPreviewScoring}
+          >
+            Preview scoring overlay
           </button>
           <button
             className="secondary-button"
@@ -1132,34 +1758,48 @@ function AccountView({
             Delete preferences
           </button>
         </div>
+        {scoringPreviewState.loading ? <LoadingBlock label="Loading scoring preview" /> : null}
+        {scoringPreviewState.error ? <ErrorState message={scoringPreviewState.error} /> : null}
+        {scoringPreviewState.envelope?.data ? (
+          <ScoringPreviewPanel preview={scoringPreviewState.envelope.data} />
+        ) : null}
       </ShellCard>
 
-      <ShellCard title="Saved market artifacts" eyebrow="References and snapshots">
+      <ShellCard title="Watchlist" eyebrow="Saved references">
         {artifactsState.loading ? <LoadingBlock label="Loading saved artifacts" /> : null}
         {artifactsState.error ? <ErrorState message={artifactsState.error} /> : null}
-        {artifacts.length ? (
-          <div className="account-list">
-            {artifacts.map((artifact) => (
-              <div className="account-list-row" key={artifact.saved_artifact_id}>
-                <div>
-                  <span className="badge">{prettyKey(artifact.artifact_type)}</span>
-                  <strong>{artifact.label ?? artifact.artifact_ref}</strong>
-                  <small>{artifact.artifact_ref} · saved {formatDateTime(artifact.created_at)}</small>
-                  {artifact.notes ? <p className="meta-copy">{artifact.notes}</p> : null}
+        {groupedWatchlists.length ? (
+          <div className="watchlist-dashboard">
+            {groupedWatchlists.map((group) => (
+              <section className="watchlist-group" key={group.type}>
+                <div className="watchlist-group-header">
+                  <strong>{group.label}</strong>
+                  <span className="badge">{group.items.length}</span>
                 </div>
-                <button
-                  className="secondary-button"
-                  disabled={actionState.loading}
-                  type="button"
-                  onClick={() => onDeleteArtifact(artifact.saved_artifact_id)}
-                >
-                  Delete
-                </button>
-              </div>
+                <div className="account-list">
+                  {group.items.map((artifact) => (
+                    <div className="account-list-row" key={artifact.saved_artifact_id}>
+                      <div>
+                        <strong>{artifact.label ?? artifact.artifact_ref}</strong>
+                        <small>{artifact.artifact_ref} · saved {formatDateTime(artifact.created_at)}</small>
+                        {artifact.notes ? <p className="meta-copy">{artifact.notes}</p> : null}
+                      </div>
+                      <button
+                        className="secondary-button"
+                        disabled={actionState.loading}
+                        type="button"
+                        onClick={() => onDeleteArtifact(artifact.saved_artifact_id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         ) : (
-          <EmptyState title="No saved artifacts" body="Save a visible region, company, comparison, or discovery result from its market view." />
+          <EmptyState title="No watchlist items" body="Save a visible region, company, role family, or comparison set." />
         )}
       </ShellCard>
 
@@ -1220,6 +1860,47 @@ function ScoreCard({
   );
 }
 
+function ScoringPreviewPanel({ preview }: { preview: ScoringPreviewResult }) {
+  if (!preview.regions.length) {
+    return <EmptyState title="No preview regions" body="Choose at least one preferred region." />;
+  }
+
+  return (
+    <div className="preview-panel">
+      {preview.regions.map((region) => (
+        <div className="preview-row" key={region.region_id}>
+          <div>
+            <span className="badge">Personalized overlay</span>
+            <strong>{region.display_name}</strong>
+            <small>{region.region_id}</small>
+          </div>
+          <ScoreCard
+            compact
+            label="Canonical/default objective"
+            value={region.canonical_default_scores.objective_opportunity_score}
+          />
+          <ScoreCard
+            compact
+            label="Personalized overlay"
+            value={region.personalized_overlay_score}
+          />
+          <div className="preview-component-list">
+            {SCORING_WEIGHT_FIELDS.map((field) => {
+              const component = region.components[field.key];
+              return (
+                <span className="badge" key={field.key}>
+                  {field.label}: {formatValue(component?.value)} · weight{" "}
+                  {Math.round((component?.effective_weight ?? 0) * 100)}%
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StatGrid({ values }: { values: Record<string, unknown> }) {
   const entries = Object.entries(values);
   if (!entries.length) {
@@ -1248,6 +1929,207 @@ function RegionScoreGrid({ scores }: { scores: RegionScores | null | undefined }
       {SCORE_FIELDS.map((score) => (
         <ScoreCard key={score.key} label={score.label} value={scores[score.key] as number | null} />
       ))}
+    </div>
+  );
+}
+
+function ScoreBreakdownChart({
+  scores,
+  title = "Canonical/default score breakdown",
+}: {
+  scores: RegionScores | null | undefined;
+  title?: string;
+}) {
+  if (!scores) {
+    return (
+      <UnsupportedVisualizationPanel
+        items={["Score breakdown chart"]}
+        reason="No score object was returned for the current snapshot."
+      />
+    );
+  }
+
+  return (
+    <div className="visualization-panel">
+      <div className="visualization-header">
+        <strong>{title}</strong>
+        <span className="badge badge-unknown">Current snapshot</span>
+      </div>
+      <div className="visual-bar-list" aria-label={title}>
+        {SCORE_FIELDS.map((score) => {
+          const value = scores[score.key] as number | null;
+          const missing = typeof value !== "number";
+          return (
+            <div className="visual-bar-row" key={score.key}>
+              <span>{score.label}</span>
+              <div className={missing ? "visual-bar visual-bar-missing" : "visual-bar"}>
+                <span style={{ width: `${scorePercent(value)}%` }} />
+              </div>
+              <strong>{missing ? "Missing" : `${Math.round(value * 100)}%`}</strong>
+            </div>
+          );
+        })}
+      </div>
+      <p className="meta-copy">
+        This chart renders stored score fields only. Missing values are not
+        converted to zero.
+      </p>
+    </div>
+  );
+}
+
+function ComparisonScoreChart({
+  comparison,
+  regionALabel,
+  regionBLabel,
+}: {
+  comparison: ComparisonDetail;
+  regionALabel: string;
+  regionBLabel: string;
+}) {
+  return (
+    <div className="visualization-panel">
+      <div className="visualization-header">
+        <strong>Region comparison visualization</strong>
+        <span className="badge badge-unknown">Current snapshot</span>
+      </div>
+      <div className="comparison-visual-list">
+        {SCORE_FIELDS.map((score) => {
+          const aValue = comparison.region_a?.scores?.[score.key] as number | null | undefined;
+          const bValue = comparison.region_b?.scores?.[score.key] as number | null | undefined;
+          return (
+            <div className="comparison-visual-row" key={score.key}>
+              <span>{score.label}</span>
+              <div>
+                <small>{regionALabel}</small>
+                <div className={typeof aValue === "number" ? "visual-bar" : "visual-bar visual-bar-missing"}>
+                  <span style={{ width: `${scorePercent(aValue)}%` }} />
+                </div>
+              </div>
+              <div>
+                <small>{regionBLabel}</small>
+                <div className={typeof bValue === "number" ? "visual-bar" : "visual-bar visual-bar-missing"}>
+                  <span style={{ width: `${scorePercent(bValue)}%` }} />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="meta-copy">
+        Bars compare returned canonical/default score fields. This is not a new
+        scoring model.
+      </p>
+    </div>
+  );
+}
+
+function AlertSummaryVisualization({ alerts }: { alerts: UserAlert[] }) {
+  if (!alerts.length) {
+    return (
+      <UnsupportedVisualizationPanel
+        items={["Alert summary chart"]}
+        reason="No current in-app alerts were returned for this account."
+      />
+    );
+  }
+  const counts = new Map<string, number>();
+  for (const alert of alerts) {
+    counts.set(alert.event.event_type, (counts.get(alert.event.event_type) ?? 0) + 1);
+  }
+  const maxCount = Math.max(...counts.values(), 1);
+  return (
+    <div className="visualization-panel">
+      <div className="visualization-header">
+        <strong>Alert change summary</strong>
+        <span className="badge badge-unknown">Feed metadata</span>
+      </div>
+      <div className="visual-bar-list">
+        {Array.from(counts.entries()).sort().map(([eventType, count]) => (
+          <div className="visual-bar-row" key={eventType}>
+            <span>{prettyKey(eventType)}</span>
+            <div className="visual-bar">
+              <span style={{ width: `${(count / maxCount) * 100}%` }} />
+            </div>
+            <strong>{count}</strong>
+          </div>
+        ))}
+      </div>
+      <p className="meta-copy">
+        This summarizes alert feed metadata only. It does not infer additional
+        market change events.
+      </p>
+    </div>
+  );
+}
+
+function UnsupportedVisualizationPanel({
+  items,
+  reason,
+}: {
+  items: string[];
+  reason: string;
+}) {
+  return (
+    <div className="unsupported-visualization">
+      <div className="visualization-header">
+        <strong>Unsupported visualization state</strong>
+        <span className="badge badge-warning">Disabled</span>
+      </div>
+      <p className="meta-copy">{reason}</p>
+      <div className="chip-row">
+        {items.map((item) => (
+          <span className="badge badge-unknown" key={item}>{item}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExplanationResultPanel({
+  state,
+  emptyCopy,
+}: {
+  state?: LoadState<ExplanationResult>;
+  emptyCopy: string;
+}) {
+  if (state?.loading) return <LoadingBlock label="Rendering structured guidance" />;
+  if (state?.error) return <ErrorState message={state.error} />;
+  const explanation = state?.envelope?.data;
+  if (!explanation) {
+    return <EmptyState title="No explanation yet" body={emptyCopy} />;
+  }
+  return (
+    <div className="explanation-panel">
+      <div className="metadata-row">
+        <span className="badge">Structured guidance</span>
+        <span className={explanation.status === "ok" ? "badge badge-success" : "badge badge-warning"}>
+          {prettyKey(explanation.status)}
+        </span>
+        <span className="badge badge-unknown">{prettyKey(explanation.provider_mode)}</span>
+      </div>
+      {explanation.sections.map((section) => (
+        <div className="explanation-section" key={section.section_type}>
+          <strong>{section.title}</strong>
+          <ul className="notes-list">
+            {section.statements.map((statement) => (
+              <li key={statement}>{statement}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {explanation.limitations.length ? (
+        <div className="warning-list">
+          {explanation.limitations.map((limitation) => (
+            <div className="warning-item" key={limitation}>
+              <div className="warning-header">
+                <span className="warning-code">Explanation boundary</span>
+              </div>
+              <p>{limitation}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1509,6 +2391,13 @@ function ExploreMarkets({
         ) : null}
       </ShellCard>
 
+      <ShellCard title="Region expansion status" eyebrow="Operator workflow">
+        <UnsupportedVisualizationPanel
+          items={["Expansion workflow status visualization"]}
+          reason="Region expansion workflow rows are operator/checklist state and are not exposed through a public frontend API in this batch."
+        />
+      </ShellCard>
+
       <div className="quick-region-grid">
         {filteredRegions.slice(0, 2).map((region) => {
           const detail = regionDetails[region.region_id]?.data;
@@ -1550,11 +2439,16 @@ function RegionExplorer({
   sourceState,
   roleFamilyState,
   canSavePersonalOverlays,
-  regionSaved,
+  canExplainGuidance,
+  savedArtifactsByKey,
+  explanationState,
   onSelectRegion,
   onSelectCompany,
   onCompareRegion,
   onSaveRegion,
+  onSaveRoleFamily,
+  onRemoveSavedArtifact,
+  onExplainRegion,
 }: {
   regions: RegionListItem[];
   selectedRegionId: string;
@@ -1562,17 +2456,23 @@ function RegionExplorer({
   sourceState: LoadState<SourceExplanation>;
   roleFamilyState: LoadState<CompanySearchResponse>;
   canSavePersonalOverlays: boolean;
-  regionSaved: boolean;
+  canExplainGuidance: boolean;
+  savedArtifactsByKey: Map<string, SavedMarketArtifact>;
+  explanationState?: LoadState<ExplanationResult>;
   onSelectRegion: (regionId: string) => void;
   onSelectCompany: (companyId: string) => void;
   onCompareRegion: (regionId: string) => void;
   onSaveRegion: (region: RegionDetail) => void;
+  onSaveRoleFamily: (roleFamily: string) => void;
+  onRemoveSavedArtifact: (savedArtifactId: string) => void;
+  onExplainRegion: (region: RegionDetail) => void;
 }) {
   const region = regionState.envelope?.data;
   const hasSelectedRegion = regions.some((item) => item.region_id === selectedRegionId);
   const source = sourceState.envelope?.data;
   const roleCounts = roleFamilyCounts(roleFamilyState.envelope?.data);
   const entrySummary = region?.entry_level_summary ?? {};
+  const savedRegionArtifact = savedArtifactsByKey.get(savedArtifactKey("region", selectedRegionId));
 
   return (
     <div className="view-grid">
@@ -1608,13 +2508,27 @@ function RegionExplorer({
             </button>
             <button
               className="secondary-button toolbar-button"
-              disabled={!region || !canSavePersonalOverlays || regionSaved}
+              disabled={!region || !canSavePersonalOverlays}
               onClick={() => {
-                if (region) onSaveRegion(region);
+                if (savedRegionArtifact) {
+                  onRemoveSavedArtifact(savedRegionArtifact.saved_artifact_id);
+                } else if (region) {
+                  onSaveRegion(region);
+                }
               }}
               type="button"
             >
-              {regionSaved ? "Region saved" : canSavePersonalOverlays ? "Save region" : "Sign in to save"}
+              {savedRegionArtifact ? "Remove region" : canSavePersonalOverlays ? "Save region" : "Sign in to save"}
+            </button>
+            <button
+              className="secondary-button toolbar-button"
+              disabled={!region || !canExplainGuidance}
+              onClick={() => {
+                if (region) onExplainRegion(region);
+              }}
+              type="button"
+            >
+              {canExplainGuidance ? "Explain guidance" : "Sign in to explain"}
             </button>
           </div>
         </div>
@@ -1651,7 +2565,31 @@ function RegionExplorer({
               These scores are derived from stored scoring fields. They are not a claim of
               complete market coverage or real-time hiring certainty.
             </p>
+            <ScoreBreakdownChart scores={region.scores} />
             <RegionScoreGrid scores={region.scores} />
+          </ShellCard>
+
+          <ShellCard title="Structured guidance" eyebrow="Evidence packet explanation">
+            <p className="meta-copy">
+              Guidance is generated from returned structured fields only. It is not source
+              data and is not stored as market truth.
+            </p>
+            <ExplanationResultPanel
+              emptyCopy="Use Explain guidance to render a constrained explanation from this region output."
+              state={explanationState}
+            />
+          </ShellCard>
+
+          <ShellCard title="Deferred visualizations" eyebrow="No unsupported precision">
+            <UnsupportedVisualizationPanel
+              items={[
+                "Historical trend view",
+                "Map",
+                "Opportunity heatmap",
+                "Company-region network graph",
+              ]}
+              reason="The current region response does not include historical snapshots, map geometry, heatmap cells, or network layout coordinates."
+            />
           </ShellCard>
 
           <div className="split-grid">
@@ -1697,12 +2635,31 @@ function RegionExplorer({
               {roleFamilyState.error ? <ErrorState message={roleFamilyState.error} /> : null}
               {roleCounts.length ? (
                 <div className="signal-list">
-                  {roleCounts.map((item) => (
-                    <div className="signal-row" key={item.role}>
-                      <span>{prettyKey(item.role)}</span>
-                      <strong>{item.count} company signal(s)</strong>
-                    </div>
-                  ))}
+                  {roleCounts.map((item) => {
+                    const savedRoleArtifact = savedArtifactsByKey.get(
+                      savedArtifactKey("role_family", item.role),
+                    );
+                    return (
+                      <div className="signal-row" key={item.role}>
+                        <span>{prettyKey(item.role)}</span>
+                        <strong>{item.count} company signal(s)</strong>
+                        <button
+                          className="secondary-button"
+                          disabled={!canSavePersonalOverlays}
+                          type="button"
+                          onClick={() => {
+                            if (savedRoleArtifact) {
+                              onRemoveSavedArtifact(savedRoleArtifact.saved_artifact_id);
+                            } else {
+                              onSaveRoleFamily(item.role);
+                            }
+                          }}
+                        >
+                          {savedRoleArtifact ? "Remove" : canSavePersonalOverlays ? "Save" : "Sign in"}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : !roleFamilyState.loading ? (
                 <EmptyState
@@ -1736,9 +2693,13 @@ function CompanyExplorer({
   geographyState,
   sourceState,
   canSavePersonalOverlays,
-  companySaved,
+  canExplainGuidance,
+  savedCompanyArtifact,
+  explanationState,
   onSelectCompany,
   onSaveCompany,
+  onRemoveSavedArtifact,
+  onExplainCompany,
 }: {
   companyOptions: CompanyOption[];
   selectedCompanyId: string;
@@ -1746,9 +2707,13 @@ function CompanyExplorer({
   geographyState: LoadState<CompanyGeographyResponse>;
   sourceState: LoadState<SourceExplanation>;
   canSavePersonalOverlays: boolean;
-  companySaved: boolean;
+  canExplainGuidance: boolean;
+  savedCompanyArtifact?: SavedMarketArtifact;
+  explanationState?: LoadState<ExplanationResult>;
   onSelectCompany: (companyId: string) => void;
   onSaveCompany: (company: CompanyDetail) => void;
+  onRemoveSavedArtifact: (savedArtifactId: string) => void;
+  onExplainCompany: (company: CompanyDetail) => void;
 }) {
   const company = companyState.envelope?.data;
   const hasSelectedCompany = companyOptions.some((item) => item.company_id === selectedCompanyId);
@@ -1781,16 +2746,32 @@ function CompanyExplorer({
               ))}
             </select>
           </label>
-          <button
-            className="secondary-button toolbar-button"
-            disabled={!company || !canSavePersonalOverlays || companySaved}
-            onClick={() => {
-              if (company) onSaveCompany(company);
-            }}
-            type="button"
-          >
-            {companySaved ? "Company saved" : canSavePersonalOverlays ? "Save company" : "Sign in to save"}
-          </button>
+          <div className="toolbar-actions">
+            <button
+              className="secondary-button toolbar-button"
+              disabled={!company || !canSavePersonalOverlays}
+              onClick={() => {
+                if (savedCompanyArtifact) {
+                  onRemoveSavedArtifact(savedCompanyArtifact.saved_artifact_id);
+                } else if (company) {
+                  onSaveCompany(company);
+                }
+              }}
+              type="button"
+            >
+              {savedCompanyArtifact ? "Remove company" : canSavePersonalOverlays ? "Save company" : "Sign in to save"}
+            </button>
+            <button
+              className="secondary-button toolbar-button"
+              disabled={!company || !canExplainGuidance}
+              onClick={() => {
+                if (company) onExplainCompany(company);
+              }}
+              type="button"
+            >
+              {canExplainGuidance ? "Explain guidance" : "Sign in to explain"}
+            </button>
+          </div>
         </div>
         {!companyOptions.length ? (
           <EmptyState
@@ -1866,6 +2847,17 @@ function CompanyExplorer({
                 body="The company output did not include enough presence, hiring, or entry-level rows to identify stronger observed regions."
               />
             ) : null}
+          </ShellCard>
+
+          <ShellCard title="Structured guidance" eyebrow="Evidence packet explanation">
+            <p className="meta-copy">
+              Guidance summarizes returned company fields and source labels only. It does
+              not infer unobserved presence or hiring.
+            </p>
+            <ExplanationResultPanel
+              emptyCopy="Use Explain guidance to render a constrained explanation from this company output."
+              state={explanationState}
+            />
           </ShellCard>
 
           <div className="split-grid">
@@ -1964,10 +2956,14 @@ function ComparisonView({
   sourceBState,
   validationError,
   canSavePersonalOverlays,
-  comparisonSaved,
+  canExplainGuidance,
+  savedComparisonArtifact,
+  explanationState,
   onRegionA,
   onRegionB,
   onSaveComparison,
+  onRemoveSavedArtifact,
+  onExplainComparison,
 }: {
   regions: RegionListItem[];
   regionA: string;
@@ -1977,10 +2973,14 @@ function ComparisonView({
   sourceBState: LoadState<SourceExplanation>;
   validationError?: string | null;
   canSavePersonalOverlays: boolean;
-  comparisonSaved: boolean;
+  canExplainGuidance: boolean;
+  savedComparisonArtifact?: SavedMarketArtifact;
+  explanationState?: LoadState<ExplanationResult>;
   onRegionA: (regionId: string) => void;
   onRegionB: (regionId: string) => void;
   onSaveComparison: (comparison: ComparisonDetail, label: string) => void;
+  onRemoveSavedArtifact: (savedArtifactId: string) => void;
+  onExplainComparison: (comparison: ComparisonDetail) => void;
 }) {
   const comparison = validationError ? null : comparisonState.envelope?.data;
   const hasRegionA = regions.some((region) => region.region_id === regionA);
@@ -2034,13 +3034,27 @@ function ComparisonView({
         <div className="account-inline-actions">
           <button
             className="secondary-button"
-            disabled={!comparison || !canSavePersonalOverlays || comparisonSaved}
+            disabled={!comparison || !canSavePersonalOverlays}
             onClick={() => {
-              if (comparison) onSaveComparison(comparison, `${regionALabel} vs ${regionBLabel}`);
+              if (savedComparisonArtifact) {
+                onRemoveSavedArtifact(savedComparisonArtifact.saved_artifact_id);
+              } else if (comparison) {
+                onSaveComparison(comparison, `${regionALabel} vs ${regionBLabel}`);
+              }
             }}
             type="button"
           >
-            {comparisonSaved ? "Comparison saved" : canSavePersonalOverlays ? "Save comparison" : "Sign in to save"}
+            {savedComparisonArtifact ? "Remove comparison" : canSavePersonalOverlays ? "Save comparison" : "Sign in to save"}
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!comparison || !canExplainGuidance}
+            onClick={() => {
+              if (comparison) onExplainComparison(comparison);
+            }}
+            type="button"
+          >
+            {canExplainGuidance ? "Explain guidance" : "Sign in to explain"}
           </button>
         </div>
 
@@ -2077,6 +3091,11 @@ function ComparisonView({
           </ShellCard>
 
           <ShellCard title={`${regionALabel} vs ${regionBLabel}`} eyebrow="Category-level score fields">
+            <ComparisonScoreChart
+              comparison={comparison}
+              regionALabel={regionALabel}
+              regionBLabel={regionBLabel}
+            />
             <div className="comparison-score-table">
               <div className="comparison-table-head">
                 <span>Category</span>
@@ -2100,6 +3119,24 @@ function ComparisonView({
                 );
               })}
             </div>
+          </ShellCard>
+
+          <ShellCard title="Structured guidance" eyebrow="Evidence packet explanation">
+            <p className="meta-copy">
+              Guidance summarizes returned comparison fields only. Missing score values
+              remain missing.
+            </p>
+            <ExplanationResultPanel
+              emptyCopy="Use Explain guidance to render a constrained explanation from this comparison output."
+              state={explanationState}
+            />
+          </ShellCard>
+
+          <ShellCard title="Deferred visualizations" eyebrow="No unsupported precision">
+            <UnsupportedVisualizationPanel
+              items={["Trend view", "Map", "Heatmap"]}
+              reason="The comparison response has current score fields only; it does not include historical snapshots or geographic precision."
+            />
           </ShellCard>
 
           <div className="split-grid">
@@ -2479,6 +3516,7 @@ function PersonalizedDiscovery({
 function App() {
   const auth = useFrontendAuth();
   const [route, setRoute] = useState<RouteState>(() => readCurrentRoute());
+  const isProductRoute = isProductPage(route.page);
   const [health, setHealth] = useState<LoadState<{ service: string }>>(emptyLoadState);
   const [regions, setRegions] = useState<LoadState<{ regions: RegionListItem[] }>>(emptyLoadState);
   const [regionDetails, setRegionDetails] = useState<Record<string, ApiEnvelope<RegionDetail>>>({});
@@ -2496,7 +3534,10 @@ function App() {
   const [preferenceState, setPreferenceState] = useState<LoadState<UserPreferenceProfile>>(emptyLoadState);
   const [preferenceDraft, setPreferenceDraft] = useState<PreferenceDraft>(() => emptyPreferenceDraft());
   const [artifactsState, setArtifactsState] = useState<LoadState<{ saved_market_artifacts: SavedMarketArtifact[] }>>(emptyLoadState);
+  const [alertsState, setAlertsState] = useState<LoadState<UserAlertList>>(emptyLoadState);
   const [snapshotsState, setSnapshotsState] = useState<LoadState<{ personalized_recommendation_snapshots: PersonalizedRecommendationSnapshot[] }>>(emptyLoadState);
+  const [scoringPreviewState, setScoringPreviewState] = useState<LoadState<ScoringPreviewResult>>(emptyLoadState);
+  const [explanationStates, setExplanationStates] = useState<Record<string, LoadState<ExplanationResult>>>({});
   const [exportState, setExportState] = useState<LoadState<UserDataExport>>(emptyLoadState);
   const [deactivationResult, setDeactivationResult] = useState<AccountDeactivationResult | null>(null);
   const [accountAction, setAccountAction] = useState<AccountActionState>({ loading: false, message: null, error: null });
@@ -2552,12 +3593,20 @@ function App() {
     }
     return refs;
   }, [artifactsState.envelope]);
+  const savedArtifactByKey = useMemo(() => {
+    const refs = new Map<string, SavedMarketArtifact>();
+    for (const artifact of artifactsState.envelope?.data?.saved_market_artifacts ?? []) {
+      refs.set(savedArtifactKey(artifact.artifact_type, artifact.artifact_ref), artifact);
+    }
+    return refs;
+  }, [artifactsState.envelope]);
   const comparisonArtifactRef = comparisonState.envelope?.data?.comparison_id
-    ?? `${comparisonA}:${comparisonB}`;
+    ?? canonicalComparisonRef(comparisonA, comparisonB);
   const canSavePersonalOverlays = auth.isConfigured && auth.isAuthenticated && !accountDeactivated;
+  const canExplainGuidance = canSavePersonalOverlays;
   const regionSourceIdsNeeded = useMemo(() => {
     const ids: string[] = [];
-    if (selectedRegionId && selectedRegionIsKnown) ids.push(selectedRegionId);
+    if (isProductRoute && selectedRegionId && selectedRegionIsKnown) ids.push(selectedRegionId);
     if (route.page === "compare") {
       if (comparisonRegionAKnown) ids.push(comparisonA);
       if (comparisonRegionBKnown) ids.push(comparisonB);
@@ -2575,6 +3624,7 @@ function App() {
     comparisonRegionBKnown,
     discoveryFilters.selectedRegions,
     hasLoadedRegionList,
+    isProductRoute,
     regionList,
     route.page,
     selectedRegionId,
@@ -2600,7 +3650,10 @@ function App() {
     setPreferenceState(emptyLoadState());
     setPreferenceDraft(emptyPreferenceDraft());
     setArtifactsState(emptyLoadState());
+    setAlertsState(emptyLoadState());
     setSnapshotsState(emptyLoadState());
+    setScoringPreviewState(emptyLoadState());
+    setExplanationStates({});
     setExportState(emptyLoadState());
     setDeactivationResult(null);
     setDeactivateConfirmed(false);
@@ -2612,12 +3665,14 @@ function App() {
     setCurrentUserState((current) => ({ ...current, loading: true, error: null }));
     setPreferenceState((current) => ({ ...current, loading: true, error: null }));
     setArtifactsState((current) => ({ ...current, loading: true, error: null }));
+    setAlertsState((current) => ({ ...current, loading: true, error: null }));
     setSnapshotsState((current) => ({ ...current, loading: true, error: null }));
 
-    const [userResult, preferenceResult, artifactResult, snapshotResult] = await Promise.allSettled([
+    const [userResult, preferenceResult, artifactResult, alertResult, snapshotResult] = await Promise.allSettled([
       getCurrentUser(protectedOptions),
       getPreferences(protectedOptions),
       listSavedMarketArtifacts(protectedOptions),
+      listAlerts(protectedOptions),
       listRecommendationSnapshots(protectedOptions),
     ]);
 
@@ -2649,6 +3704,16 @@ function App() {
         loading: false,
         envelope: null,
         error: artifactResult.reason instanceof Error ? artifactResult.reason.message : "Failed to load saved artifacts",
+      });
+    }
+
+    if (alertResult.status === "fulfilled") {
+      setAlertsState({ loading: false, envelope: alertResult.value, error: null });
+    } else {
+      setAlertsState({
+        loading: false,
+        envelope: null,
+        error: alertResult.reason instanceof Error ? alertResult.reason.message : "Failed to load alerts",
       });
     }
 
@@ -2696,6 +3761,8 @@ function App() {
   }, [auth.isAuthenticated, loadAccountData, resetAccountState]);
 
   useEffect(() => {
+    if (!isProductRoute) return;
+
     async function loadInitialData() {
       setHealth((current) => ({ ...current, loading: true, error: null }));
       setRegions((current) => ({ ...current, loading: true, error: null }));
@@ -2729,9 +3796,11 @@ function App() {
     }
 
     void loadInitialData();
-  }, [loadRegion]);
+  }, [isProductRoute, loadRegion]);
 
   useEffect(() => {
+    if (!isProductRoute) return;
+
     async function loadRegionSearch() {
       setRegionSearchState((current) => ({ ...current, loading: true, error: null }));
       try {
@@ -2747,9 +3816,10 @@ function App() {
     }
 
     void loadRegionSearch();
-  }, []);
+  }, [isProductRoute]);
 
   useEffect(() => {
+    if (!isProductRoute) return;
     if (
       !selectedRegionId
       || !selectedRegionIsKnown
@@ -2759,7 +3829,7 @@ function App() {
       return;
     }
     void loadRegion(selectedRegionId);
-  }, [loadRegion, regionDetails, regionLoading, selectedRegionId, selectedRegionIsKnown]);
+  }, [isProductRoute, loadRegion, regionDetails, regionLoading, selectedRegionId, selectedRegionIsKnown]);
 
   useEffect(() => {
     if (route.page !== "explore") return;
@@ -2819,6 +3889,7 @@ function App() {
   ]);
 
   useEffect(() => {
+    if (!isProductRoute) return;
     if (!selectedRegionId || !selectedRegionIsKnown) return;
     const current = regionCompanySearchStates[selectedRegionId];
     if (current?.loading || current?.envelope || current?.error) return;
@@ -2844,7 +3915,7 @@ function App() {
           },
         }));
       });
-  }, [regionCompanySearchStates, selectedRegionId, selectedRegionIsKnown]);
+  }, [isProductRoute, regionCompanySearchStates, selectedRegionId, selectedRegionIsKnown]);
 
   useEffect(() => {
     if (route.page === "region" && !route.regionId && selectedRegionId) {
@@ -2859,6 +3930,11 @@ function App() {
   }, [navigateTo, route.companyId, route.page, selectedCompanyId]);
 
   useEffect(() => {
+    if (!isProductRoute) {
+      setCompanyState(emptyLoadState());
+      return;
+    }
+
     async function loadCompany() {
       if (!selectedCompanyId) {
         setCompanyState(emptyLoadState());
@@ -2878,9 +3954,10 @@ function App() {
     }
 
     void loadCompany();
-  }, [selectedCompanyId]);
+  }, [isProductRoute, selectedCompanyId]);
 
   useEffect(() => {
+    if (!isProductRoute) return;
     if (!selectedCompanyId) return;
     const current = companySourceStates[selectedCompanyId];
     if (current?.loading || current?.envelope || current?.error) return;
@@ -2906,9 +3983,10 @@ function App() {
           },
         }));
       });
-  }, [companySourceStates, selectedCompanyId]);
+  }, [companySourceStates, isProductRoute, selectedCompanyId]);
 
   useEffect(() => {
+    if (!isProductRoute) return;
     if (!selectedCompanyId) return;
     const current = companyGeographyStates[selectedCompanyId];
     if (current?.loading || current?.envelope || current?.error) return;
@@ -2934,9 +4012,10 @@ function App() {
           },
         }));
       });
-  }, [companyGeographyStates, selectedCompanyId]);
+  }, [companyGeographyStates, isProductRoute, selectedCompanyId]);
 
   useEffect(() => {
+    if (!isProductRoute) return;
     if (comparisonValidationError) {
       setComparisonState(emptyLoadState());
       return;
@@ -2958,7 +4037,7 @@ function App() {
     }
 
     void loadComparison();
-  }, [comparisonA, comparisonB, comparisonValidationError]);
+  }, [comparisonA, comparisonB, comparisonValidationError, isProductRoute]);
 
   useEffect(() => {
     discoveryRequestKey.current += 1;
@@ -3060,14 +4139,11 @@ function App() {
         artifact_ref: region.region_id,
         label: region.display_name,
         snapshot: {
-          region_id: region.region_id,
-          display_name: region.display_name,
-          region_type: region.region_type,
-          scores: region.scores,
+          ref_kind: "canonical_region_id",
           saved_from: "region_detail",
         },
       },
-      "Region saved to your account overlays.",
+      "Region saved to your watchlist.",
     );
   }
 
@@ -3078,15 +4154,26 @@ function App() {
         artifact_ref: company.company_id,
         label: company.company_name,
         snapshot: {
-          company_id: company.company_id,
-          company_name: company.company_name,
-          sector_primary: company.sector_primary,
-          eligibility_status: company.eligibility_status,
-          prestige_score: company.prestige_score,
+          ref_kind: "canonical_company_id",
           saved_from: "company_geography",
         },
       },
-      "Company saved to your account overlays.",
+      "Company saved to your watchlist.",
+    );
+  }
+
+  function handleSaveRoleFamily(roleFamily: string) {
+    void handleSaveArtifact(
+      {
+        artifact_type: "role_family",
+        artifact_ref: roleFamily,
+        label: prettyKey(roleFamily),
+        snapshot: {
+          ref_kind: "role_family_key",
+          saved_from: "region_role_family",
+        },
+      },
+      "Role family saved to your watchlist.",
     );
   }
 
@@ -3097,14 +4184,15 @@ function App() {
         artifact_ref: comparison.comparison_id ?? comparisonArtifactRef,
         label,
         snapshot: {
-          comparison_id: comparison.comparison_id,
-          region_a: comparison.region_a,
-          region_b: comparison.region_b,
-          category_winners: comparison.category_winners,
+          ref_kind: "canonical_comparison_set",
+          region_ids: [
+            comparison.region_a?.region_id,
+            comparison.region_b?.region_id,
+          ].filter(Boolean),
           saved_from: "compare_markets",
         },
       },
-      "Comparison saved to your account overlays.",
+      "Comparison set saved to your watchlist.",
     );
   }
 
@@ -3133,7 +4221,6 @@ function App() {
           label: `Discovery result ${formatDateTime(new Date().toISOString())}`,
           snapshot: {
             filters: discoveryFilters,
-            result: discovery,
             objective_output_refs: refs,
             saved_from: "personalized_discovery",
           },
@@ -3200,6 +4287,41 @@ function App() {
     })();
   }
 
+  function handlePreviewScoring() {
+    void (async () => {
+      if (!canSavePersonalOverlays) {
+        setAccountAction({ loading: false, message: "Sign in to preview scoring overlays.", error: null });
+        return;
+      }
+      const preferredRegionIds = splitDraftList(preferenceDraft.preferredRegions);
+      const fallbackRegionIds = regionList.slice(0, 2).map((region) => region.region_id);
+      const regionIds = preferredRegionIds.length
+        ? preferredRegionIds
+        : fallbackRegionIds.length
+          ? fallbackRegionIds
+          : [selectedRegionId].filter(Boolean);
+
+      setScoringPreviewState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await previewScoringOverlay(
+          {
+            region_ids: regionIds,
+            role_interests: splitDraftList(preferenceDraft.roleInterests),
+            industry_interests: splitDraftList(preferenceDraft.industryInterests),
+            scoring_weights: normalizeScoringWeights(preferenceDraft.scoringWeights),
+          },
+          protectedOptions,
+        );
+        setScoringPreviewState({ loading: false, envelope, error: null });
+        setAccountAction({ loading: false, message: "Scoring preview updated.", error: null });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to preview scoring overlay";
+        setScoringPreviewState({ loading: false, envelope: null, error: message });
+        setAccountAction({ loading: false, message: null, error: message });
+      }
+    })();
+  }
+
   function handleDeletePreferences() {
     void (async () => {
       setAccountAction({ loading: true, message: null, error: null });
@@ -3236,6 +4358,128 @@ function App() {
     })();
   }
 
+  function handleMarkAlertRead(userAlertId: string) {
+    void (async () => {
+      setAccountAction({ loading: true, message: null, error: null });
+      try {
+        await markAlertRead(userAlertId, protectedOptions);
+        const envelope = await listAlerts(protectedOptions);
+        setAlertsState({ loading: false, envelope, error: null });
+        setAccountAction({ loading: false, message: "Alert marked read.", error: null });
+      } catch (error) {
+        setAccountAction({
+          loading: false,
+          message: null,
+          error: error instanceof Error ? error.message : "Failed to mark alert read",
+        });
+      }
+    })();
+  }
+
+  function handleDismissAlert(userAlertId: string) {
+    void (async () => {
+      setAccountAction({ loading: true, message: null, error: null });
+      try {
+        await dismissAlert(userAlertId, protectedOptions);
+        const envelope = await listAlerts(protectedOptions);
+        setAlertsState({ loading: false, envelope, error: null });
+        setAccountAction({ loading: false, message: "Alert dismissed.", error: null });
+      } catch (error) {
+        setAccountAction({
+          loading: false,
+          message: null,
+          error: error instanceof Error ? error.message : "Failed to dismiss alert",
+        });
+      }
+    })();
+  }
+
+  function runExplanation(
+    key: string,
+    request: { evidence: ExplanationEvidencePacket },
+    endpoint: (
+      body: { evidence: ExplanationEvidencePacket },
+      authOptions: ProtectedRequestOptions,
+    ) => Promise<ApiEnvelope<ExplanationResult>>,
+  ) {
+    void (async () => {
+      if (!canExplainGuidance) {
+        setAccountAction({ loading: false, message: "Sign in to render structured guidance.", error: null });
+        return;
+      }
+      setExplanationStates((current) => ({
+        ...current,
+        [key]: { loading: true, envelope: current[key]?.envelope ?? null, error: null },
+      }));
+      try {
+        const envelope = await endpoint(request, protectedOptions);
+        setExplanationStates((current) => ({
+          ...current,
+          [key]: { loading: false, envelope, error: null },
+        }));
+        setAccountAction({ loading: false, message: "Structured guidance rendered.", error: null });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to render structured guidance";
+        setExplanationStates((current) => ({
+          ...current,
+          [key]: { loading: false, envelope: null, error: message },
+        }));
+        setAccountAction({ loading: false, message: null, error: message });
+      }
+    })();
+  }
+
+  function handleExplainRegion(region: RegionDetail) {
+    runExplanation(
+      `region:${region.region_id}`,
+      {
+        evidence: regionExplanationEvidence(
+          region,
+          selectedRegionState.envelope,
+          selectedRegionSourceState.envelope?.data ?? null,
+        ),
+      },
+      explainRegion,
+    );
+  }
+
+  function handleExplainCompany(company: CompanyDetail) {
+    runExplanation(
+      `company:${company.company_id}`,
+      {
+        evidence: companyExplanationEvidence(
+          company,
+          companyState.envelope,
+          selectedCompanySourceState.envelope?.data ?? null,
+        ),
+      },
+      explainCompany,
+    );
+  }
+
+  function handleExplainComparison(comparison: ComparisonDetail) {
+    runExplanation(
+      `comparison:${comparison.comparison_id ?? comparisonArtifactRef}`,
+      {
+        evidence: comparisonExplanationEvidence(
+          comparison,
+          comparisonState.envelope,
+          regionSourceStates[comparisonA]?.envelope?.data ?? null,
+          regionSourceStates[comparisonB]?.envelope?.data ?? null,
+        ),
+      },
+      explainComparison,
+    );
+  }
+
+  function handleExplainAlert(alert: UserAlert) {
+    runExplanation(
+      `alert:${alert.user_alert_id}`,
+      { evidence: alertExplanationEvidence(alert) },
+      explainAlert,
+    );
+  }
+
   function handleExportUserData() {
     void (async () => {
       setExportState((current) => ({ ...current, loading: true, error: null }));
@@ -3264,7 +4508,10 @@ function App() {
         setPreferenceState(emptyLoadState());
         setPreferenceDraft(emptyPreferenceDraft());
         setArtifactsState(emptyLoadState());
+        setAlertsState(emptyLoadState());
         setSnapshotsState(emptyLoadState());
+        setScoringPreviewState(emptyLoadState());
+        setExplanationStates({});
         setExportState(emptyLoadState());
         setDeactivateConfirmed(false);
         setAccountAction({
@@ -3280,6 +4527,10 @@ function App() {
         });
       }
     })();
+  }
+
+  if (!isProductRoute) {
+    return <PublicRouteView onNavigate={handleRouteLink} route={route} />;
   }
 
   return (
@@ -3316,6 +4567,7 @@ function App() {
           })}
         </nav>
         <AuthStatusPanel auth={auth} onOpenAccount={() => navigateTo(accountUrl())} />
+        <PublicInfoLinks activePage={null} onNavigate={handleRouteLink} variant="sidebar" />
         <div className="api-target">
           <span>API target</span>
           <code>{API_TARGET_LABEL}</code>
@@ -3336,6 +4588,8 @@ function App() {
           </div>
         </header>
 
+        <DemoDisclosure compact />
+
         {route.page === "explore" ? (
           <ExploreMarkets
             health={health}
@@ -3350,15 +4604,20 @@ function App() {
 
         {route.page === "region" ? (
           <RegionExplorer
+            canExplainGuidance={canExplainGuidance}
             canSavePersonalOverlays={canSavePersonalOverlays}
+            explanationState={explanationStates[`region:${selectedRegionId}`]}
+            onExplainRegion={handleExplainRegion}
             onCompareRegion={compareRegion}
+            onRemoveSavedArtifact={handleDeleteArtifact}
             onSaveRegion={handleSaveRegion}
+            onSaveRoleFamily={handleSaveRoleFamily}
             onSelectCompany={selectCompany}
             onSelectRegion={selectRegion}
-            regionSaved={savedArtifactRefs.has(savedArtifactKey("region", selectedRegionId))}
             roleFamilyState={selectedRegionRoleFamilyState}
             regionState={selectedRegionState}
             regions={regionList}
+            savedArtifactsByKey={savedArtifactByKey}
             selectedRegionId={selectedRegionId}
             sourceState={selectedRegionSourceState}
           />
@@ -3366,13 +4625,17 @@ function App() {
 
         {route.page === "company" ? (
           <CompanyExplorer
+            canExplainGuidance={canExplainGuidance}
             canSavePersonalOverlays={canSavePersonalOverlays}
-            companySaved={savedArtifactRefs.has(savedArtifactKey("company", selectedCompanyId))}
             companyOptions={companyOptions}
             companyState={companyState}
+            explanationState={explanationStates[`company:${selectedCompanyId}`]}
             geographyState={selectedCompanyGeographyState}
+            onExplainCompany={handleExplainCompany}
+            onRemoveSavedArtifact={handleDeleteArtifact}
             onSaveCompany={handleSaveCompany}
             onSelectCompany={selectCompany}
+            savedCompanyArtifact={savedArtifactByKey.get(savedArtifactKey("company", selectedCompanyId))}
             selectedCompanyId={selectedCompanyId}
             sourceState={selectedCompanySourceState}
           />
@@ -3380,9 +4643,13 @@ function App() {
 
         {route.page === "compare" ? (
           <ComparisonView
+            canExplainGuidance={canExplainGuidance}
             canSavePersonalOverlays={canSavePersonalOverlays}
             comparisonState={comparisonState}
-            comparisonSaved={savedArtifactRefs.has(savedArtifactKey("comparison", comparisonArtifactRef))}
+            explanationState={explanationStates[`comparison:${comparisonArtifactRef}`]}
+            onExplainComparison={handleExplainComparison}
+            savedComparisonArtifact={savedArtifactByKey.get(savedArtifactKey("comparison", comparisonArtifactRef))}
+            onRemoveSavedArtifact={handleDeleteArtifact}
             onRegionA={selectComparisonA}
             onRegionB={selectComparisonB}
             onSaveComparison={handleSaveComparison}
@@ -3450,6 +4717,12 @@ function App() {
         {route.page === "account" ? (
           <AccountView
             actionState={accountAction}
+            alertExplanationStates={Object.fromEntries(
+              Object.entries(explanationStates)
+                .filter(([key]) => key.startsWith("alert:"))
+                .map(([key, value]) => [key.slice("alert:".length), value]),
+            )}
+            alertsState={alertsState}
             artifactsState={artifactsState}
             auth={auth}
             currentUserState={currentUserState}
@@ -3460,16 +4733,23 @@ function App() {
             onDeactivateConfirmed={setDeactivateConfirmed}
             onDeleteArtifact={handleDeleteArtifact}
             onDeletePreferences={handleDeletePreferences}
+            onDismissAlert={handleDismissAlert}
+            onExplainAlert={handleExplainAlert}
             onExport={handleExportUserData}
             onLogin={() => void auth.login()}
+            onMarkAlertRead={handleMarkAlertRead}
             onPreferenceDraft={setPreferenceDraft}
+            onPreviewScoring={handlePreviewScoring}
             onRefresh={() => void loadAccountData()}
             onSavePreferences={handleSavePreferences}
             preferenceDraft={preferenceDraft}
             preferenceState={preferenceState}
+            scoringPreviewState={scoringPreviewState}
             snapshotsState={snapshotsState}
           />
         ) : null}
+
+        <PublicFooter activePage={null} onNavigate={handleRouteLink} />
       </section>
     </main>
   );

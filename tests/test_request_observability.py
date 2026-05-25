@@ -183,6 +183,47 @@ def test_request_logging_includes_error_type_for_protection_response() -> None:
     assert get_request_id() is None
 
 
+def test_request_logging_includes_public_demo_denial_error_type() -> None:
+    app = create_app(
+        settings=Settings(
+            app_env="public_demo",
+            database_url="sqlite:///public-demo.db",
+            cors_allowed_origins="https://demo.example",
+            _env_file=None,
+        )
+    )
+    handler = ListHandler()
+    logger = logging.getLogger("backend.api.requests")
+    previous_level = logger.level
+    previous_disabled = logger.disabled
+    previous_manager_disable = logging.root.manager.disable
+    logging.disable(logging.NOTSET)
+    logger.setLevel(logging.INFO)
+    logger.disabled = False
+    logger.addHandler(handler)
+    try:
+        response = TestClient(app).post(
+            "/admin/overrides",
+            headers={"X-Request-ID": "public-demo-denied-1"},
+            json={"target_id": "comp_a"},
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.disabled = previous_disabled
+        logger.setLevel(previous_level)
+        logging.disable(previous_manager_disable)
+
+    assert response.status_code == 403
+    assert handler.records
+    fields = handler.records[-1].extra_fields
+    assert fields["request_id"] == "public-demo-denied-1"
+    assert fields["method"] == "POST"
+    assert fields["path"] == "/admin/overrides"
+    assert fields["status_code"] == 403
+    assert fields["error_type"] == "public_demo_read_only"
+    assert get_request_id() is None
+
+
 def test_request_id_from_scope_generates_safe_id_without_observability() -> None:
     scope = {"type": "http", "headers": []}
 

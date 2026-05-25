@@ -7,6 +7,8 @@ export const PREFERENCE_LEVELS = ["low", "medium", "high"];
 export const CAREER_STAGE_OPTIONS = ["entry_level"];
 
 export type ProductPage = "explore" | "region" | "company" | "compare" | "discovery" | "account";
+export type PublicPage = "landing" | "data-limitations" | "privacy" | "terms" | "sources";
+export type AppPage = ProductPage | PublicPage;
 
 export type ComparisonUrlState = {
   regionA: string;
@@ -24,7 +26,7 @@ export type DiscoveryFilters = {
 };
 
 export type RouteState = {
-  page: ProductPage;
+  page: AppPage;
   regionId?: string;
   companyId?: string;
   comparison: ComparisonUrlState;
@@ -43,6 +45,19 @@ export const DEFAULT_DISCOVERY_FILTERS: DiscoveryFilters = {
 };
 
 const PRODUCT_ROOT = "/markets";
+
+export const PUBLIC_PAGE_PATHS: Record<Exclude<PublicPage, "landing">, string> = {
+  "data-limitations": "/data-limitations",
+  privacy: "/privacy",
+  terms: "/terms",
+  sources: "/sources",
+};
+
+const PRODUCT_PAGES: ProductPage[] = ["explore", "region", "company", "compare", "discovery", "account"];
+
+export function isProductPage(page: AppPage): page is ProductPage {
+  return PRODUCT_PAGES.includes(page as ProductPage);
+}
 
 function safeDecodeSegment(value: string): string {
   try {
@@ -144,7 +159,7 @@ function parseDiscovery(params: URLSearchParams): DiscoveryFilters {
 }
 
 function baseRoute(
-  page: ProductPage,
+  page: AppPage,
   params: URLSearchParams,
   extra?: Pick<RouteState, "regionId" | "companyId" | "unknownPath">,
 ): RouteState {
@@ -161,11 +176,18 @@ export function parseRoute(pathname: string, search: string): RouteState {
   const segments = pathname.split("/").filter(Boolean).map(safeDecodeSegment);
 
   if (!segments.length) {
-    return baseRoute("explore", params);
+    return baseRoute("landing", params);
+  }
+
+  if (segments.length === 1) {
+    const publicPage = Object.entries(PUBLIC_PAGE_PATHS).find(
+      ([, path]) => path === `/${segments[0]}`,
+    )?.[0] as Exclude<PublicPage, "landing"> | undefined;
+    if (publicPage) return baseRoute(publicPage, params);
   }
 
   if (segments[0] !== "markets") {
-    return baseRoute("explore", params, { unknownPath: pathname });
+    return baseRoute("landing", params, { unknownPath: pathname });
   }
 
   const section = segments[1];
@@ -196,6 +218,14 @@ function appendListParam(params: URLSearchParams, key: string, values: string[])
 
 export function exploreUrl(): string {
   return PRODUCT_ROOT;
+}
+
+export function landingUrl(): string {
+  return "/";
+}
+
+export function publicPageUrl(page: Exclude<PublicPage, "landing">): string {
+  return PUBLIC_PAGE_PATHS[page];
 }
 
 export function regionDetailUrl(regionId?: string): string {

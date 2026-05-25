@@ -10,6 +10,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from backend.companies.models import Company
+from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.models import Region
 from backend.outputs.models import OutputMetadata
 from backend.outputs.repository import OutputMetadataRepository
@@ -62,6 +63,26 @@ def _seed_presence(
             presence_basis="office_plus_hiring",
             office_evidence_flag=True,
             hiring_evidence_flag=True,
+        )
+    )
+    session.flush()
+
+
+def _seed_entry_level(
+    session: Session,
+    *,
+    company_id: str,
+    region_id: str,
+) -> None:
+    session.add(
+        CompanyRegionEntryLevel(
+            entry_level_id=f"e_{company_id}_{region_id}",
+            company_id=company_id,
+            region_id=region_id,
+            internship_count=2,
+            coop_count=1,
+            entry_level_full_time_count=3,
+            entry_level_access_score=0.7,
         )
     )
     session.flush()
@@ -147,6 +168,7 @@ def test_get_region_returns_assembled_payload(api_client, session) -> None:
     _seed_region(session, region_id="greater_boston", display_name="Greater Boston")
     _seed_company(session, company_id="comp_a")
     _seed_presence(session, company_id="comp_a", region_id="greater_boston")
+    _seed_entry_level(session, company_id="comp_a", region_id="greater_boston")
     _seed_score(session, region_id="greater_boston")
 
     response = api_client.get("/regions/greater_boston")
