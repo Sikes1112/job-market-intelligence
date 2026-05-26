@@ -21,8 +21,11 @@ from backend.companies.models import Company
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.market_coverage import (
     CoverageMetadataPayload,
+    PriorityMarket,
     SectorCoverageMetadataPayload,
     build_region_coverage_metadata,
+    priority_market_by_id,
+    unknown_sector_coverage_metadata,
 )
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
@@ -41,6 +44,7 @@ class RegionSearchResult(BaseModel):
     region_type: str
     parent_region_id: str | None = None
     labor_market_group: str | None = None
+    priority_market: PriorityMarket | None = None
     opportunity_score: float | None = None
     coverage: CoverageMetadataPayload
     sector_coverage: dict[str, SectorCoverageMetadataPayload] = Field(
@@ -88,6 +92,7 @@ class CompanyRegionGeographyResult(BaseModel):
 
     region_id: str
     region_name: str
+    priority_market: PriorityMarket | None = None
     presence_status: str | None = None
     current_hiring: bool = False
     has_entry_level_access: bool = False
@@ -219,6 +224,7 @@ def search_regions(
                 region_type=region.region_type,
                 parent_region_id=region.parent_region_id,
                 labor_market_group=region.labor_market_group,
+                priority_market=priority_market_by_id(region.region_id),
                 opportunity_score=opportunity_score,
                 coverage=coverage,
                 sector_coverage={},
@@ -420,6 +426,7 @@ def company_geography(
             CompanyRegionGeographyResult(
                 region_id=region.region_id,
                 region_name=region.display_name,
+                priority_market=priority_market_by_id(region.region_id),
                 presence_status=_presence_status(company_region_presence_rows),
                 current_hiring=any(
                     row.currently_hiring_flag for row in company_region_hiring_rows
@@ -434,7 +441,7 @@ def company_geography(
                     entry_level_rows=region_entry_rows,
                     freshness=region_freshness,
                 ),
-                sector_coverage={},
+                sector_coverage=unknown_sector_coverage_metadata(),
                 freshness=freshness,
                 has_real_data=_has_real_data(freshness),
             )

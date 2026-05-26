@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.geography.market_coverage import (
     CoverageMetadataPayload,
+    PriorityMarket,
     placeholder_coverage_metadata,
 )
 from backend.personalization.controls import ScoringWeightKey, ScoringWeightsInput
@@ -56,6 +57,7 @@ class PersonalizedRegionEntry(BaseModel):
 
     region_id: str
     display_name: str
+    priority_market: PriorityMarket | None = None
     personal_market_score: float
     objective_opportunity_score: float | None = None
     coverage: CoverageMetadataPayload = Field(
@@ -162,6 +164,7 @@ class ScoringPreviewRegion(BaseModel):
 
     region_id: str
     display_name: str
+    priority_market: PriorityMarket | None = None
     canonical_default_scores: CanonicalDefaultScoreSummary
     coverage: CoverageMetadataPayload = Field(
         default_factory=placeholder_coverage_metadata

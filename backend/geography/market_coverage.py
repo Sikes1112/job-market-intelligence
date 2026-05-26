@@ -10,13 +10,17 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class _Vocabulary(StrEnum):
     @classmethod
     def values(cls) -> frozenset[str]:
         return frozenset(member.value for member in cls)
+
+
+COVERAGE_SCORE_MIN = 0.0
+COVERAGE_SCORE_MAX = 100.0
 
 
 class RegionExpansionPlaybookStep(_Vocabulary):
@@ -48,6 +52,14 @@ class SectorCoverageCategory(_Vocabulary):
     PUBLIC_SECTOR_TECH = "public_sector_tech"
     DEFENSE_TECH = "defense_tech"
     CONSUMER_TECH = "consumer_tech"
+
+
+class SectorCoverageLevel(_Vocabulary):
+    UNKNOWN = "unknown"
+    LIMITED = "limited"
+    WATCHLIST = "watchlist"
+    PARTIAL = "partial"
+    STRONG = "strong"
 
 
 class CoverageQualityLabel(_Vocabulary):
@@ -94,6 +106,28 @@ class SectorCoverageDefinition(BaseModel):
     label: str
 
 
+class SectorCoverageLevelDefinition(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    level: SectorCoverageLevel
+    label: str
+    meaning: str
+    can_be_inferred_from_missing_evidence: bool = False
+    can_be_displayed_as_strong: bool = False
+
+
+class CoverageQualityScorePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    overall_score: float = Field(ge=COVERAGE_SCORE_MIN, le=COVERAGE_SCORE_MAX)
+    components: dict[str, float]
+
+    @field_validator("components", mode="before")
+    @classmethod
+    def _components_are_bounded(cls, value):
+        return _validate_component_score_map(value)
+
+
 class CoverageMetadataPayload(BaseModel):
     """API-safe coverage metadata.
 
@@ -103,10 +137,57 @@ class CoverageMetadataPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _populate_additive_api_fields(cls, value):
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        tier = data.get("tier") or data.get("coverage_tier")
+        label = data.get("label") or data.get("coverage_label")
+        quality_score = data.get("quality_score")
+        components = data.get("components")
+        quality_payload = data.get("coverage_quality_score")
+        if quality_score is None and isinstance(quality_payload, dict):
+            quality_score = quality_payload.get("overall_score")
+        if components is None and isinstance(quality_payload, dict):
+            components = quality_payload.get("components")
+        if tier is not None:
+            data.setdefault("coverage_tier", tier)
+            data.setdefault("coverage_description", coverage_description_for_tier(tier))
+        if label is not None:
+            data.setdefault("coverage_label", label)
+        elif tier is not None:
+            data.setdefault("coverage_label", coverage_label_for_tier(tier))
+        if quality_score is not None and components is not None:
+            data.setdefault(
+                "coverage_quality_score",
+                {
+                    "overall_score": quality_score,
+                    "components": components,
+                },
+            )
+        if tier is not None:
+            data.setdefault(
+                "coverage_limitations",
+                coverage_limitations_for_tier(tier, notes=data.get("notes") or ()),
+            )
+        return data
+
+    @field_validator("components", mode="before")
+    @classmethod
+    def _components_are_bounded(cls, value):
+        return _validate_component_score_map(value)
+
     tier: CoverageTier
     label: str
-    quality_score: float = Field(ge=0.0, le=1.0)
+    quality_score: float = Field(ge=COVERAGE_SCORE_MIN, le=COVERAGE_SCORE_MAX)
     components: dict[str, float]
+    coverage_tier: CoverageTier
+    coverage_label: str
+    coverage_description: str
+    coverage_quality_score: CoverageQualityScorePayload
+    coverage_limitations: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     heuristic: bool = True
     safe_for_confident_market_comparison: bool = False
@@ -120,13 +201,14 @@ class SectorCoverageMetadataPayload(BaseModel):
 
     sector: SectorCoverageCategory
     label: str
+    coverage_level: SectorCoverageLevel = SectorCoverageLevel.UNKNOWN
     coverage: CoverageMetadataPayload
 
 
 class CoverageQualityScore(BaseModel):
     """Heuristic, bounded coverage quality components.
 
-    Each component is a human/audit-assigned value in ``[0, 1]``. These are
+    Each component is a human/audit-assigned value in ``[0, 100]``. These are
     coverage-readiness estimates, not objective opportunity scores and not
     source-derived market facts. A zero means absent or not demonstrated, not a
     negative market finding.
@@ -134,12 +216,12 @@ class CoverageQualityScore(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    company_coverage: float = Field(ge=0.0, le=1.0)
-    hiring_coverage: float = Field(ge=0.0, le=1.0)
-    entry_level_coverage: float = Field(ge=0.0, le=1.0)
-    freshness: float = Field(ge=0.0, le=1.0)
-    source_diversity: float = Field(ge=0.0, le=1.0)
-    confidence: float = Field(ge=0.0, le=1.0)
+    company_coverage: float = Field(ge=COVERAGE_SCORE_MIN, le=COVERAGE_SCORE_MAX)
+    hiring_coverage: float = Field(ge=COVERAGE_SCORE_MIN, le=COVERAGE_SCORE_MAX)
+    entry_level_coverage: float = Field(ge=COVERAGE_SCORE_MIN, le=COVERAGE_SCORE_MAX)
+    freshness: float = Field(ge=COVERAGE_SCORE_MIN, le=COVERAGE_SCORE_MAX)
+    source_diversity: float = Field(ge=COVERAGE_SCORE_MIN, le=COVERAGE_SCORE_MAX)
+    confidence: float = Field(ge=COVERAGE_SCORE_MIN, le=COVERAGE_SCORE_MAX)
     notes: tuple[str, ...] = Field(default_factory=tuple)
 
     @property
@@ -171,13 +253,16 @@ class SectorCoverageProfile(BaseModel):
 
     Sector coverage is independent of overall region coverage. A region can be
     broad Tier 2 while one sector is Tier 1, or broad Tier 1 while a specific
-    sector remains weak.
+    sector remains weak. The sector level is intentionally conservative:
+    missing sector evidence defaults to unknown and cannot become strong
+    without quality support.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     sector: SectorCoverageCategory
     coverage_tier: CoverageTier
+    coverage_level: SectorCoverageLevel = SectorCoverageLevel.UNKNOWN
     quality_score: CoverageQualityScore | None = None
     notes: tuple[str, ...] = Field(default_factory=tuple)
 
@@ -188,6 +273,7 @@ class SectorCoverageProfile(BaseModel):
             self.quality_score,
             context=f"sector {self.sector.value}",
         )
+        _validate_sector_coverage_level(self)
         return self
 
 
@@ -404,6 +490,68 @@ COVERAGE_TIER_DEFINITIONS: dict[CoverageTier, CoverageTierDefinition] = {
 }
 
 
+def coverage_label_for_tier(tier: CoverageTier | str) -> str:
+    try:
+        normalized = tier if isinstance(tier, CoverageTier) else CoverageTier(tier)
+    except ValueError:
+        return "Coverage unavailable"
+    return COVERAGE_TIER_DEFINITIONS[normalized].label
+
+
+def coverage_description_for_tier(tier: CoverageTier | str) -> str:
+    try:
+        normalized = tier if isinstance(tier, CoverageTier) else CoverageTier(tier)
+    except ValueError:
+        return "Coverage metadata is unavailable for this response."
+    if normalized is CoverageTier.TIER_1:
+        return "This market has enough validated coverage for confident comparison."
+    if normalized is CoverageTier.TIER_2:
+        return (
+            "This market is directionally useful, but one or more coverage "
+            "signals are incomplete and must be treated as partial."
+        )
+    if normalized is CoverageTier.TIER_3:
+        return (
+            "This market is tracked as watchlist or emerging coverage and is "
+            "not enough for confident recommendations."
+        )
+    return (
+        "This market is placeholder only and should not be treated as analyzed "
+        "market intelligence."
+    )
+
+
+def coverage_limitations_for_tier(
+    tier: CoverageTier | str,
+    *,
+    notes: tuple[str, ...] | list[str] = (),
+) -> list[str]:
+    try:
+        normalized = tier if isinstance(tier, CoverageTier) else CoverageTier(tier)
+    except ValueError:
+        normalized = CoverageTier.TIER_4
+    limitations = [
+        (
+            "Coverage scoring is heuristic and should be read together with "
+            "freshness and source metadata."
+        )
+    ]
+    if normalized is CoverageTier.TIER_2:
+        limitations.append("Coverage is partial; at least one signal class is incomplete.")
+    elif normalized is CoverageTier.TIER_3:
+        limitations.append(
+            "Coverage is watchlist/emerging and is not a confident recommendation basis."
+        )
+    elif normalized is CoverageTier.TIER_4:
+        limitations.append(
+            "Coverage is placeholder-only and must not be presented as analyzed."
+        )
+    for note in notes:
+        if note and note not in limitations:
+            limitations.append(note)
+    return limitations
+
+
 SECTOR_COVERAGE_DEFINITIONS: dict[
     SectorCoverageCategory, SectorCoverageDefinition
 ] = {
@@ -444,6 +592,56 @@ SECTOR_COVERAGE_DEFINITIONS: dict[
 }
 
 
+def unknown_sector_coverage_metadata() -> dict[str, SectorCoverageMetadataPayload]:
+    return {
+        definition.sector.value: SectorCoverageMetadataPayload(
+            sector=definition.sector,
+            label=definition.label,
+            coverage_level=SectorCoverageLevel.UNKNOWN,
+            coverage=placeholder_coverage_metadata(
+                note=(
+                    "No sector-specific coverage evidence is available for "
+                    f"{definition.label} in this region."
+                )
+            ),
+        )
+        for definition in SECTOR_COVERAGE_DEFINITIONS.values()
+    }
+
+
+SECTOR_COVERAGE_LEVEL_DEFINITIONS: dict[
+    SectorCoverageLevel, SectorCoverageLevelDefinition
+] = {
+    SectorCoverageLevel.UNKNOWN: SectorCoverageLevelDefinition(
+        level=SectorCoverageLevel.UNKNOWN,
+        label="unknown",
+        meaning="No sector-specific coverage evidence has been demonstrated.",
+        can_be_inferred_from_missing_evidence=True,
+    ),
+    SectorCoverageLevel.LIMITED: SectorCoverageLevelDefinition(
+        level=SectorCoverageLevel.LIMITED,
+        label="limited",
+        meaning="Some sector-specific evidence exists, but it is not enough for use.",
+    ),
+    SectorCoverageLevel.WATCHLIST: SectorCoverageLevelDefinition(
+        level=SectorCoverageLevel.WATCHLIST,
+        label="watchlist",
+        meaning="Tracked sector signal exists, but coverage is not recommendation-ready.",
+    ),
+    SectorCoverageLevel.PARTIAL: SectorCoverageLevelDefinition(
+        level=SectorCoverageLevel.PARTIAL,
+        label="partial",
+        meaning="Sector coverage is useful but incomplete and must be labeled partial.",
+    ),
+    SectorCoverageLevel.STRONG: SectorCoverageLevelDefinition(
+        level=SectorCoverageLevel.STRONG,
+        label="strong",
+        meaning="Sector coverage is supported by strong validated coverage inputs.",
+        can_be_displayed_as_strong=True,
+    ),
+}
+
+
 COVERAGE_SCORE_DIMENSIONS: tuple[str, ...] = (
     "company_coverage",
     "hiring_coverage",
@@ -454,12 +652,12 @@ COVERAGE_SCORE_DIMENSIONS: tuple[str, ...] = (
 )
 
 _TIER_1_MINIMUMS: dict[str, float] = {
-    "company_coverage": 0.75,
-    "hiring_coverage": 0.75,
-    "entry_level_coverage": 0.75,
-    "freshness": 0.75,
-    "source_diversity": 0.67,
-    "confidence": 0.75,
+    "company_coverage": 75.0,
+    "hiring_coverage": 75.0,
+    "entry_level_coverage": 75.0,
+    "freshness": 75.0,
+    "source_diversity": 67.0,
+    "confidence": 75.0,
 }
 
 _TIER_STRENGTH: dict[CoverageTier, int] = {
@@ -481,6 +679,20 @@ def priority_market_by_id(market_id: str) -> PriorityMarket | None:
     return None
 
 
+def _validate_component_score_map(value):
+    if not isinstance(value, dict):
+        return value
+    for key, score in value.items():
+        if isinstance(score, bool) or not isinstance(score, int | float):
+            raise ValueError(f"coverage component {key!r} must be numeric")
+        if score < COVERAGE_SCORE_MIN or score > COVERAGE_SCORE_MAX:
+            raise ValueError(
+                f"coverage component {key!r} must be between "
+                f"{COVERAGE_SCORE_MIN:g} and {COVERAGE_SCORE_MAX:g}"
+            )
+    return value
+
+
 def coverage_quality_total(score: CoverageQualityScore) -> float:
     return sum(score.component_scores.values()) / len(COVERAGE_SCORE_DIMENSIONS)
 
@@ -496,10 +708,10 @@ def suggest_coverage_tier(score: CoverageQualityScore) -> CoverageTier:
     if quality_supports_tier_1(score):
         return CoverageTier.TIER_1
     if (
-        score.total_score >= 0.50
-        and score.company_coverage >= 0.40
-        and score.confidence >= 0.40
-        and max(score.hiring_coverage, score.entry_level_coverage) >= 0.25
+        score.total_score >= 50.0
+        and score.company_coverage >= 40.0
+        and score.confidence >= 40.0
+        and max(score.hiring_coverage, score.entry_level_coverage) >= 25.0
     ):
         return CoverageTier.TIER_2
     if any(value > 0 for value in score.component_scores.values()):
@@ -516,6 +728,31 @@ def coverage_quality_label(score: CoverageQualityScore) -> CoverageQualityLabel:
     if tier is CoverageTier.TIER_3:
         return CoverageQualityLabel.WATCHLIST
     return CoverageQualityLabel.PLACEHOLDER
+
+
+def sector_coverage_level_from_quality(
+    score: CoverageQualityScore | None,
+) -> SectorCoverageLevel:
+    if score is None:
+        return SectorCoverageLevel.UNKNOWN
+    tier = suggest_coverage_tier(score)
+    if tier is CoverageTier.TIER_1:
+        return SectorCoverageLevel.STRONG
+    if tier is CoverageTier.TIER_2:
+        return SectorCoverageLevel.PARTIAL
+    if tier is CoverageTier.TIER_4:
+        return SectorCoverageLevel.UNKNOWN
+    if (
+        max(
+            score.company_coverage,
+            score.hiring_coverage,
+            score.entry_level_coverage,
+        )
+        >= 25.0
+        and score.confidence >= 20.0
+    ):
+        return SectorCoverageLevel.WATCHLIST
+    return SectorCoverageLevel.LIMITED
 
 
 def coverage_metadata_from_quality(
@@ -681,6 +918,44 @@ def _validate_declared_quality(
         )
 
 
+def _validate_sector_coverage_level(profile: SectorCoverageProfile) -> None:
+    if profile.quality_score is None:
+        if profile.coverage_level in {
+            SectorCoverageLevel.UNKNOWN,
+            SectorCoverageLevel.LIMITED,
+        }:
+            return
+        raise ValueError(
+            f"sector {profile.sector.value} {profile.coverage_level.value} "
+            "requires a quality score"
+        )
+
+    inferred = sector_coverage_level_from_quality(profile.quality_score)
+    if profile.coverage_level is SectorCoverageLevel.STRONG:
+        if profile.coverage_tier is not CoverageTier.TIER_1:
+            raise ValueError(
+                f"sector {profile.sector.value} strong coverage requires tier_1"
+            )
+        if inferred is not SectorCoverageLevel.STRONG:
+            raise ValueError(
+                f"sector {profile.sector.value} strong coverage is not supported"
+            )
+    if profile.coverage_level is SectorCoverageLevel.PARTIAL and inferred not in {
+        SectorCoverageLevel.PARTIAL,
+        SectorCoverageLevel.STRONG,
+    }:
+        raise ValueError(
+            f"sector {profile.sector.value} partial coverage is not supported"
+        )
+    if profile.coverage_level is SectorCoverageLevel.WATCHLIST and inferred in {
+        SectorCoverageLevel.UNKNOWN,
+        SectorCoverageLevel.LIMITED,
+    }:
+        raise ValueError(
+            f"sector {profile.sector.value} watchlist coverage is not supported"
+        )
+
+
 def _reject_negative_counts(**counts: int) -> None:
     for name, value in counts.items():
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
@@ -693,23 +968,23 @@ def _company_coverage_component(
     presence_record_count: int,
 ) -> float:
     if present_company_count >= 10:
-        return 0.9
+        return 90.0
     if present_company_count >= 3:
-        return 0.72
+        return 72.0
     if present_company_count >= 1:
-        return 0.5
+        return 50.0
     if presence_record_count >= 1:
-        return 0.3
+        return 30.0
     return 0.0
 
 
 def _signal_component(record_count: int) -> float:
     if record_count >= 10:
-        return 0.9
+        return 90.0
     if record_count >= 3:
-        return 0.72
+        return 72.0
     if record_count >= 1:
-        return 0.58
+        return 58.0
     return 0.0
 
 
@@ -720,12 +995,12 @@ def _freshness_component(
     source_data_basis: str | None,
 ) -> float:
     if source_data_basis == "seeded_demo":
-        return 0.1
+        return 10.0
     if freshness_is_stale:
-        return 0.2
+        return 20.0
     if freshness_expires_at_known:
-        return 0.8
-    return 0.25
+        return 80.0
+    return 25.0
 
 
 def _source_diversity_component(
@@ -736,11 +1011,11 @@ def _source_diversity_component(
     if source_data_basis not in {"real_imported", "mixed"}:
         return 0.0
     if source_count >= 3:
-        return 0.9
+        return 90.0
     if source_count == 2:
-        return 0.67
+        return 67.0
     if source_count == 1:
-        return 0.35
+        return 35.0
     return 0.0
 
 
@@ -754,18 +1029,18 @@ def _confidence_component(
 ) -> float:
     if (
         has_region_score
-        and company_coverage >= 0.72
-        and hiring_coverage >= 0.58
-        and entry_level_coverage >= 0.58
-        and source_diversity >= 0.35
+        and company_coverage >= 72.0
+        and hiring_coverage >= 58.0
+        and entry_level_coverage >= 58.0
+        and source_diversity >= 35.0
     ):
-        return 0.8
+        return 80.0
     if has_region_score and company_coverage > 0 and (
         hiring_coverage > 0 or entry_level_coverage > 0
     ):
-        return 0.58
+        return 58.0
     if has_region_score:
-        return 0.4
+        return 40.0
     if company_coverage > 0 or hiring_coverage > 0 or entry_level_coverage > 0:
-        return 0.25
+        return 25.0
     return 0.0

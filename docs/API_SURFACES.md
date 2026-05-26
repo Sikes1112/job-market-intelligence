@@ -491,15 +491,33 @@ region intelligence appears. The object shape is:
   "coverage": {
     "tier": "tier_2",
     "label": "Tier 2 - partial but useful market",
-    "quality_score": 0.58,
+    "quality_score": 58.0,
     "components": {
-      "company_coverage": 0.72,
-      "hiring_coverage": 0.58,
-      "entry_level_coverage": 0.58,
-      "freshness": 0.8,
-      "source_diversity": 0.35,
-      "confidence": 0.58
+      "company_coverage": 72.0,
+      "hiring_coverage": 58.0,
+      "entry_level_coverage": 58.0,
+      "freshness": 80.0,
+      "source_diversity": 35.0,
+      "confidence": 58.0
     },
+    "coverage_tier": "tier_2",
+    "coverage_label": "Tier 2 - partial but useful market",
+    "coverage_description": "This market is directionally useful, but one or more coverage signals are incomplete and must be treated as partial.",
+    "coverage_quality_score": {
+      "overall_score": 58.0,
+      "components": {
+        "company_coverage": 72.0,
+        "hiring_coverage": 58.0,
+        "entry_level_coverage": 58.0,
+        "freshness": 80.0,
+        "source_diversity": 35.0,
+        "confidence": 58.0
+      }
+    },
+    "coverage_limitations": [
+      "Coverage scoring is heuristic and should be read together with freshness and source metadata.",
+      "Coverage is partial; at least one signal class is incomplete."
+    ],
     "notes": ["Coverage is heuristic and source evidence may be incomplete."],
     "heuristic": true,
     "safe_for_confident_market_comparison": false,
@@ -509,15 +527,17 @@ region intelligence appears. The object shape is:
 }
 ```
 
-Coverage scores are bounded heuristic completeness indicators in `[0, 1]`.
+Coverage scores are bounded heuristic completeness indicators in `[0, 100]`.
 They do not replace source/provenance/freshness metadata and must not be read as
 objective opportunity scores. Tier 3 and Tier 4 markets are not confident
 recommendation markets. `sector_coverage` is separate from overall region
-coverage and remains empty until sector-specific validation is available.
+coverage. Lightweight list/search surfaces may keep `sector_coverage` empty to
+avoid payload bloat; detail/output surfaces expose unknown sector coverage
+defaults when sector-specific validation is not available.
 
 `GET /metadata/coverage` returns the canonical coverage vocabulary: coverage
-tiers and semantics, sector coverage categories, priority markets, component
-names, and quality score bounds.
+tiers and semantics, sector coverage categories and levels, priority markets,
+component names, and quality score bounds.
 
 ## Layer 11C Product Surface And Explanation
 
@@ -579,6 +599,7 @@ Response `data`:
       "region_type": "greater_region",
       "parent_region_id": null,
       "labor_market_group": "boston_labor_market",
+      "priority_market": null,
       "state": "fresh",
       "version": 1,
       "coverage": {
@@ -593,6 +614,25 @@ Response `data`:
           "source_diversity": 0.0,
           "confidence": 0.0
         },
+        "coverage_tier": "tier_4",
+        "coverage_label": "Tier 4 - placeholder only",
+        "coverage_description": "This market is placeholder only and should not be treated as analyzed market intelligence.",
+        "coverage_quality_score": {
+          "overall_score": 0.0,
+          "components": {
+            "company_coverage": 0.0,
+            "hiring_coverage": 0.0,
+            "entry_level_coverage": 0.0,
+            "freshness": 0.0,
+            "source_diversity": 0.0,
+            "confidence": 0.0
+          }
+        },
+        "coverage_limitations": [
+          "Coverage scoring is heuristic and should be read together with freshness and source metadata.",
+          "Coverage is placeholder-only and must not be presented as analyzed.",
+          "No coverage evidence is available on this surface."
+        ],
         "notes": ["No coverage evidence is available on this surface."],
         "heuristic": true,
         "safe_for_confident_market_comparison": false,
@@ -606,7 +646,9 @@ Response `data`:
 
 `coverage` and `sector_coverage` are included per region. Lightweight list
 coverage is computed from already-loaded backend rows and remains heuristic; it
-does not promote identity-only regions into analyzed markets.
+does not promote identity-only regions into analyzed markets. `priority_market`
+is populated only when the region id exactly matches a canonical priority
+market id.
 
 ### `GET /regions/{region_id}`
 
@@ -621,24 +663,84 @@ Response `data`:
   "region_type": "greater_region",
   "parent_region_id": null,
   "labor_market_group": "boston_labor_market",
+  "priority_market": null,
   "coverage": {
     "tier": "tier_2",
     "label": "Tier 2 - partial but useful market",
-    "quality_score": 0.58,
+    "quality_score": 58.0,
     "components": {
-      "company_coverage": 0.72,
-      "hiring_coverage": 0.58,
-      "entry_level_coverage": 0.58,
-      "freshness": 0.8,
-      "source_diversity": 0.35,
-      "confidence": 0.58
+      "company_coverage": 72.0,
+      "hiring_coverage": 58.0,
+      "entry_level_coverage": 58.0,
+      "freshness": 80.0,
+      "source_diversity": 35.0,
+      "confidence": 58.0
     },
+    "coverage_tier": "tier_2",
+    "coverage_label": "Tier 2 - partial but useful market",
+    "coverage_description": "This market is directionally useful, but one or more coverage signals are incomplete and must be treated as partial.",
+    "coverage_quality_score": {
+      "overall_score": 58.0,
+      "components": {
+        "company_coverage": 72.0,
+        "hiring_coverage": 58.0,
+        "entry_level_coverage": 58.0,
+        "freshness": 80.0,
+        "source_diversity": 35.0,
+        "confidence": 58.0
+      }
+    },
+    "coverage_limitations": [
+      "Coverage scoring is heuristic and should be read together with freshness and source metadata.",
+      "Coverage is partial; at least one signal class is incomplete."
+    ],
     "notes": ["Coverage is heuristic and source evidence may be incomplete."],
     "heuristic": true,
     "safe_for_confident_market_comparison": false,
     "should_rank_as_confident_recommendation": false
   },
-  "sector_coverage": {},
+  "sector_coverage": {
+    "ai": {
+      "sector": "ai",
+      "label": "AI",
+      "coverage_level": "unknown",
+      "coverage": {
+        "tier": "tier_4",
+        "label": "Tier 4 - placeholder only",
+        "quality_score": 0.0,
+        "components": {
+          "company_coverage": 0.0,
+          "hiring_coverage": 0.0,
+          "entry_level_coverage": 0.0,
+          "freshness": 0.0,
+          "source_diversity": 0.0,
+          "confidence": 0.0
+        },
+        "coverage_tier": "tier_4",
+        "coverage_label": "Tier 4 - placeholder only",
+        "coverage_description": "This market is placeholder only and should not be treated as analyzed market intelligence.",
+        "coverage_quality_score": {
+          "overall_score": 0.0,
+          "components": {
+            "company_coverage": 0.0,
+            "hiring_coverage": 0.0,
+            "entry_level_coverage": 0.0,
+            "freshness": 0.0,
+            "source_diversity": 0.0,
+            "confidence": 0.0
+          }
+        },
+        "coverage_limitations": [
+          "Coverage scoring is heuristic and should be read together with freshness and source metadata.",
+          "Coverage is placeholder-only and must not be presented as analyzed."
+        ],
+        "notes": [],
+        "heuristic": true,
+        "safe_for_confident_market_comparison": false,
+        "should_rank_as_confident_recommendation": false
+      }
+    }
+  },
   "summary": {
     "eligible_company_count": 6,
     "major_tech_count": 2,
@@ -678,7 +780,9 @@ Response `data`:
 ```
 
 Full region output carries coverage metadata beside the region identity and
-keeps `sector_coverage` separate from the overall region tier.
+keeps `sector_coverage` separate from the overall region tier. When no
+sector-specific validation exists, sector entries are explicitly `unknown` and
+must not be treated as strong sector coverage.
 
 ### `GET /companies/{company_id}`
 
@@ -725,6 +829,7 @@ Results are ordered deterministically and include `freshness` metadata:
       "region_type": "greater_region",
       "parent_region_id": null,
       "labor_market_group": "boston_labor_market",
+      "priority_market": null,
       "opportunity_score": 0.74,
       "freshness": {
         "freshness_status": "fresh | stale | partial | unknown | seeded_demo",
@@ -736,15 +841,33 @@ Results are ordered deterministically and include `freshness` metadata:
       "coverage": {
         "tier": "tier_2",
         "label": "Tier 2 - partial but useful market",
-        "quality_score": 0.58,
+        "quality_score": 58.0,
         "components": {
-          "company_coverage": 0.72,
-          "hiring_coverage": 0.58,
-          "entry_level_coverage": 0.58,
-          "freshness": 0.8,
-          "source_diversity": 0.35,
-          "confidence": 0.58
+          "company_coverage": 72.0,
+          "hiring_coverage": 58.0,
+          "entry_level_coverage": 58.0,
+          "freshness": 80.0,
+          "source_diversity": 35.0,
+          "confidence": 58.0
         },
+        "coverage_tier": "tier_2",
+        "coverage_label": "Tier 2 - partial but useful market",
+        "coverage_description": "This market is directionally useful, but one or more coverage signals are incomplete and must be treated as partial.",
+        "coverage_quality_score": {
+          "overall_score": 58.0,
+          "components": {
+            "company_coverage": 72.0,
+            "hiring_coverage": 58.0,
+            "entry_level_coverage": 58.0,
+            "freshness": 80.0,
+            "source_diversity": 35.0,
+            "confidence": 58.0
+          }
+        },
+        "coverage_limitations": [
+          "Coverage scoring is heuristic and should be read together with freshness and source metadata.",
+          "Coverage is partial; at least one signal class is incomplete."
+        ],
         "notes": [],
         "heuristic": true,
         "safe_for_confident_market_comparison": false,
@@ -763,12 +886,14 @@ Results are ordered deterministically and include `freshness` metadata:
 `presence_status` filters. Company matches come from canonical company,
 presence, hiring, and entry-level rows, not region-output payload text. When a
 company result includes matched regions, `matched_region_coverage` maps each
-matched region id to that region's coverage metadata.
+matched region id to that region's coverage metadata. Search results include
+the compact coverage object and may leave `sector_coverage` empty to avoid
+expanding every canonical sector on lightweight cards.
 
 `GET /companies/{company_id}/regions` returns canonical region links for a
 company, including `presence_status`, `current_hiring`,
 `has_entry_level_access`, per-row freshness/source metadata, overall region
-`coverage`, distinct `sector_coverage`, and `count`.
+`coverage`, `priority_market`, distinct `sector_coverage`, and `count`.
 
 `GET /regions/{region_id}/sources` and `GET /companies/{company_id}/sources`
 return source explanations for the subject. Source details are built from
@@ -797,19 +922,38 @@ Response `data`:
   "region_a": {
     "region_id": "greater_boston",
     "display_name": "Greater Boston",
+    "priority_market": null,
     "scores": {},
     "coverage": {
       "tier": "tier_2",
       "label": "Tier 2 - partial but useful market",
-      "quality_score": 0.58,
+      "quality_score": 58.0,
       "components": {
-        "company_coverage": 0.72,
-        "hiring_coverage": 0.58,
-        "entry_level_coverage": 0.58,
-        "freshness": 0.8,
+        "company_coverage": 72.0,
+        "hiring_coverage": 58.0,
+        "entry_level_coverage": 58.0,
+        "freshness": 80.0,
         "source_diversity": 0.0,
-        "confidence": 0.58
+        "confidence": 58.0
       },
+      "coverage_tier": "tier_2",
+      "coverage_label": "Tier 2 - partial but useful market",
+      "coverage_description": "This market is directionally useful, but one or more coverage signals are incomplete and must be treated as partial.",
+      "coverage_quality_score": {
+        "overall_score": 58.0,
+        "components": {
+          "company_coverage": 72.0,
+          "hiring_coverage": 58.0,
+          "entry_level_coverage": 58.0,
+          "freshness": 80.0,
+          "source_diversity": 0.0,
+          "confidence": 58.0
+        }
+      },
+      "coverage_limitations": [
+        "Coverage scoring is heuristic and should be read together with freshness and source metadata.",
+        "Coverage is partial; at least one signal class is incomplete."
+      ],
       "notes": [],
       "heuristic": true,
       "safe_for_confident_market_comparison": false,
@@ -820,6 +964,7 @@ Response `data`:
   "region_b": {
     "region_id": "greater_sf",
     "display_name": "Greater San Francisco / Silicon Valley",
+    "priority_market": null,
     "scores": {},
     "coverage": {
       "tier": "tier_4",
@@ -833,6 +978,25 @@ Response `data`:
         "source_diversity": 0.0,
         "confidence": 0.0
       },
+      "coverage_tier": "tier_4",
+      "coverage_label": "Tier 4 - placeholder only",
+      "coverage_description": "This market is placeholder only and should not be treated as analyzed market intelligence.",
+      "coverage_quality_score": {
+        "overall_score": 0.0,
+        "components": {
+          "company_coverage": 0.0,
+          "hiring_coverage": 0.0,
+          "entry_level_coverage": 0.0,
+          "freshness": 0.0,
+          "source_diversity": 0.0,
+          "confidence": 0.0
+        }
+      },
+      "coverage_limitations": [
+        "Coverage scoring is heuristic and should be read together with freshness and source metadata.",
+        "Coverage is placeholder-only and must not be presented as analyzed.",
+        "No coverage evidence is available on this surface."
+      ],
       "notes": ["No coverage evidence is available on this surface."],
       "heuristic": true,
       "safe_for_confident_market_comparison": false,
@@ -880,20 +1044,39 @@ Response `data`:
     {
       "region_id": "greater_boston",
       "display_name": "Greater Boston",
+      "priority_market": null,
       "personal_market_score": 0.78,
       "objective_opportunity_score": 0.74,
       "coverage": {
         "tier": "tier_2",
         "label": "Tier 2 - partial but useful market",
-        "quality_score": 0.58,
+        "quality_score": 58.0,
         "components": {
-          "company_coverage": 0.72,
-          "hiring_coverage": 0.58,
-          "entry_level_coverage": 0.58,
-          "freshness": 0.8,
+          "company_coverage": 72.0,
+          "hiring_coverage": 58.0,
+          "entry_level_coverage": 58.0,
+          "freshness": 80.0,
           "source_diversity": 0.0,
-          "confidence": 0.58
+          "confidence": 58.0
         },
+        "coverage_tier": "tier_2",
+        "coverage_label": "Tier 2 - partial but useful market",
+        "coverage_description": "This market is directionally useful, but one or more coverage signals are incomplete and must be treated as partial.",
+        "coverage_quality_score": {
+          "overall_score": 58.0,
+          "components": {
+            "company_coverage": 72.0,
+            "hiring_coverage": 58.0,
+            "entry_level_coverage": 58.0,
+            "freshness": 80.0,
+            "source_diversity": 0.0,
+            "confidence": 58.0
+          }
+        },
+        "coverage_limitations": [
+          "Coverage scoring is heuristic and should be read together with freshness and source metadata.",
+          "Coverage is partial; at least one signal class is incomplete."
+        ],
         "notes": [],
         "heuristic": true,
         "safe_for_confident_market_comparison": false,

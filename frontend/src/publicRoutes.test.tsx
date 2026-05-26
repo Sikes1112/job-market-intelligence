@@ -32,6 +32,20 @@ const coverageScores: Record<string, number> = {
   tier_4: 0,
 };
 
+const coverageDescriptions: Record<string, string> = {
+  tier_1: "API fixture says this market is ready for confident comparison.",
+  tier_2: "API fixture says this market is directionally useful but incomplete.",
+  tier_3: "API fixture says this market is tracked but not ready for confident recommendations.",
+  tier_4: "API fixture says this market is placeholder-only and not analyzed.",
+};
+
+const coverageLimitations: Record<string, string> = {
+  tier_1: "",
+  tier_2: "Coverage is partial; compare this market with caution.",
+  tier_3: "Coverage is watchlist-level; do not treat it as a confident recommendation market.",
+  tier_4: "Coverage is placeholder-only; do not treat it as analyzed market intelligence.",
+};
+
 function coverage(tier: "tier_1" | "tier_2" | "tier_3" | "tier_4") {
   const score = coverageScores[tier];
   return {
@@ -46,10 +60,42 @@ function coverage(tier: "tier_1" | "tier_2" | "tier_3" | "tier_4") {
       source_diversity: tier === "tier_1" ? 0.78 : tier === "tier_2" ? 0.42 : 0.12,
       confidence: score,
     },
+    coverage_tier: tier,
+    coverage_label: coverageLabels[tier],
+    coverage_description: coverageDescriptions[tier],
+    coverage_quality_score: {
+      overall_score: score * 100,
+      components: {
+        company_coverage: score * 100,
+        hiring_coverage: tier === "tier_4" ? 0 : Math.max(12, (score - 0.08) * 100),
+        entry_level_coverage: tier === "tier_1" ? 82 : tier === "tier_2" ? 52 : 0,
+        freshness: tier === "tier_4" ? 0 : 72,
+        source_diversity: tier === "tier_1" ? 78 : tier === "tier_2" ? 42 : 12,
+        confidence: score * 100,
+      },
+    },
+    coverage_limitations: coverageLimitations[tier] ? [coverageLimitations[tier]] : [],
     notes: [`Fixture ${coverageLabels[tier].toLowerCase()} coverage note.`],
     heuristic: true,
     safe_for_confident_market_comparison: tier === "tier_1",
     should_rank_as_confident_recommendation: tier === "tier_1",
+  };
+}
+
+function priorityMarket() {
+  return {
+    rank: 10,
+    market_id: "boston",
+    display_name: "Boston",
+  };
+}
+
+function sectorCoverage(tier: "tier_1" | "tier_2" | "tier_3" | "tier_4", coverage_level = "watchlist") {
+  return {
+    sector: "ai",
+    label: "AI",
+    coverage_level,
+    coverage: coverage(tier),
   };
 }
 
@@ -89,6 +135,7 @@ function regionDetail(
     parent_region_id: null,
     labor_market_group: regionId.replace("greater_", ""),
     ...(tier ? { coverage: coverage(tier), sector_coverage: sectorCoverage } : {}),
+    ...(regionId === "greater_boston" ? { priority_market: priorityMarket() } : {}),
     summary: { eligible_company_count: 1 },
     scores: regionScores(tier === "tier_4" ? 0.28 : 0.74),
     top_companies_present: [
@@ -145,6 +192,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
             state: "fresh",
             coverage: coverage("tier_2"),
             sector_coverage: {},
+            priority_market: priorityMarket(),
           },
           {
             region_id: "greater_sf",
@@ -171,7 +219,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
   if (value === "/regions/greater_boston") {
     return {
       data: regionDetail("greater_boston", "Greater Boston", "tier_2", {
-        ai: { sector: "ai", label: "AI", coverage: coverage("tier_3") },
+        ai: sectorCoverage("tier_3"),
       }),
     };
   }
@@ -204,6 +252,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
             opportunity_score: 0.74,
             coverage: coverage("tier_1"),
             sector_coverage: {},
+            priority_market: priorityMarket(),
             freshness: freshnessSummary(),
             has_real_data: true,
           },
@@ -268,7 +317,8 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
             presence_basis: "office",
             presence_confidence: "high",
             coverage: coverage("tier_2"),
-            sector_coverage: { ai: { sector: "ai", label: "AI", coverage: coverage("tier_3") } },
+            sector_coverage: { ai: sectorCoverage("tier_3") },
+            priority_market: priorityMarket(),
           },
         ],
         regions_hiring: [
@@ -295,6 +345,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
             entry_level_confidence: "high",
             coverage: coverage("tier_2"),
             sector_coverage: {},
+            priority_market: priorityMarket(),
           },
         ],
       },
@@ -316,7 +367,8 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
             current_hiring: true,
             has_entry_level_access: true,
             coverage: coverage("tier_2"),
-            sector_coverage: { ai: { sector: "ai", label: "AI", coverage: coverage("tier_3") } },
+            sector_coverage: { ai: sectorCoverage("tier_3") },
+            priority_market: priorityMarket(),
             freshness: freshnessSummary(),
             has_real_data: true,
           },
@@ -345,6 +397,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
           scores: regionScores(0.74),
           coverage: coverage("tier_3"),
           sector_coverage: {},
+          priority_market: priorityMarket(),
         },
         region_b: {
           region_id: "greater_sf",
@@ -369,6 +422,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
             personal_market_score: 0.78,
             objective_opportunity_score: 0.74,
             coverage: coverage("tier_3"),
+            priority_market: priorityMarket(),
             match_notes: ["region_coverage_not_confident"],
           },
           {
@@ -459,10 +513,13 @@ describe("public demo routes", () => {
     renderAt("/markets/region/greater_boston");
 
     expect(await screen.findByText("Canonical/default score breakdown")).toBeTruthy();
-    expect(screen.getAllByText("Coverage: Partial but useful").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Coverage: Tier 2 - partial but useful market").length).toBeGreaterThan(0);
     expect(screen.getByText("Heuristic coverage score: 62%")).toBeTruthy();
+    expect(screen.getAllByText("Coverage is partial; compare this market with caution.").length).toBeGreaterThan(0);
     expect(screen.getByText("Sector coverage")).toBeTruthy();
-    expect(screen.getAllByText("Coverage: Watchlist / emerging").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Sector level: Watchlist").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Coverage: Tier 3 - watchlist / emerging market").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Priority #10: Boston").length).toBeGreaterThan(0);
     expect((await screen.findAllByText("Real imported data")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Fresh").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Current snapshot").length).toBeGreaterThan(0);
@@ -475,8 +532,8 @@ describe("public demo routes", () => {
     stubPublicFetch();
     renderAt("/markets");
 
-    expect((await screen.findAllByText("Coverage: Fully covered")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Coverage: Placeholder only").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Coverage: Tier 1 - fully covered market")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Coverage: Tier 4 - placeholder only").length).toBeGreaterThan(0);
     expect(screen.getByText(/Coverage labels separately show/i)).toBeTruthy();
   });
 
@@ -485,8 +542,8 @@ describe("public demo routes", () => {
     renderAt("/markets/compare?region_a=greater_boston&region_b=greater_sf");
 
     expect(await screen.findByRole("heading", { name: "Coverage context" })).toBeTruthy();
-    expect(screen.getAllByText("Coverage: Watchlist / emerging").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Coverage: Placeholder only").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Coverage: Tier 3 - watchlist / emerging market").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Coverage: Tier 4 - placeholder only").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/not covered enough for confident recommendations/i).length).toBeGreaterThan(0);
   });
 
@@ -499,8 +556,8 @@ describe("public demo routes", () => {
     expect(await screen.findByRole("heading", { name: "Ranked regions" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Ranked company-region pairs" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Recommended regions" })).toBeNull();
-    expect(screen.getAllByText("Coverage: Watchlist / emerging").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Coverage: Placeholder only").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Coverage: Tier 3 - watchlist / emerging market").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Coverage: Tier 4 - placeholder only").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/not covered enough for confident recommendations/i).length).toBeGreaterThan(0);
   });
 
@@ -509,8 +566,8 @@ describe("public demo routes", () => {
     renderAt("/markets/company/comp_a");
 
     expect(await screen.findByRole("heading", { name: "Observed region signals" })).toBeTruthy();
-    expect(screen.getAllByText("Coverage: Partial but useful").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Coverage: Placeholder only").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Coverage: Tier 2 - partial but useful market").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Coverage: Tier 4 - placeholder only").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Sector coverage").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Real imported data").length).toBeGreaterThan(0);
   });

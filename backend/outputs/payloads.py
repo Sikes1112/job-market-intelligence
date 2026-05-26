@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.geography.market_coverage import (
     CoverageMetadataPayload,
+    PriorityMarket,
     SectorCoverageMetadataPayload,
     placeholder_coverage_metadata,
 )
@@ -142,6 +143,7 @@ class RegionOutputBody(BaseModel):
     region_type: str
     parent_region_id: str | None = None
     labor_market_group: str | None = None
+    priority_market: PriorityMarket | None = None
     coverage: CoverageMetadataPayload = Field(
         default_factory=placeholder_coverage_metadata
     )
@@ -174,6 +176,7 @@ class CompanyRegionPresenceEntry(BaseModel):
 
     region_id: str
     region_display_name: str
+    priority_market: PriorityMarket | None = None
     presence_status: str
     presence_basis: str | None = None
     presence_confidence: str | None = None
@@ -190,6 +193,7 @@ class CompanyRegionHiringEntry(BaseModel):
 
     region_id: str
     region_display_name: str
+    priority_market: PriorityMarket | None = None
     currently_hiring_flag: bool
     active_posting_count_now: int | None = None
     posting_count_30d: int | None = None
@@ -207,6 +211,7 @@ class CompanyRegionEntryLevelEntry(BaseModel):
 
     region_id: str
     region_display_name: str
+    priority_market: PriorityMarket | None = None
     internship_count: int | None = None
     coop_count: int | None = None
     entry_level_full_time_count: int | None = None
@@ -257,6 +262,7 @@ class ComparisonRegionSide(BaseModel):
 
     region_id: str
     display_name: str
+    priority_market: PriorityMarket | None = None
     scores: RegionScoresPayload | None = None
     coverage: CoverageMetadataPayload = Field(
         default_factory=placeholder_coverage_metadata

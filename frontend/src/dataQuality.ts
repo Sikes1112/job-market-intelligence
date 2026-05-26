@@ -7,6 +7,7 @@ import type {
   DataBasis,
   FreshnessSourceSummary,
   FreshnessStatus,
+  SectorCoverageLevel,
   SourceExplanation,
 } from "./types";
 
@@ -27,6 +28,7 @@ const FRESHNESS_STATUSES: FreshnessStatus[] = [
 ];
 const DATA_BASES: DataBasis[] = ["seeded_demo", "real_imported", "mixed", "unknown"];
 const COVERAGE_TIERS: CoverageTier[] = ["tier_1", "tier_2", "tier_3", "tier_4"];
+const SECTOR_COVERAGE_LEVELS: SectorCoverageLevel[] = ["unknown", "limited", "watchlist", "partial", "strong"];
 const COVERAGE_COMPONENT_LABELS: Record<CoverageScoreComponent, string> = {
   company_coverage: "Company coverage",
   hiring_coverage: "Hiring coverage",
@@ -51,6 +53,10 @@ export function isDataBasis(value: unknown): value is DataBasis {
 
 export function isCoverageTier(value: unknown): value is CoverageTier {
   return typeof value === "string" && COVERAGE_TIERS.includes(value as CoverageTier);
+}
+
+export function isSectorCoverageLevel(value: unknown): value is SectorCoverageLevel {
+  return typeof value === "string" && SECTOR_COVERAGE_LEVELS.includes(value as SectorCoverageLevel);
 }
 
 export function isSeedDemoFreshness(value: string | null | undefined): boolean {
@@ -115,38 +121,69 @@ export function coverageTierLabel(tier: CoverageTier | string | null | undefined
   return "Coverage unavailable";
 }
 
+export function coverageTier(coverage?: CoverageMetadata | null): CoverageTier | null {
+  const value = coverage?.coverage_tier ?? coverage?.tier;
+  return isCoverageTier(value) ? value : null;
+}
+
+function isUsefulCoverageLabel(label: string | null | undefined): label is string {
+  if (!label) return false;
+  if (isCoverageTier(label)) return false;
+  return label.trim().length > 0;
+}
+
 export function coverageDisplayLabel(coverage?: CoverageMetadata | null): string {
-  return isCoverageTier(coverage?.tier)
-    ? `Coverage: ${coverageTierLabel(coverage.tier)}`
+  const tier = coverageTier(coverage);
+  const payloadLabel = coverage?.coverage_label;
+  const legacyLabel = coverage?.label;
+  const label = isUsefulCoverageLabel(payloadLabel)
+    ? payloadLabel
+    : isUsefulCoverageLabel(legacyLabel)
+      ? legacyLabel
+      : coverageTierLabel(tier);
+  return tier
+    ? `Coverage: ${label}`
     : "Coverage unavailable";
 }
 
 export function coverageDescription(coverage?: CoverageMetadata | null): string {
-  if (coverage?.tier === "tier_1") {
+  if (coverage?.coverage_description) return coverage.coverage_description;
+  const tier = coverageTier(coverage);
+  if (tier === "tier_1") {
     return "This market has enough validated data for confident comparison.";
   }
-  if (coverage?.tier === "tier_2") {
+  if (tier === "tier_2") {
     return "This market is directionally useful, but some signal categories are incomplete.";
   }
-  if (coverage?.tier === "tier_3") {
+  if (tier === "tier_3") {
     return "This market is tracked for future expansion, but current data is not deep enough for confident recommendations.";
   }
-  if (coverage?.tier === "tier_4") {
+  if (tier === "tier_4") {
     return "This market exists as a placeholder and should not be treated as analyzed.";
   }
   return "Coverage metadata is unavailable for this response.";
 }
 
+export function coverageLimitations(coverage?: CoverageMetadata | null): string[] {
+  const explicit = coverage?.coverage_limitations?.filter((item) => item.trim().length > 0) ?? [];
+  if (explicit.length) return explicit;
+  const tier = coverageTier(coverage);
+  if (tier === "tier_1") return [];
+  return [coverageDescription(coverage)];
+}
+
 export function coverageTone(coverage?: CoverageMetadata | null): QualityTone {
-  if (coverage?.tier === "tier_1") return "real";
-  if (coverage?.tier === "tier_2") return "warning";
-  if (coverage?.tier === "tier_3") return "warning";
-  if (coverage?.tier === "tier_4") return "error";
+  const tier = coverageTier(coverage);
+  if (tier === "tier_1") return "real";
+  if (tier === "tier_2") return "warning";
+  if (tier === "tier_3") return "warning";
+  if (tier === "tier_4") return "error";
   return "unknown";
 }
 
 export function coverageIsWeak(coverage?: CoverageMetadata | null): boolean {
-  return coverage?.tier === "tier_3" || coverage?.tier === "tier_4";
+  const tier = coverageTier(coverage);
+  return tier === "tier_2" || tier === "tier_3" || tier === "tier_4" || !tier;
 }
 
 function normalizeCoverageScore(value: number): number {
@@ -155,11 +192,14 @@ function normalizeCoverageScore(value: number): number {
 }
 
 export function coverageScoreText(coverage?: CoverageMetadata | null): string | null {
-  if (typeof coverage?.quality_score !== "number" || Number.isNaN(coverage.quality_score)) {
+  const scoreValue = typeof coverage?.coverage_quality_score?.overall_score === "number"
+    ? coverage.coverage_quality_score.overall_score
+    : coverage?.quality_score;
+  if (typeof scoreValue !== "number" || Number.isNaN(scoreValue)) {
     return null;
   }
-  const score = normalizeCoverageScore(coverage.quality_score);
-  return coverage.heuristic
+  const score = normalizeCoverageScore(scoreValue);
+  return coverage?.heuristic
     ? `Heuristic coverage score: ${score}%`
     : `Coverage estimate: ${score}%`;
 }
@@ -167,7 +207,7 @@ export function coverageScoreText(coverage?: CoverageMetadata | null): string | 
 export function coverageComponentEntries(
   coverage?: CoverageMetadata | null,
 ): Array<{ key: string; label: string; value: number }> {
-  const components = coverage?.components;
+  const components = coverage?.coverage_quality_score?.components ?? coverage?.components;
   if (!components || !isRecord(components)) return [];
   const entries: Array<{ key: string; label: string; value: number }> = [];
   const seen = new Set<string>();
@@ -185,6 +225,21 @@ export function coverageComponentEntries(
     if (!seen.has(key)) addEntry(key, value, prettyCoverageComponentKey(key));
   }
   return entries;
+}
+
+export function sectorCoverageLevelLabel(level: SectorCoverageLevel | string | null | undefined): string {
+  if (level === "strong") return "Strong";
+  if (level === "partial") return "Partial";
+  if (level === "watchlist") return "Watchlist";
+  if (level === "limited") return "Limited";
+  return "Unknown";
+}
+
+export function sectorCoverageTone(level: SectorCoverageLevel | string | null | undefined): QualityTone {
+  if (level === "strong") return "real";
+  if (level === "partial") return "warning";
+  if (level === "watchlist" || level === "limited") return "warning";
+  return "unknown";
 }
 
 function prettyCoverageComponentKey(value: string): string {

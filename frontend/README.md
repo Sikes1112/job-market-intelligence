@@ -68,29 +68,33 @@ flags.
 
 ## Market Coverage Disclosure
 
-Layer 12 coverage metadata is rendered as an API-supplied readiness label, not
-as source truth. Region-facing views show:
+Layer 12 coverage metadata is rendered as API-supplied readiness disclosure,
+not source truth. Region-facing views prefer `coverage_label`,
+`coverage_description`, `coverage_quality_score`, and `coverage_limitations`
+when the API returns them, while preserving older `tier`, `label`,
+`quality_score`, and `components` aliases for compatibility.
 
-- `Coverage: Fully covered` for Tier 1 markets with enough validated data for
-  confident comparison.
-- `Coverage: Partial but useful` for Tier 2 markets that are directionally
-  useful but incomplete.
-- `Coverage: Watchlist / emerging` for Tier 3 markets tracked for expansion
-  but not ready for confident recommendations.
-- `Coverage: Placeholder only` for Tier 4 markets that should not be treated as
-  analyzed.
+Tier labels are shown distinctly, for example:
 
-When a numeric coverage score appears, the UI labels it as a heuristic coverage
-score or estimate. The frontend does not infer coverage client-side. It renders
-the backend `coverage` object when present and falls back to "Coverage
-unavailable" for older responses.
+- `Coverage: Tier 1 - fully covered market`
+- `Coverage: Tier 2 - partial but useful market`
+- `Coverage: Tier 3 - watchlist / emerging market`
+- `Coverage: Tier 4 - placeholder only`
+
+Tier 2, Tier 3, Tier 4, and missing coverage render limitation copy instead of
+looking equivalent to fully covered market intelligence. When a numeric
+coverage score appears, the UI labels it as a heuristic coverage score or
+estimate. The frontend does not infer coverage client-side. It renders the
+backend `coverage` object when present and falls back to "Coverage unavailable"
+for older responses.
 
 Coverage, freshness, and provenance are separate disclosures. Freshness/source
 badges remain visible beside coverage badges, and sector-specific coverage is
-shown under a separate "Sector coverage" section instead of replacing overall
-region coverage. Comparison and personalized discovery surfaces render
-`region_coverage_not_confident` warnings when the backend returns them for Tier
-3 or Tier 4 regions.
+shown under a separate "Sector coverage" section with its own `coverage_level`
+instead of replacing overall region coverage. Priority market metadata is shown
+only when the API returns `priority_market`. Comparison and personalized
+discovery surfaces render `region_coverage_not_confident` warnings when the
+backend returns them for non-confident regions.
 
 ## Checks
 

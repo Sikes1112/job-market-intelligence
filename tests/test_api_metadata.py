@@ -206,7 +206,7 @@ def test_coverage_metadata_route_exposes_canonical_vocabulary(api_client) -> Non
     assert body["status"] == "success"
     data = body["data"]
     assert data["heuristic"] is True
-    assert data["quality_score_bounds"] == {"min": 0.0, "max": 1.0}
+    assert data["quality_score_bounds"] == {"min": 0.0, "max": 100.0}
     assert data["score_components"] == [
         "company_coverage",
         "hiring_coverage",
@@ -221,6 +221,8 @@ def test_coverage_metadata_route_exposes_canonical_vocabulary(api_client) -> Non
         "tier_3",
         "tier_4",
     ]
+    assert all(tier["coverage_description"] for tier in data["coverage_tiers"])
+    assert all(tier["coverage_limitations"] for tier in data["coverage_tiers"])
     assert {
         tier["tier"]: tier["should_rank_as_confident_recommendation"]
         for tier in data["coverage_tiers"]
@@ -242,6 +244,18 @@ def test_coverage_metadata_route_exposes_canonical_vocabulary(api_client) -> Non
         "defense_tech",
         "consumer_tech",
     }
+    assert [item["level"] for item in data["sector_coverage_levels"]] == [
+        "unknown",
+        "limited",
+        "watchlist",
+        "partial",
+        "strong",
+    ]
+    assert (
+        data["sector_coverage_levels"][0]["can_be_inferred_from_missing_evidence"]
+        is True
+    )
+    assert data["sector_coverage_levels"][-1]["can_be_displayed_as_strong"] is True
     assert [market["display_name"] for market in data["priority_markets"]][:4] == [
         "NYC",
         "Seattle",

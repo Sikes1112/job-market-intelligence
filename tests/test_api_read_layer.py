@@ -142,9 +142,27 @@ def test_get_regions_returns_lightweight_list(api_client, session) -> None:
     assert set(region_ids) == {"greater_boston", "greater_sf"}
     for row in body["data"]["regions"]:
         assert row["coverage"]["tier"] == "tier_4"
+        assert row["coverage"]["coverage_tier"] == "tier_4"
+        assert row["coverage"]["coverage_label"] == "Tier 4 - placeholder only"
+        assert row["coverage"]["coverage_quality_score"]["overall_score"] == 0.0
+        assert "placeholder-only" in " ".join(row["coverage"]["coverage_limitations"])
         assert row["coverage"]["heuristic"] is True
+        assert row["priority_market"] is None
         assert row["sector_coverage"] == {}
     assert body["error"] is None
+
+
+def test_get_regions_marks_canonical_priority_market(api_client, session) -> None:
+    _seed_region(session, region_id="boston", display_name="Boston")
+
+    response = api_client.get("/regions")
+
+    [row] = response.json()["data"]["regions"]
+    assert row["priority_market"] == {
+        "rank": 10,
+        "market_id": "boston",
+        "display_name": "Boston",
+    }
 
 
 def test_get_regions_returns_empty_list_when_no_regions(api_client) -> None:
@@ -184,7 +202,16 @@ def test_get_region_returns_assembled_payload(api_client, session) -> None:
     assert body["data"]["display_name"] == "Greater Boston"
     assert body["data"]["coverage"]["heuristic"] is True
     assert body["data"]["coverage"]["tier"] in {"tier_2", "tier_3"}
-    assert body["data"]["sector_coverage"] == {}
+    assert body["data"]["coverage"]["coverage_tier"] == body["data"]["coverage"]["tier"]
+    assert "coverage_description" in body["data"]["coverage"]
+    assert body["data"]["coverage"]["coverage_quality_score"]["overall_score"] == (
+        body["data"]["coverage"]["quality_score"]
+    )
+    assert body["data"]["priority_market"] is None
+    assert body["data"]["sector_coverage"]
+    assert {
+        row["coverage_level"] for row in body["data"]["sector_coverage"].values()
+    } == {"unknown"}
     # Stored Slice 10 score values pass through Slice 11 unchanged.
     assert body["data"]["scores"]["objective_opportunity_score"] == 0.74
     assert body["data"]["scores"]["early_career_accessibility_score"] == 0.79

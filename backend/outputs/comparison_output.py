@@ -17,6 +17,8 @@ from backend.geography.market_coverage import (
     CoverageMetadataPayload,
     CoverageTier,
     build_region_coverage_metadata,
+    priority_market_by_id,
+    unknown_sector_coverage_metadata,
 )
 from backend.geography.models import Region
 from backend.orchestration.jobs.errors import JobWarning, WarningSeverity
@@ -184,16 +186,18 @@ def build_comparison_output(
         region_a=ComparisonRegionSide(
             region_id=region_a.region_id,
             display_name=region_a.display_name,
+            priority_market=priority_market_by_id(region_a.region_id),
             scores=_scores_payload(score_a),
             coverage=coverage_a,
-            sector_coverage={},
+            sector_coverage=unknown_sector_coverage_metadata(),
         ),
         region_b=ComparisonRegionSide(
             region_id=region_b.region_id,
             display_name=region_b.display_name,
+            priority_market=priority_market_by_id(region_b.region_id),
             scores=_scores_payload(score_b),
             coverage=coverage_b,
-            sector_coverage={},
+            sector_coverage=unknown_sector_coverage_metadata(),
         ),
         category_winners=_category_winners(
             score_a, score_b, region_a.region_id, region_b.region_id

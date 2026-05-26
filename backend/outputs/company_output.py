@@ -14,6 +14,8 @@ from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.market_coverage import (
     CoverageMetadataPayload,
     placeholder_coverage_metadata,
+    priority_market_by_id,
+    unknown_sector_coverage_metadata,
 )
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
@@ -77,11 +79,12 @@ def build_company_output(
                 if p.region_id in region_by_id
                 else p.region_id
             ),
+            priority_market=priority_market_by_id(p.region_id),
             presence_status=p.presence_status,
             presence_basis=p.presence_basis,
             presence_confidence=p.presence_confidence,
             coverage=_coverage_for_region(coverage_by_region, p.region_id),
-            sector_coverage={},
+            sector_coverage=unknown_sector_coverage_metadata(),
         )
         for p in present_pairs
     ]
@@ -96,12 +99,13 @@ def build_company_output(
                 if h.region_id in region_by_id
                 else h.region_id
             ),
+            priority_market=priority_market_by_id(h.region_id),
             currently_hiring_flag=h.currently_hiring_flag,
             active_posting_count_now=h.active_posting_count_now,
             posting_count_30d=h.posting_count_30d,
             posting_count_90d=h.posting_count_90d,
             coverage=_coverage_for_region(coverage_by_region, h.region_id),
-            sector_coverage={},
+            sector_coverage=unknown_sector_coverage_metadata(),
         )
         for h in hiring_sorted
     ]
@@ -116,6 +120,7 @@ def build_company_output(
                 if e.region_id in region_by_id
                 else e.region_id
             ),
+            priority_market=priority_market_by_id(e.region_id),
             internship_count=e.internship_count,
             coop_count=e.coop_count,
             entry_level_full_time_count=e.entry_level_full_time_count,
@@ -123,7 +128,7 @@ def build_company_output(
             entry_level_access_score=e.entry_level_access_score,
             entry_level_confidence=e.entry_level_confidence,
             coverage=_coverage_for_region(coverage_by_region, e.region_id),
-            sector_coverage={},
+            sector_coverage=unknown_sector_coverage_metadata(),
         )
         for e in entry_sorted
     ]

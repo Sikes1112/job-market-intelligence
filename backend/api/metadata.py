@@ -15,9 +15,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.geography.market_coverage import (
     COVERAGE_SCORE_DIMENSIONS,
+    COVERAGE_SCORE_MAX,
+    COVERAGE_SCORE_MIN,
     COVERAGE_TIER_DEFINITIONS,
     PRIORITY_MARKETS,
     SECTOR_COVERAGE_DEFINITIONS,
+    SECTOR_COVERAGE_LEVEL_DEFINITIONS,
+    coverage_description_for_tier,
+    coverage_limitations_for_tier,
 )
 from backend.shared.confidence import Confidence
 from backend.shared.freshness import FreshnessStatus, evaluate_freshness
@@ -273,13 +278,22 @@ def build_coverage_metadata_vocabulary() -> dict[str, Any]:
 
     return {
         "heuristic": True,
-        "quality_score_bounds": {"min": 0.0, "max": 1.0},
+        "quality_score_bounds": {
+            "min": COVERAGE_SCORE_MIN,
+            "max": COVERAGE_SCORE_MAX,
+        },
         "score_components": list(COVERAGE_SCORE_DIMENSIONS),
         "coverage_tiers": [
             {
                 "tier": definition.tier.value,
                 "label": definition.label,
                 "meaning": definition.meaning,
+                "coverage_description": coverage_description_for_tier(
+                    definition.tier
+                ),
+                "coverage_limitations": coverage_limitations_for_tier(
+                    definition.tier
+                ),
                 "required_conditions": list(definition.required_conditions),
                 "safe_for_confident_market_comparison": (
                     definition.safe_for_confident_market_comparison
@@ -300,6 +314,18 @@ def build_coverage_metadata_vocabulary() -> dict[str, Any]:
                 "label": definition.label,
             }
             for definition in SECTOR_COVERAGE_DEFINITIONS.values()
+        ],
+        "sector_coverage_levels": [
+            {
+                "level": definition.level.value,
+                "label": definition.label,
+                "meaning": definition.meaning,
+                "can_be_inferred_from_missing_evidence": (
+                    definition.can_be_inferred_from_missing_evidence
+                ),
+                "can_be_displayed_as_strong": definition.can_be_displayed_as_strong,
+            }
+            for definition in SECTOR_COVERAGE_LEVEL_DEFINITIONS.values()
         ],
         "priority_markets": [
             market.model_dump(mode="json") for market in PRIORITY_MARKETS

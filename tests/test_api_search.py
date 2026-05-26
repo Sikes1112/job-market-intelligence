@@ -253,6 +253,7 @@ def test_regions_search_returns_stable_schema(api_client, session: Session) -> N
         "region_type",
         "parent_region_id",
         "labor_market_group",
+        "priority_market",
         "opportunity_score",
         "coverage",
         "sector_coverage",
@@ -260,7 +261,12 @@ def test_regions_search_returns_stable_schema(api_client, session: Session) -> N
         "has_real_data",
     }
     assert row["coverage"]["heuristic"] is True
+    assert row["coverage"]["coverage_tier"] == row["coverage"]["tier"]
+    assert row["coverage"]["coverage_quality_score"]["overall_score"] == (
+        row["coverage"]["quality_score"]
+    )
     assert row["coverage"]["tier"] in {"tier_1", "tier_2", "tier_3", "tier_4"}
+    assert row["priority_market"] is None
     assert set(row["coverage"]["components"]) == {
         "company_coverage",
         "hiring_coverage",
@@ -653,6 +659,7 @@ def test_company_geography_returns_canonical_regions_and_freshness(
     assert set(row) == {
         "region_id",
         "region_name",
+        "priority_market",
         "presence_status",
         "current_hiring",
         "has_entry_level_access",
@@ -663,12 +670,17 @@ def test_company_geography_returns_canonical_regions_and_freshness(
     }
     assert row["region_id"] == "greater_boston"
     assert row["region_name"] == "Greater Boston"
+    assert row["priority_market"] is None
     assert row["presence_status"] == "present"
     assert row["current_hiring"] is True
     assert row["has_entry_level_access"] is True
     assert row["coverage"]["heuristic"] is True
+    assert row["coverage"]["coverage_tier"] == row["coverage"]["tier"]
     assert row["coverage"]["tier"] in {"tier_1", "tier_2", "tier_3", "tier_4"}
-    assert row["sector_coverage"] == {}
+    assert row["sector_coverage"]
+    assert {item["coverage_level"] for item in row["sector_coverage"].values()} == {
+        "unknown"
+    }
     assert row["freshness"]["data_basis"] == "real_imported"
     assert row["freshness"]["freshness_status"] == "fresh"
     assert row["freshness"]["source_count"] == 1

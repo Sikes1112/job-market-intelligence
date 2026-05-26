@@ -34,6 +34,7 @@ from backend.api.search import (
     search_companies,
     search_regions,
 )
+from backend.geography.market_coverage import priority_market_by_id
 from backend.geography.repository import RegionRepository
 from backend.outputs.exceptions import (
     InvalidComparisonInput,
@@ -64,6 +65,11 @@ def list_regions(
             "region_type": r.region_type,
             "parent_region_id": r.parent_region_id,
             "labor_market_group": r.labor_market_group,
+            "priority_market": (
+                priority_market.model_dump(mode="json")
+                if (priority_market := priority_market_by_id(r.region_id)) is not None
+                else None
+            ),
             "state": r.state,
             "version": r.version,
             "coverage": coverage_by_region[r.region_id].model_dump(mode="json"),

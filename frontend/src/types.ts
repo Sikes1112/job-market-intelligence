@@ -51,24 +51,43 @@ export type CoverageScoreComponent =
 
 export type CoverageComponents = Partial<Record<CoverageScoreComponent, number>> & Record<string, number | undefined>;
 
+export type CoverageQualityScore = {
+  overall_score: number | null;
+  components?: CoverageComponents;
+};
+
 export type CoverageMetadata = {
   tier: CoverageTier | string;
   label?: string | null;
   quality_score?: number | null;
   components?: CoverageComponents;
+  coverage_tier?: CoverageTier | string | null;
+  coverage_label?: string | null;
+  coverage_description?: string | null;
+  coverage_quality_score?: CoverageQualityScore | null;
+  coverage_limitations?: string[];
   notes?: string[];
   heuristic?: boolean;
   safe_for_confident_market_comparison?: boolean;
   should_rank_as_confident_recommendation?: boolean;
 };
 
+export type SectorCoverageLevel = "unknown" | "limited" | "watchlist" | "partial" | "strong";
+
 export type SectorCoverageMetadata = {
   sector: string;
   label?: string | null;
+  coverage_level?: SectorCoverageLevel | string | null;
   coverage: CoverageMetadata;
 };
 
 export type SectorCoverageMap = Record<string, SectorCoverageMetadata>;
+
+export type PriorityMarket = {
+  rank: number;
+  market_id: string;
+  display_name: string;
+};
 
 export type RegionListItem = {
   region_id: string;
@@ -80,6 +99,7 @@ export type RegionListItem = {
   version?: number;
   coverage?: CoverageMetadata;
   sector_coverage?: SectorCoverageMap;
+  priority_market?: PriorityMarket | null;
 };
 
 export type RegionSearchResult = {
@@ -92,6 +112,7 @@ export type RegionSearchResult = {
   opportunity_score: number | null;
   coverage?: CoverageMetadata;
   sector_coverage?: SectorCoverageMap;
+  priority_market?: PriorityMarket | null;
   freshness: FreshnessSourceSummary;
   has_real_data: boolean;
 };
@@ -139,6 +160,7 @@ export type RegionDetail = {
   labor_market_group: string | null;
   coverage?: CoverageMetadata;
   sector_coverage?: SectorCoverageMap;
+  priority_market?: PriorityMarket | null;
   summary?: Record<string, number>;
   scores: RegionScores | null;
   top_companies_present?: RegionCompany[];
@@ -168,6 +190,7 @@ export type CompanyDetail = {
     presence_confidence: string | null;
     coverage?: CoverageMetadata;
     sector_coverage?: SectorCoverageMap;
+    priority_market?: PriorityMarket | null;
   }>;
   regions_hiring?: Array<{
     region_id: string;
@@ -178,6 +201,7 @@ export type CompanyDetail = {
     posting_count_90d: number | null;
     coverage?: CoverageMetadata;
     sector_coverage?: SectorCoverageMap;
+    priority_market?: PriorityMarket | null;
   }>;
   entry_level_regions?: Array<{
     region_id: string;
@@ -190,6 +214,7 @@ export type CompanyDetail = {
     entry_level_confidence: string | null;
     coverage?: CoverageMetadata;
     sector_coverage?: SectorCoverageMap;
+    priority_market?: PriorityMarket | null;
   }>;
 };
 
@@ -221,6 +246,7 @@ export type CompanyGeographyResult = {
   has_entry_level_access: boolean;
   coverage?: CoverageMetadata;
   sector_coverage?: SectorCoverageMap;
+  priority_market?: PriorityMarket | null;
   freshness: FreshnessSourceSummary;
   has_real_data: boolean;
 };
@@ -258,6 +284,7 @@ export type ComparisonDetail = {
     scores: RegionScores | null;
     coverage?: CoverageMetadata;
     sector_coverage?: SectorCoverageMap;
+    priority_market?: PriorityMarket | null;
   };
   region_b?: {
     region_id: string;
@@ -265,6 +292,7 @@ export type ComparisonDetail = {
     scores: RegionScores | null;
     coverage?: CoverageMetadata;
     sector_coverage?: SectorCoverageMap;
+    priority_market?: PriorityMarket | null;
   };
   category_winners?: Record<string, string | null>;
   notes?: string[];
@@ -287,6 +315,7 @@ export type PersonalizedResult = {
     personal_market_score: number;
     objective_opportunity_score: number | null;
     coverage?: CoverageMetadata;
+    priority_market?: PriorityMarket | null;
     match_notes: string[];
   }>;
   ranked_companies?: Array<{
@@ -422,6 +451,7 @@ export type ScoringPreviewRegion = {
     score_ruleset_version: string | null;
   };
   coverage?: CoverageMetadata;
+  priority_market?: PriorityMarket | null;
   personalized_overlay_score: number | null;
   components: Record<keyof ScoringWeights, ScoringPreviewComponent>;
   omitted_components: Array<keyof ScoringWeights>;

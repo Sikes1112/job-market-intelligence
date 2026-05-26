@@ -345,11 +345,13 @@ Coverage tiers:
 
 Sector-specific coverage is separate from overall region coverage. A region may
 be Tier 2 overall but Tier 1 for one sector, or Tier 1 overall while a specific
-sector remains weak. Canonical sector coverage categories are AI, cloud,
-cybersecurity, fintech, healthtech, edtech, enterprise SaaS, public sector tech,
-defense tech, and consumer tech.
+sector remains weak. Canonical sector coverage levels are `unknown`, `limited`,
+`watchlist`, `partial`, and `strong`; missing sector evidence defaults to
+unknown or limited and must never default to strong. Canonical sector coverage
+categories are AI, cloud, cybersecurity, fintech, healthtech, edtech,
+enterprise SaaS, public sector tech, defense tech, and consumer tech.
 
-Coverage quality scoring is heuristic and bounded to `[0, 1]` per component.
+Coverage quality scoring is heuristic and bounded to `[0, 100]` per component.
 The dimensions are company coverage, hiring coverage, entry-level coverage,
 freshness, source diversity, and confidence. Component detail must be preserved
 so a market can explain why it is full, partial, watchlist, or placeholder.
@@ -360,8 +362,16 @@ comparison region sides, company-region geography entries, company output
 region lists, and request-scoped personalized discovery/scoring-preview region
 entries. The coverage object is a read-model explanation, not provenance and
 not a replacement for source/freshness summaries. `sector_coverage` is exposed
-as a distinct field and remains empty until sector-specific validation exists.
-Tier 3 and Tier 4 coverage objects are not confident recommendation markets.
+as a distinct field: lightweight list/search cards may keep it empty, while
+detail/output surfaces expose explicit `unknown` sector coverage defaults when
+sector-specific validation does not exist. Tier 3 and Tier 4 coverage objects
+are not confident recommendation markets.
+
+The additive API coverage object keeps the original `tier`, `label`,
+`quality_score`, and `components` fields and also exposes
+`coverage_tier`, `coverage_label`, `coverage_description`,
+`coverage_quality_score`, and `coverage_limitations` so clients can display
+limitations without inferring semantics from raw scores.
 
 ### Layer 11C Addendum: Product Surface And Explanation
 

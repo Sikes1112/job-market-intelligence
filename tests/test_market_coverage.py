@@ -9,18 +9,24 @@ from backend.geography.market_coverage import (
     PRIORITY_MARKETS,
     REGION_EXPANSION_PLAYBOOK,
     SECTOR_COVERAGE_DEFINITIONS,
+    SECTOR_COVERAGE_LEVEL_DEFINITIONS,
+    CoverageMetadataPayload,
     CoverageQualityLabel,
     CoverageQualityScore,
+    CoverageQualityScorePayload,
     CoverageTier,
     RegionCoverageProfile,
     RegionExpansionPlaybookStep,
     SectorCoverageCategory,
+    SectorCoverageLevel,
     SectorCoverageProfile,
     build_region_coverage_metadata,
     coverage_quality_total,
     declared_tier_is_supported,
     priority_market_by_id,
+    sector_coverage_level_from_quality,
     suggest_coverage_tier,
+    unknown_sector_coverage_metadata,
 )
 from backend.region_expansion.service import TARGET_REGION_EXPANSION_PLAN
 
@@ -40,23 +46,23 @@ def _quality(**overrides) -> CoverageQualityScore:
 
 def _tier_1_quality() -> CoverageQualityScore:
     return _quality(
-        company_coverage=0.85,
-        hiring_coverage=0.82,
-        entry_level_coverage=0.81,
-        freshness=0.80,
-        source_diversity=0.70,
-        confidence=0.84,
+        company_coverage=85.0,
+        hiring_coverage=82.0,
+        entry_level_coverage=81.0,
+        freshness=80.0,
+        source_diversity=70.0,
+        confidence=84.0,
     )
 
 
 def _tier_2_quality() -> CoverageQualityScore:
     return _quality(
-        company_coverage=0.72,
-        hiring_coverage=0.30,
-        entry_level_coverage=0.80,
-        freshness=0.54,
-        source_diversity=0.44,
-        confidence=0.55,
+        company_coverage=72.0,
+        hiring_coverage=30.0,
+        entry_level_coverage=80.0,
+        freshness=54.0,
+        source_diversity=44.0,
+        confidence=55.0,
     )
 
 
@@ -150,6 +156,49 @@ def test_sector_coverage_categories_are_separate_from_region_tiers() -> None:
     )
 
 
+def test_sector_coverage_levels_are_canonical_and_conservative() -> None:
+    assert SectorCoverageLevel.values() == {
+        "unknown",
+        "limited",
+        "watchlist",
+        "partial",
+        "strong",
+    }
+    assert (
+        SECTOR_COVERAGE_LEVEL_DEFINITIONS[
+            SectorCoverageLevel.UNKNOWN
+        ].can_be_inferred_from_missing_evidence
+        is True
+    )
+    assert (
+        SECTOR_COVERAGE_LEVEL_DEFINITIONS[
+            SectorCoverageLevel.STRONG
+        ].can_be_displayed_as_strong
+        is True
+    )
+
+    assert sector_coverage_level_from_quality(None) is SectorCoverageLevel.UNKNOWN
+    assert sector_coverage_level_from_quality(_quality()) is SectorCoverageLevel.UNKNOWN
+    assert (
+        sector_coverage_level_from_quality(_quality(company_coverage=10.0))
+        is SectorCoverageLevel.LIMITED
+    )
+    assert (
+        sector_coverage_level_from_quality(
+            _quality(company_coverage=30.0, confidence=25.0)
+        )
+        is SectorCoverageLevel.WATCHLIST
+    )
+    assert (
+        sector_coverage_level_from_quality(_tier_2_quality())
+        is SectorCoverageLevel.PARTIAL
+    )
+    assert (
+        sector_coverage_level_from_quality(_tier_1_quality())
+        is SectorCoverageLevel.STRONG
+    )
+
+
 def test_coverage_quality_score_is_bounded_and_explainable() -> None:
     quality = _tier_2_quality()
 
@@ -159,19 +208,34 @@ def test_coverage_quality_score_is_bounded_and_explainable() -> None:
     assert quality.quality_label is CoverageQualityLabel.PARTIAL
 
     with pytest.raises(ValidationError):
-        _quality(company_coverage=1.01)
+        _quality(company_coverage=100.01)
     with pytest.raises(ValidationError):
         _quality(confidence=-0.01)
 
 
+def test_api_coverage_payload_component_scores_are_bounded() -> None:
+    with pytest.raises(ValidationError, match="between 0 and 100"):
+        CoverageQualityScorePayload(
+            overall_score=50.0,
+            components={"company_coverage": 100.1},
+        )
+    with pytest.raises(ValidationError, match="between 0 and 100"):
+        CoverageMetadataPayload(
+            tier=CoverageTier.TIER_2,
+            label="Tier 2 - partial but useful market",
+            quality_score=50.0,
+            components={"company_coverage": -0.1},
+        )
+
+
 def test_incomplete_quality_cannot_be_declared_tier_1() -> None:
     incomplete = _quality(
-        company_coverage=0.90,
-        hiring_coverage=0.90,
+        company_coverage=90.0,
+        hiring_coverage=90.0,
         entry_level_coverage=0.0,
-        freshness=0.90,
-        source_diversity=0.90,
-        confidence=0.90,
+        freshness=90.0,
+        source_diversity=90.0,
+        confidence=90.0,
     )
 
     assert suggest_coverage_tier(incomplete) is not CoverageTier.TIER_1
@@ -185,7 +249,7 @@ def test_incomplete_quality_cannot_be_declared_tier_1() -> None:
 
 
 def test_tier_3_and_tier_4_are_structurally_distinguishable() -> None:
-    watchlist = _quality(company_coverage=0.20)
+    watchlist = _quality(company_coverage=20.0)
     placeholder = _quality()
 
     assert watchlist.suggested_tier is CoverageTier.TIER_3
@@ -205,11 +269,13 @@ def test_sector_specific_coverage_does_not_overwrite_region_coverage() -> None:
             SectorCoverageCategory.AI: SectorCoverageProfile(
                 sector=SectorCoverageCategory.AI,
                 coverage_tier=CoverageTier.TIER_1,
+                coverage_level=SectorCoverageLevel.STRONG,
                 quality_score=_tier_1_quality(),
             ),
             SectorCoverageCategory.CLOUD: SectorCoverageProfile(
                 sector=SectorCoverageCategory.CLOUD,
                 coverage_tier=CoverageTier.TIER_3,
+                coverage_level=SectorCoverageLevel.UNKNOWN,
             ),
         },
     )
@@ -223,6 +289,40 @@ def test_sector_specific_coverage_does_not_overwrite_region_coverage() -> None:
         profile.sector_coverage[SectorCoverageCategory.CLOUD].coverage_tier
         is CoverageTier.TIER_3
     )
+
+
+def test_sector_coverage_level_cannot_overstate_missing_or_weak_evidence() -> None:
+    SectorCoverageProfile(
+        sector=SectorCoverageCategory.AI,
+        coverage_tier=CoverageTier.TIER_4,
+        coverage_level=SectorCoverageLevel.UNKNOWN,
+    )
+    SectorCoverageProfile(
+        sector=SectorCoverageCategory.AI,
+        coverage_tier=CoverageTier.TIER_4,
+        coverage_level=SectorCoverageLevel.LIMITED,
+    )
+
+    with pytest.raises(ValidationError, match="strong coverage requires tier_1"):
+        SectorCoverageProfile(
+            sector=SectorCoverageCategory.AI,
+            coverage_tier=CoverageTier.TIER_2,
+            coverage_level=SectorCoverageLevel.STRONG,
+            quality_score=_tier_1_quality(),
+        )
+    with pytest.raises(ValidationError, match="partial coverage is not supported"):
+        SectorCoverageProfile(
+            sector=SectorCoverageCategory.AI,
+            coverage_tier=CoverageTier.TIER_3,
+            coverage_level=SectorCoverageLevel.PARTIAL,
+            quality_score=_quality(company_coverage=30.0, confidence=25.0),
+        )
+    with pytest.raises(ValidationError, match="requires a quality score"):
+        SectorCoverageProfile(
+            sector=SectorCoverageCategory.AI,
+            coverage_tier=CoverageTier.TIER_3,
+            coverage_level=SectorCoverageLevel.WATCHLIST,
+        )
 
 
 def test_sector_coverage_key_must_match_profile_sector() -> None:
@@ -243,9 +343,31 @@ def test_region_coverage_metadata_payload_is_conservative_for_empty_surface() ->
     coverage = build_region_coverage_metadata(source_evidence_loaded=True)
 
     assert coverage.tier is CoverageTier.TIER_4
+    assert coverage.coverage_tier is CoverageTier.TIER_4
+    assert coverage.coverage_label == "Tier 4 - placeholder only"
+    assert "placeholder only" in coverage.coverage_description
     assert coverage.quality_score == 0.0
+    assert coverage.coverage_quality_score.overall_score == 0.0
+    assert coverage.coverage_quality_score.components == coverage.components
+    assert any("placeholder" in item for item in coverage.coverage_limitations)
     assert coverage.heuristic is True
     assert coverage.should_rank_as_confident_recommendation is False
+
+
+def test_unknown_sector_coverage_defaults_are_explicit_and_not_strong() -> None:
+    sector_coverage = unknown_sector_coverage_metadata()
+
+    assert set(sector_coverage) == SectorCoverageCategory.values()
+    assert {entry.coverage_level for entry in sector_coverage.values()} == {
+        SectorCoverageLevel.UNKNOWN
+    }
+    assert {
+        entry.coverage.coverage_tier for entry in sector_coverage.values()
+    } == {CoverageTier.TIER_4}
+    assert all(
+        entry.coverage.should_rank_as_confident_recommendation is False
+        for entry in sector_coverage.values()
+    )
 
 
 def test_region_coverage_metadata_keeps_components_explainable() -> None:
@@ -263,7 +385,7 @@ def test_region_coverage_metadata_keeps_components_explainable() -> None:
 
     assert coverage.tier in {CoverageTier.TIER_1, CoverageTier.TIER_2}
     assert set(coverage.components) == set(COVERAGE_SCORE_DIMENSIONS)
-    assert coverage.components["source_diversity"] == 0.67
+    assert coverage.components["source_diversity"] == 67.0
     assert coverage.safe_for_confident_market_comparison is (
         coverage.tier is CoverageTier.TIER_1
     )

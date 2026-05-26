@@ -82,6 +82,10 @@ def test_discover_endpoint_returns_envelope(api_client, session) -> None:
     assert data["ranked_regions"][0]["region_id"] == "greater_boston"
     assert data["ranked_regions"][0]["objective_opportunity_score"] == 0.74
     assert data["ranked_regions"][0]["coverage"]["heuristic"] is True
+    assert data["ranked_regions"][0]["coverage"]["coverage_tier"] == (
+        data["ranked_regions"][0]["coverage"]["tier"]
+    )
+    assert data["ranked_regions"][0]["coverage"]["coverage_limitations"]
     assert data["ranked_regions"][0]["coverage"]["tier"] in {
         "tier_2",
         "tier_3",
@@ -113,6 +117,10 @@ def test_discover_endpoint_warning_metadata_uses_standard_shape(
     assert warnings
     assert "coverage" in response.json()["data"]["ranked_regions"][0]
     assert response.json()["data"]["ranked_regions"][0]["coverage"]["tier"] == "tier_4"
+    assert (
+        response.json()["data"]["ranked_regions"][0]["coverage"]["coverage_tier"]
+        == "tier_4"
+    )
     assert any(
         warning["warning_code"] == "region_coverage_not_confident"
         for warning in warnings

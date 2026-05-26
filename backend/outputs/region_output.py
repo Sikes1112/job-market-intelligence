@@ -20,7 +20,11 @@ from typing import NamedTuple
 
 from backend.companies.models import Company
 from backend.entry_level.models import CompanyRegionEntryLevel
-from backend.geography.market_coverage import build_region_coverage_metadata
+from backend.geography.market_coverage import (
+    build_region_coverage_metadata,
+    priority_market_by_id,
+    unknown_sector_coverage_metadata,
+)
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
 from backend.orchestration.jobs.errors import JobWarning, WarningSeverity
@@ -297,8 +301,9 @@ def build_region_output(
         region_type=region.region_type,
         parent_region_id=region.parent_region_id,
         labor_market_group=region.labor_market_group,
+        priority_market=priority_market_by_id(region.region_id),
         coverage=coverage,
-        sector_coverage={},
+        sector_coverage=unknown_sector_coverage_metadata(),
         summary=summary,
         scores=scores,
         top_companies_present=top_companies_present,

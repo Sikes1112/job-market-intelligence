@@ -31,6 +31,7 @@ from backend.geography.market_coverage import (
     CoverageMetadataPayload,
     CoverageTier,
     build_region_coverage_metadata,
+    priority_market_by_id,
 )
 from backend.geography.repository import RegionRepository
 from backend.hiring.models import CompanyRegionHiring
@@ -258,6 +259,7 @@ class PersonalizationService:
                 PersonalizedRegionEntry(
                     region_id=region.region_id,
                     display_name=region.display_name,
+                    priority_market=priority_market_by_id(region.region_id),
                     personal_market_score=market_score,
                     objective_opportunity_score=objective,
                     coverage=coverage,
@@ -366,6 +368,7 @@ class PersonalizationService:
                 ScoringPreviewRegion(
                     region_id=region.region_id,
                     display_name=region.display_name,
+                    priority_market=priority_market_by_id(region.region_id),
                     canonical_default_scores=CanonicalDefaultScoreSummary(
                         objective_opportunity_score=(
                             score_row.objective_opportunity_score

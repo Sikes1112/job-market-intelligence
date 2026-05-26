@@ -39,6 +39,7 @@ import {
   coverageDescription,
   coverageDisplayLabel,
   coverageIsWeak,
+  coverageLimitations,
   coverageScoreText,
   coverageTone,
   dataBasisLabel,
@@ -47,6 +48,8 @@ import {
   isSeedDemoFreshness,
   qualityBadges,
   qualityNotices,
+  sectorCoverageLevelLabel,
+  sectorCoverageTone,
 } from "./dataQuality";
 import type {
   ApiEnvelope,
@@ -66,6 +69,7 @@ import type {
   PersonalizedRecommendationSnapshotInput,
   PersonalizedResult,
   PreferenceLevel,
+  PriorityMarket,
   RegionDetail,
   RegionListItem,
   RegionSearchResult,
@@ -529,9 +533,19 @@ function CoverageBadge({ coverage }: { coverage?: CoverageMetadata | null }) {
   );
 }
 
+function PriorityMarketBadge({ priorityMarket }: { priorityMarket?: PriorityMarket | null }) {
+  if (!priorityMarket) return null;
+  return (
+    <span className="badge badge-unknown">
+      Priority #{priorityMarket.rank}: {priorityMarket.display_name}
+    </span>
+  );
+}
+
 function CoverageInlineNote({ coverage }: { coverage?: CoverageMetadata | null }) {
-  if (!coverageIsWeak(coverage) && coverage?.tier) return null;
-  return <p className="meta-copy coverage-note">{coverageDescription(coverage)}</p>;
+  if (!coverageIsWeak(coverage)) return null;
+  const [firstLimitation] = coverageLimitations(coverage);
+  return <p className="meta-copy coverage-note">{firstLimitation ?? coverageDescription(coverage)}</p>;
 }
 
 function CoverageWarningList({ warnings }: { warnings: WarningItem[] }) {
@@ -569,6 +583,9 @@ function SectorCoveragePanel({ sectorCoverage }: { sectorCoverage?: SectorCovera
         {sectors.map((sector) => (
           <div className="sector-coverage-row" key={sector.sector}>
             <span>{sector.label ?? prettyKey(sector.sector)}</span>
+            <span className={qualityBadgeClass(sectorCoverageTone(sector.coverage_level))}>
+              Sector level: {sectorCoverageLevelLabel(sector.coverage_level)}
+            </span>
             <CoverageBadge coverage={sector.coverage} />
           </div>
         ))}
@@ -586,6 +603,8 @@ function CoveragePanel({
 }) {
   const scoreText = coverageScoreText(coverage);
   const components = coverageComponentEntries(coverage);
+  const description = coverageDescription(coverage);
+  const limitations = coverageLimitations(coverage).filter((limitation) => limitation !== description);
   const notes = coverage?.notes ?? [];
 
   return (
@@ -595,7 +614,14 @@ function CoveragePanel({
         {coverage?.heuristic ? <span className="badge badge-unknown">Heuristic</span> : null}
       </div>
       {scoreText ? <p className="coverage-score">{scoreText}</p> : null}
-      <p className="meta-copy">{coverageDescription(coverage)}</p>
+      <p className="meta-copy">{description}</p>
+      {limitations.length ? (
+        <ul className="coverage-notes" aria-label="Coverage limitations">
+          {limitations.map((limitation) => (
+            <li key={limitation}>{limitation}</li>
+          ))}
+        </ul>
+      ) : null}
       {components.length ? (
         <div className="coverage-component-grid" aria-label="Coverage components">
           {components.map((component) => (
@@ -633,10 +659,15 @@ function coverageForRegion(
   region: RegionListItem,
   searchItem?: RegionSearchResult,
   detail?: RegionDetail | null,
-): { coverage?: CoverageMetadata; sectorCoverage?: SectorCoverageMap } {
+): {
+  coverage?: CoverageMetadata;
+  sectorCoverage?: SectorCoverageMap;
+  priorityMarket?: PriorityMarket | null;
+} {
   return {
     coverage: searchItem?.coverage ?? detail?.coverage ?? region.coverage,
     sectorCoverage: searchItem?.sector_coverage ?? detail?.sector_coverage ?? region.sector_coverage,
+    priorityMarket: searchItem?.priority_market ?? detail?.priority_market ?? region.priority_market,
   };
 }
 
@@ -967,6 +998,7 @@ function strongestCompanyRegions(
   freshness?: FreshnessSourceSummary;
   coverage?: CoverageMetadata;
   sectorCoverage?: SectorCoverageMap;
+  priorityMarket?: PriorityMarket | null;
 }> {
   const regions = new Map<string, {
     regionId: string;
@@ -977,6 +1009,7 @@ function strongestCompanyRegions(
     freshness?: FreshnessSourceSummary;
     coverage?: CoverageMetadata;
     sectorCoverage?: SectorCoverageMap;
+    priorityMarket?: PriorityMarket | null;
   }>();
 
   function ensure(regionId: string, regionName: string) {
@@ -991,6 +1024,7 @@ function strongestCompanyRegions(
       freshness?: FreshnessSourceSummary;
       coverage?: CoverageMetadata;
       sectorCoverage?: SectorCoverageMap;
+      priorityMarket?: PriorityMarket | null;
     } = {
       regionId,
       regionName,
@@ -1007,6 +1041,7 @@ function strongestCompanyRegions(
       const item = ensure(row.region_id, row.region_display_name);
       item.coverage ??= row.coverage;
       item.sectorCoverage ??= row.sector_coverage;
+      item.priorityMarket ??= row.priority_market;
       item.signals.add("Presence");
     }
   }
@@ -1016,6 +1051,7 @@ function strongestCompanyRegions(
     item.activePostings = row.active_posting_count_now;
     item.coverage ??= row.coverage;
     item.sectorCoverage ??= row.sector_coverage;
+    item.priorityMarket ??= row.priority_market;
     if (row.currently_hiring_flag || (row.active_posting_count_now ?? 0) > 0) {
       item.signals.add("Hiring activity");
     }
@@ -1026,6 +1062,7 @@ function strongestCompanyRegions(
     item.entryScore = row.entry_level_access_score;
     item.coverage ??= row.coverage;
     item.sectorCoverage ??= row.sector_coverage;
+    item.priorityMarket ??= row.priority_market;
     if (hasEntryLevelAccess(row)) {
       item.signals.add("Entry-level access");
     }
@@ -1036,6 +1073,7 @@ function strongestCompanyRegions(
     item.freshness = row.freshness;
     item.coverage ??= row.coverage;
     item.sectorCoverage ??= row.sector_coverage;
+    item.priorityMarket ??= row.priority_market;
     if (row.presence_status === "present") item.signals.add("Presence");
     if (row.current_hiring) item.signals.add("Hiring activity");
     if (row.has_entry_level_access) item.signals.add("Entry-level access");
@@ -1052,6 +1090,7 @@ function strongestCompanyRegions(
       freshness: item.freshness,
       coverage: item.coverage,
       sectorCoverage: item.sectorCoverage,
+      priorityMarket: item.priorityMarket,
     }))
     .filter((item) => item.signalCount > 0)
     .sort((left, right) =>
@@ -2005,6 +2044,7 @@ function ScoringPreviewPanel({ preview }: { preview: ScoringPreviewResult }) {
           <div>
             <span className="badge">Personalized overlay</span>
             <CoverageBadge coverage={region.coverage} />
+            <PriorityMarketBadge priorityMarket={region.priority_market} />
             <strong>{region.display_name}</strong>
             <small>{region.region_id}</small>
             <CoverageInlineNote coverage={region.coverage} />
@@ -2494,7 +2534,7 @@ function ExploreMarkets({
               const detail = detailEnvelope?.data;
               const opportunityScore = regionOpportunityScore(region.region_id, searchMap, regionDetails);
               const careerState = entryLevelSignalState(detail);
-              const { coverage } = coverageForRegion(region, searchItem, detail);
+              const { coverage, priorityMarket } = coverageForRegion(region, searchItem, detail);
               return (
                 <button
                   className="market-card"
@@ -2505,6 +2545,7 @@ function ExploreMarkets({
                   <div className="market-card-topline">
                     <span>{prettyKey(region.region_type)}</span>
                     <CoverageBadge coverage={coverage} />
+                    <PriorityMarketBadge priorityMarket={priorityMarket} />
                     <QualityBadgeRow envelope={detailEnvelope} source={searchItem?.freshness} />
                   </div>
                   <strong>{region.display_name}</strong>
@@ -2543,7 +2584,7 @@ function ExploreMarkets({
         {filteredRegions.slice(0, 2).map((region) => {
           const detail = regionDetails[region.region_id]?.data;
           const searchItem = searchMap.get(region.region_id);
-          const { coverage } = coverageForRegion(region, searchItem, detail);
+          const { coverage, priorityMarket } = coverageForRegion(region, searchItem, detail);
           return detail ? (
             <button
               className="quick-region-card"
@@ -2555,6 +2596,7 @@ function ExploreMarkets({
             >
               <span>{detail.region_type}</span>
               <CoverageBadge coverage={coverage} />
+              <PriorityMarketBadge priorityMarket={priorityMarket} />
               <strong>{detail.display_name}</strong>
               <div className="quick-score-row">
                 <ScoreCard compact label="Total score" value={detail.scores?.raw_total_score} />
@@ -2693,6 +2735,11 @@ function RegionExplorer({
                 <p className="meta-copy">
                   {region.region_id} · {region.labor_market_group ?? "unknown labor market"}
                 </p>
+                {region.priority_market ? (
+                  <div className="metadata-row">
+                    <PriorityMarketBadge priorityMarket={region.priority_market} />
+                  </div>
+                ) : null}
                 <h3>What this output contains</h3>
                 <p className="meta-copy">
                   Counts are returned facts from the prepared output. Missing fields are shown
@@ -2971,6 +3018,7 @@ function CompanyExplorer({
                     <div className="market-card-topline">
                       <span>{region.signalCount} observed signal(s)</span>
                       <CoverageBadge coverage={region.coverage} />
+                      <PriorityMarketBadge priorityMarket={region.priorityMarket} />
                       {region.freshness ? <QualityBadgeRow source={region.freshness} /> : null}
                     </div>
                     <strong>{region.regionName}</strong>
@@ -3023,6 +3071,7 @@ function CompanyExplorer({
                     <div className="stack-row" key={region.region_id}>
                       <strong>{region.region_display_name}</strong>
                       <CoverageBadge coverage={region.coverage} />
+                      <PriorityMarketBadge priorityMarket={region.priority_market} />
                       <CoverageInlineNote coverage={region.coverage} />
                       <span>
                         {formatValue(region.presence_basis)} · {formatValue(region.presence_confidence)}
@@ -3050,6 +3099,7 @@ function CompanyExplorer({
                     <div className="stack-row" key={region.region_id}>
                       <strong>{region.region_display_name}</strong>
                       <CoverageBadge coverage={region.coverage} />
+                      <PriorityMarketBadge priorityMarket={region.priority_market} />
                       <CoverageInlineNote coverage={region.coverage} />
                       <span>
                         {formatValue(region.active_posting_count_now)} active ·{" "}
@@ -3079,6 +3129,7 @@ function CompanyExplorer({
                   <div className="entry-card" key={region.region_id}>
                     <h3>{region.region_display_name}</h3>
                     <CoverageBadge coverage={region.coverage} />
+                    <PriorityMarketBadge priorityMarket={region.priority_market} />
                     <CoverageInlineNote coverage={region.coverage} />
                     <span className={qualityBadgeClass(confidenceTone(region.entry_level_confidence))}>
                       Confidence: {formatValue(region.entry_level_confidence)}
@@ -3238,6 +3289,7 @@ function ComparisonView({
             <div className="source-compare-grid">
               <div className="source-compare-card">
                 <strong>{regionALabel}</strong>
+                <PriorityMarketBadge priorityMarket={comparison.region_a?.priority_market} />
                 <CoveragePanel
                   coverage={comparison.region_a?.coverage}
                   sectorCoverage={comparison.region_a?.sector_coverage}
@@ -3245,6 +3297,7 @@ function ComparisonView({
               </div>
               <div className="source-compare-card">
                 <strong>{regionBLabel}</strong>
+                <PriorityMarketBadge priorityMarket={comparison.region_b?.priority_market} />
                 <CoveragePanel
                   coverage={comparison.region_b?.coverage}
                   sectorCoverage={comparison.region_b?.sector_coverage}
@@ -3467,6 +3520,10 @@ function PersonalizedDiscovery({
   const rankedCompanies = discovery?.ranked_companies ?? [];
   const rankedRegionCoverage = new Map(rankedRegions.map((region) => [region.region_id, region.coverage]));
   const regionListCoverage = new Map(regions.map((region) => [region.region_id, region.coverage]));
+  const rankedRegionPriorityMarkets = new Map(
+    rankedRegions.map((region) => [region.region_id, region.priority_market]),
+  );
+  const regionListPriorityMarkets = new Map(regions.map((region) => [region.region_id, region.priority_market]));
 
   return (
     <div className="view-grid">
@@ -3491,6 +3548,7 @@ function PersonalizedDiscovery({
                 />
                 <span>{region.display_name}</span>
                 <CoverageBadge coverage={region.coverage} />
+                <PriorityMarketBadge priorityMarket={region.priority_market} />
               </label>
             ))}
             {unknownSelectedRegions.map((regionId) => (
@@ -3630,6 +3688,7 @@ function PersonalizedDiscovery({
                     <div>
                       <strong>{region.display_name}</strong>
                       <CoverageBadge coverage={region.coverage} />
+                      <PriorityMarketBadge priorityMarket={region.priority_market} />
                       <CoverageInlineNote coverage={region.coverage} />
                       <small>
                         Objective score: {formatValue(region.objective_opportunity_score)}
@@ -3660,12 +3719,15 @@ function PersonalizedDiscovery({
               <div className="rank-list">
                 {rankedCompanies.map((company, index) => {
                   const coverage = rankedRegionCoverage.get(company.region_id) ?? regionListCoverage.get(company.region_id);
+                  const priorityMarket = rankedRegionPriorityMarkets.get(company.region_id)
+                    ?? regionListPriorityMarkets.get(company.region_id);
                   return (
                     <div className="rank-row rank-row-company" key={`${company.company_id}-${company.region_id}`}>
                       <span className="rank-number">{index + 1}</span>
                       <div>
                         <strong>{company.company_name}</strong>
                         <CoverageBadge coverage={coverage} />
+                        <PriorityMarketBadge priorityMarket={priorityMarket} />
                         <CoverageInlineNote coverage={coverage} />
                         <small>{company.region_display_name}</small>
                         <div className="chip-row">
