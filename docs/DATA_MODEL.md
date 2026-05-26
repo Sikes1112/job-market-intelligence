@@ -373,6 +373,84 @@ The additive API coverage object keeps the original `tier`, `label`,
 `coverage_quality_score`, and `coverage_limitations` so clients can display
 limitations without inferring semantics from raw scores.
 
+### Layer 13 Addendum: Data Refresh And Quality Automation
+
+Layer 13 Batch 1 adds a read-only refresh-quality control plane. It does not
+add canonical tables, execute refresh jobs, scrape websites, fetch external
+data, call public job boards, call company pages, call government datasets,
+call university pages, mutate canonical truth, update scores, change rankings,
+rebuild outputs, or invalidate caches.
+
+Batch 1 records are in-memory/domain records only:
+
+- `RefreshCandidate`: diagnostic metadata saying an existing fact may need
+  refresh. It is not a canonical fact, not a candidate observation, and does
+  not imply truth.
+- `SourceRefreshQueueItem`: a reviewable work item linked to a refresh
+  candidate. It is not an executable scraping job.
+- `QualityRegressionRecord`: a diagnostic finding that data quality became
+  worse. It recommends review and must not automatically repair data.
+
+Batch 2 extends the in-memory/domain refresh-quality records:
+
+- `CandidateObservation`: proposed evidence linked to a refresh candidate
+  and/or source queue item. It is not canonical truth.
+- `ObservationValidationResult`: validation state, blocking issues, warnings,
+  explanation, and recommended review decision for one observation.
+- `HumanReviewRecord`: explicit human/admin decision metadata. It does not
+  mutate data by itself.
+- `ApprovedCanonicalUpdateHandoff`: an approved intent/request object for a
+  separate canonical apply boundary. It must not directly write canonical
+  truth.
+- `RefreshQualityAuditRecord`: audit metadata for validation, review,
+  rejection, policy block, and approved handoff preparation.
+- `RefreshDashboardPayload`: read-only dashboard summary over supplied Layer
+  13 records.
+
+Refresh candidate reasons are `stale_hiring_count`,
+`expired_internship_data`, `old_company_region_presence_data`,
+`low_confidence_source_fact`, `missing_source_fact`,
+`stale_entry_level_signal`, and `coverage_gap`.
+
+Source refresh target types are `company_page`, `company_careers_page`,
+`public_job_board`, `government_open_dataset`,
+`university_coop_public_employer_list`, `company_internship_page`, and
+`manual_research_required`. Public job board targets require terms review and
+must not be treated as public datasets.
+
+Legal/terms posture values are `MANUAL_ONLY`, `PUBLIC_DATASET_ALLOWED`,
+`TERMS_REVIEW_REQUIRED`, `DISALLOWED`, and `UNKNOWN`.
+
+Quality regression types are `source_disappeared`,
+`suspicious_hiring_count_drop`, `company_region_presence_contradicted`,
+`entry_level_signal_became_stale`, `single_source_dominates_market_score`,
+`market_score_relies_too_heavily_on_low_confidence_facts`,
+`coverage_gap_worsened`, and `repeated_refresh_failure`.
+
+Candidate observation statuses are `PENDING_VALIDATION`, `VALIDATED`,
+`NEEDS_MORE_EVIDENCE`, `REJECTED`, and `APPROVED_FOR_HANDOFF`.
+
+Validation states are `PASSED`, `PASSED_WITH_WARNINGS`, and `FAILED`.
+Recommended review decisions are `APPROVE`, `REJECT`,
+`NEEDS_MORE_EVIDENCE`, and `POLICY_BLOCK`.
+
+Human review decisions are `APPROVED`, `REJECTED`, `NEEDS_MORE_EVIDENCE`,
+`DUPLICATE`, `OUT_OF_SCOPE`, and `POLICY_BLOCKED`.
+
+Approved handoff statuses are `PREPARED`, `WAITING_CANONICAL_APPLY`,
+`APPLIED_EXTERNALLY`, `REJECTED_BEFORE_APPLY`, and `SUPERSEDED`.
+
+Refresh-quality audit action types are `OBSERVATION_VALIDATED`,
+`REVIEW_DECISION_RECORDED`, `APPROVED_HANDOFF_PREPARED`,
+`REVIEW_REJECTED`, `POLICY_BLOCKED`, and `NEEDS_MORE_EVIDENCE`.
+
+Layer 13 may identify weak, stale, missing, or regressed data and prepare
+human-review work metadata. Human approval may prepare an approved canonical
+update handoff, but the handoff remains an intent object unless a separate,
+tested canonical write boundary applies it. Layer 13 must preserve the existing
+API, scoring, output, geography, personalization, provenance, ingestion, and
+Layer 12 market coverage boundaries.
+
 ### Layer 11C Addendum: Product Surface And Explanation
 
 Batch 11C does not add canonical tables. Advanced visualization is a read-only
