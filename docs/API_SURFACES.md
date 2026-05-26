@@ -123,7 +123,8 @@ Public market exploration routes remain unauthenticated.
 `APP_ENV=public_demo` is an externally viewable, read-only demo posture. It is
 not production. In public demo mode, the backend fails closed to an explicit
 allowlist of public read/search/source endpoints plus the non-persistent
-`POST /discover/personalized` request-scoped calculation. Protected `/me` and
+`POST /discover/personalized` and `POST /recommendations/strategy`
+request-scoped calculations. Protected `/me` and
 `/admin` routes, canonical write-shaped requests, override/repair/audit
 mutations, and future unknown routes are denied before route handlers can
 mutate durable state.
@@ -1105,6 +1106,65 @@ Response `data`:
 Personalized discovery keeps ranking behavior request-scoped and additive, but
 Tier 3 and Tier 4 ranked regions receive a `region_coverage_not_confident`
 warning and should not be treated as confident recommendations.
+
+### `GET /recommendations/goal-modes`
+
+Returns the canonical Layer 14 recommendation goal modes and API-safe profile
+metadata. Each item includes:
+
+- stable `goal_mode`
+- user-facing `label` and `description`
+- `prioritization_summary`
+- weighted score components
+- explicit penalty components
+- missing-data behavior
+- proxy/heuristic warnings
+
+This endpoint exposes configuration only. It does not rank, generate strategy,
+call AI, or persist anything.
+
+### `POST /recommendations/strategy`
+
+Produces deterministic Layer 14 ranked recommendations and a structured market
+strategy plan from existing app-owned region/company output payloads.
+
+Request body:
+
+```json
+{
+  "goal_mode": "maximize_entry_level_access",
+  "include_company_recommendations": true,
+  "region_limit": 25,
+  "company_limit": 25,
+  "max_primary_regions": 3,
+  "max_secondary_regions": 3,
+  "max_fallback_regions": 3,
+  "max_watchlist_items": 6,
+  "max_company_targets": 5
+}
+```
+
+Response `data` includes:
+
+- `available_goal_modes`
+- `selected_goal_mode`
+- `ranking_profile_version`
+- `ranking_tie_breaker`
+- `ranked_region_recommendations`
+- `ranked_company_recommendations`
+- `market_strategy_plan`
+- `warnings`
+
+Ranked recommendation entries preserve targets, scores, score components,
+missing/proxy/inferred components, penalties, warnings, explanations,
+tradeoffs, weaknesses, manual verification, and evidence references. The
+strategy plan preserves source recommendation references, primary/secondary/
+fallback/watchlist targets, company/category/role-family guidance, timing
+guidance, manual verification, and evidence warnings.
+
+Unknown goal modes, invalid limits, and extra request fields are rejected. The
+endpoint does not accept prompt fields, call AI, scrape jobs, invent companies,
+or claim current openings.
 
 ## Deferred Endpoints
 

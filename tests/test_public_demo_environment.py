@@ -156,6 +156,7 @@ def test_public_demo_allows_frontend_public_read_and_metadata_routes(
         "/companies/comp_a/regions",
         "/companies/comp_a/sources",
         "/compare?region_a=greater_boston&region_b=greater_sf",
+        "/recommendations/goal-modes",
     ]
 
     for path in get_paths:
@@ -168,6 +169,13 @@ def test_public_demo_allows_frontend_public_read_and_metadata_routes(
     )
     assert discovery.status_code == 200
     assert discovery.json()["data"]["ranked_regions"][0]["region_id"] == "greater_boston"
+
+    strategy = client.post(
+        "/recommendations/strategy",
+        json={"goal_mode": "maximize_entry_level_access"},
+    )
+    assert strategy.status_code == 200
+    assert strategy.json()["data"]["ranked_region_recommendations"]
 
 
 def test_public_demo_denies_admin_and_override_mutations_before_auth(

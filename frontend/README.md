@@ -37,6 +37,8 @@ When `VITE_API_BASE_URL` is not set, local development uses Vite's dev proxy for
 - `GET /companies/{company_id}`
 - `GET /compare?region_a=...&region_b=...`
 - `POST /discover/personalized`
+- `GET /recommendations/goal-modes`
+- `POST /recommendations/strategy`
 - protected `/me` account routes
 - protected `POST /me/scoring-preview`
 - protected `/me/alerts` in-app alert feed routes
@@ -65,6 +67,25 @@ map, heatmap, and network views stay disabled unless supported structured data
 exists. Explanation panels call protected deterministic guidance endpoints and
 render only supplied evidence-packet facts, limitations, and missing-data
 flags.
+
+## Recommendation Decision Support
+
+Layer 14F adds a read-only recommendation page at `/markets/recommendations`.
+It loads canonical goal modes from `GET /recommendations/goal-modes` and
+requests structured ranking/strategy output from `POST /recommendations/strategy`.
+
+The page renders:
+
+- goal mode labels, descriptions, weighted components, proxy warnings, and missing-data behavior
+- ranked region and company recommendations
+- score components used, missing components, proxy/inferred components, and penalties
+- explanation reasons, tradeoffs, weaknesses, manual verification, and evidence references
+- market strategy sections for primary/secondary/fallback/watchlist targets, timing guidance, company/category/role-family guidance, manual verification, and evidence warnings
+
+Role-family guidance is labeled heuristic/inferred when the API marks it that
+way. Empty company recommendations show backend warnings instead of invented
+company targets. There is no prompt box, chat UI, AI summary, live scraping, or
+saved strategy state in this layer.
 
 ## Market Coverage Disclosure
 

@@ -608,3 +608,358 @@ export type AccountDeactivationResult = {
   deleted_profiles: number;
   deleted_external_auth_identities: number;
 };
+
+export type RecommendationGoalMode =
+  | "maximize_entry_level_access"
+  | "maximize_prestige"
+  | "maximize_ai_cloud_concentration"
+  | "maximize_underrated_markets"
+  | "maximize_internship_coop_access"
+  | "maximize_lower_competition"
+  | "maximize_geographic_flexibility";
+
+export type RecommendationScoreComponentName =
+  | "entry_level_access"
+  | "internship_or_coop_access"
+  | "prestige_density"
+  | "ai_cloud_concentration"
+  | "company_density"
+  | "role_diversity"
+  | "lower_competition_proxy"
+  | "geographic_flexibility"
+  | "market_coverage"
+  | "confidence"
+  | "freshness";
+
+export type RecommendationEvidenceBasis =
+  | "structured_score"
+  | "market_coverage"
+  | "company_metadata"
+  | "region_metadata"
+  | "provenance"
+  | "freshness"
+  | "confidence"
+  | "data_quality_warning"
+  | "heuristic_inference"
+  | "user_preference"
+  | "missing_data"
+  | string;
+
+export type RecommendationEvidenceStrength =
+  | "strong"
+  | "moderate"
+  | "weak"
+  | "missing"
+  | "inferred"
+  | string;
+
+export type RecommendationClaimSupport = "direct" | "inferred" | string;
+export type RecommendationImportance = "low" | "medium" | "high" | string;
+export type RecommendationTargetType =
+  | "region"
+  | "company"
+  | "company_category"
+  | "role_family"
+  | "market_strategy"
+  | "watchlist_item"
+  | string;
+
+export type RecommendationTarget = {
+  target_type: RecommendationTargetType;
+  target_id: string;
+  display_label?: string | null;
+  parent_target_id?: string | null;
+  related_target_ids?: string[];
+};
+
+export type RecommendationConfidenceSummary = {
+  confidence_level?: string | null;
+  confidence_score?: number | null;
+  confidence_status?: string | null;
+  confidence_ref?: string | null;
+  warnings?: string[];
+};
+
+export type RecommendationFreshnessSummary = {
+  freshness_status?: string | null;
+  data_basis?: string | null;
+  last_updated_at?: string | null;
+  freshness_expires_at?: string | null;
+  source_count?: number | null;
+  freshness_ref?: string | null;
+  warnings?: string[];
+};
+
+export type RecommendationProvenanceReference = {
+  provenance_ref?: string | null;
+  source_ref_id?: string | null;
+  source_observation_id?: string | null;
+  fact_source_link_id?: string | null;
+  source_type?: string | null;
+  origin?: string | null;
+  source_refs?: string[];
+};
+
+export type RecommendationEvidenceReference = {
+  basis: RecommendationEvidenceBasis;
+  strength: RecommendationEvidenceStrength;
+  label?: string | null;
+  reference_type?: string | null;
+  reference_id?: string | null;
+  provenance?: RecommendationProvenanceReference | null;
+  confidence?: RecommendationConfidenceSummary | null;
+  freshness?: RecommendationFreshnessSummary | null;
+  coverage_warning_refs?: string[];
+  data_quality_warning_refs?: string[];
+  note?: string | null;
+};
+
+export type RecommendationReason = {
+  reason_category: string;
+  label: string;
+  detail?: string | null;
+  evidence_strength: RecommendationEvidenceStrength;
+  evidence_basis: RecommendationEvidenceBasis[];
+  support: RecommendationClaimSupport;
+  evidence_refs: RecommendationEvidenceReference[];
+};
+
+export type RecommendationTradeoff = {
+  tradeoff_category: string;
+  label: string;
+  positive_side: string;
+  negative_side: string;
+  importance: RecommendationImportance;
+  evidence_strength: RecommendationEvidenceStrength;
+  evidence_basis: RecommendationEvidenceBasis[];
+  support: RecommendationClaimSupport;
+  evidence_refs: RecommendationEvidenceReference[];
+};
+
+export type RecommendationWeakness = {
+  weakness_category: string;
+  label: string;
+  detail?: string | null;
+  evidence_strength: RecommendationEvidenceStrength;
+  evidence_basis: RecommendationEvidenceBasis[];
+  support: RecommendationClaimSupport;
+  evidence_refs: RecommendationEvidenceReference[];
+};
+
+export type RecommendationManualVerificationItem = {
+  verification_category: string;
+  label: string;
+  question: string;
+  rationale?: string | null;
+  importance: RecommendationImportance;
+  evidence_strength: RecommendationEvidenceStrength;
+  evidence_basis: RecommendationEvidenceBasis[];
+  support: RecommendationClaimSupport;
+  evidence_refs: RecommendationEvidenceReference[];
+};
+
+export type RecommendationExplanation = {
+  target: RecommendationTarget;
+  goal_mode?: RecommendationGoalMode | null;
+  headline?: string | null;
+  fit_reasons: RecommendationReason[];
+  data_strengths: RecommendationReason[];
+  tradeoffs: RecommendationTradeoff[];
+  weaknesses: RecommendationWeakness[];
+  manual_verification: RecommendationManualVerificationItem[];
+  evidence_refs: RecommendationEvidenceReference[];
+  confidence_summary?: RecommendationConfidenceSummary | null;
+  freshness_summary?: RecommendationFreshnessSummary | null;
+  provenance_refs: RecommendationProvenanceReference[];
+  coverage_warnings: string[];
+  data_quality_warnings: string[];
+};
+
+export type RecommendationGoalModeComponentPayload = {
+  component: RecommendationScoreComponentName;
+  weight: number;
+  evidence_basis: RecommendationEvidenceBasis[];
+  is_proxy: boolean;
+  requires_heuristic_inference: boolean;
+  unavailable_behavior: string;
+  warning?: string | null;
+  penalty_explanation?: string | null;
+};
+
+export type RecommendationGoalModeProfilePayload = {
+  goal_mode: RecommendationGoalMode;
+  label: string;
+  description: string;
+  prioritization_summary: string;
+  weighted_components: RecommendationGoalModeComponentPayload[];
+  penalty_components: RecommendationGoalModeComponentPayload[];
+  missing_data_behavior: string;
+  warnings: string[];
+};
+
+export type RecommendationGoalModesPayload = {
+  goal_modes: RecommendationGoalModeProfilePayload[];
+};
+
+export type RecommendationStrategyRequest = {
+  goal_mode: RecommendationGoalMode;
+  include_company_recommendations?: boolean;
+  region_limit?: number;
+  company_limit?: number;
+  max_primary_regions?: number;
+  max_secondary_regions?: number;
+  max_fallback_regions?: number;
+  max_watchlist_items?: number;
+  max_company_targets?: number;
+};
+
+export type WeightedScoreComponent = {
+  component: RecommendationScoreComponentName;
+  value: number;
+  weight: number;
+  weighted_value: number;
+  evidence_basis: RecommendationEvidenceBasis[];
+  evidence_refs: RecommendationEvidenceReference[];
+  source_fields: string[];
+  is_proxy: boolean;
+  inferred: boolean;
+  warning?: string | null;
+};
+
+export type MissingScoreComponent = {
+  component: RecommendationScoreComponentName;
+  weight: number;
+  unavailable_behavior: string;
+  evidence_basis: RecommendationEvidenceBasis[];
+  warning?: string | null;
+};
+
+export type AppliedRankingPenalty = {
+  component: RecommendationScoreComponentName;
+  value: number;
+  weight: number;
+  penalty_value: number;
+  application_mode: string;
+  explanation: string;
+  evidence_basis: RecommendationEvidenceBasis[];
+  evidence_refs: RecommendationEvidenceReference[];
+  is_proxy: boolean;
+  inferred: boolean;
+};
+
+export type RecommendationRankingItem = {
+  rank: number;
+  target: RecommendationTarget;
+  goal_mode: RecommendationGoalMode;
+  final_score: number;
+  normalized_score: number;
+  score_components_used: WeightedScoreComponent[];
+  score_components_missing: MissingScoreComponent[];
+  score_components_proxy: WeightedScoreComponent[];
+  penalties_applied: AppliedRankingPenalty[];
+  confidence_contribution?: number | null;
+  freshness_contribution?: number | null;
+  coverage_contribution?: number | null;
+  explanation: RecommendationExplanation;
+  warnings: string[];
+};
+
+export type StrategySourceRecommendation = {
+  source_id: string;
+  rank: number;
+  target: RecommendationTarget;
+  final_score: number;
+  warnings: string[];
+};
+
+export type StrategyTraceableItem = {
+  source_recommendation_ids: string[];
+  evidence_strength: RecommendationEvidenceStrength;
+  evidence_basis: RecommendationEvidenceBasis[];
+  support: RecommendationClaimSupport;
+  evidence_refs: RecommendationEvidenceReference[];
+};
+
+export type StrategyRegionTarget = StrategyTraceableItem & {
+  target: RecommendationTarget;
+  target_role: "primary" | "secondary" | "fallback" | string;
+  source_rank: number;
+  final_score: number;
+  rationale: string;
+  tradeoff_categories: string[];
+};
+
+export type StrategyCompanyTarget = StrategyTraceableItem & {
+  target: RecommendationTarget;
+  source_rank: number;
+  final_score: number;
+  rationale: string;
+};
+
+export type StrategyCompanyCategoryTarget = StrategyTraceableItem & {
+  target: RecommendationTarget;
+  rationale: string;
+};
+
+export type StrategyRoleFamilyTarget = StrategyTraceableItem & {
+  target: RecommendationTarget;
+  rationale: string;
+};
+
+export type StrategyTimingGuidance = StrategyTraceableItem & {
+  timing_category: string;
+  label: string;
+  guidance: string;
+  importance: RecommendationImportance;
+};
+
+export type StrategyWatchlistItem = StrategyTraceableItem & {
+  watchlist_category: string;
+  target: RecommendationTarget;
+  reason: string;
+  upside: string;
+  what_to_verify: string;
+  revisit_after_refresh: boolean;
+};
+
+export type StrategyManualVerificationEntry = {
+  item: RecommendationManualVerificationItem;
+  source_recommendation_ids: string[];
+};
+
+export type StrategyManualVerificationChecklist = {
+  items: StrategyManualVerificationEntry[];
+};
+
+export type StrategyEvidenceWarning = StrategyTraceableItem & {
+  warning_category: string;
+  label: string;
+  detail?: string | null;
+};
+
+export type MarketStrategyPlan = {
+  goal_mode: RecommendationGoalMode;
+  strategy_version: string;
+  source_recommendations: StrategySourceRecommendation[];
+  primary_region_targets: StrategyRegionTarget[];
+  secondary_region_targets: StrategyRegionTarget[];
+  fallback_region_targets: StrategyRegionTarget[];
+  company_targets: StrategyCompanyTarget[];
+  company_category_targets: StrategyCompanyCategoryTarget[];
+  role_family_targets: StrategyRoleFamilyTarget[];
+  timing_guidance: StrategyTimingGuidance[];
+  watchlist_items: StrategyWatchlistItem[];
+  manual_verification_checklist: StrategyManualVerificationChecklist;
+  evidence_warnings: StrategyEvidenceWarning[];
+};
+
+export type RecommendationStrategyPayload = {
+  available_goal_modes: RecommendationGoalModeProfilePayload[];
+  selected_goal_mode: RecommendationGoalModeProfilePayload;
+  ranking_profile_version: string;
+  ranking_tie_breaker: string;
+  ranked_region_recommendations: RecommendationRankingItem[];
+  ranked_company_recommendations: RecommendationRankingItem[];
+  market_strategy_plan: MarketStrategyPlan;
+  warnings: string[];
+};

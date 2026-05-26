@@ -13,10 +13,12 @@ export function buildPublicDemoSmokeChecks({
   return [
     { name: "frontend landing", method: "GET", url: `${frontend}/` },
     { name: "frontend demo entry", method: "GET", url: `${frontend}/markets` },
+    { name: "frontend recommendations", method: "GET", url: `${frontend}/markets/recommendations` },
     { name: "api health", method: "GET", url: `${api}/health` },
     { name: "api readiness", method: "GET", url: `${api}/ready` },
     { name: "api regions list", method: "GET", url: `${api}/regions` },
     { name: "api region search", method: "GET", url: `${api}/regions/search` },
+    { name: "api recommendation goal modes", method: "GET", url: `${api}/recommendations/goal-modes` },
   ];
 }
 

@@ -92,9 +92,9 @@ before running the backend in public demo mode.
 
 ## Ambiguous Surfaces
 
-- Non-persistent POST: `POST /discover/personalized` is explicitly allowed and
-  covered by tests asserting it does not persist output metadata or canonical
-  market truth.
+- Non-persistent POST: `POST /discover/personalized` and
+  `POST /recommendations/strategy` are explicitly allowed and covered by tests
+  asserting they do not persist output metadata or canonical market truth.
 - Protected reads: denied unless a future route proves it has no durable auth
   side effects.
 - Unknown routes: denied in public demo before FastAPI can resolve them.

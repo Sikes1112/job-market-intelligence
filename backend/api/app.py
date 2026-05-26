@@ -12,6 +12,7 @@ from backend.api.errors import register_exception_handlers
 from backend.api.observability import RequestObservabilityMiddleware
 from backend.api.personalized import router as personalized_router
 from backend.api.protection import APIProtectionMiddleware
+from backend.api.recommendations import router as recommendations_router
 from backend.api.routes import router as read_router
 from backend.api.user import router as user_router
 from backend.config.settings import Settings, get_settings
@@ -92,6 +93,7 @@ def create_app(
 
     app.include_router(read_router)
     app.include_router(personalized_router)
+    app.include_router(recommendations_router)
     app.include_router(user_router)
     app.include_router(admin_router)
 

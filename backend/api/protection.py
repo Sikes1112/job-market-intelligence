@@ -26,6 +26,8 @@ PUBLIC_DEMO_EXACT_ALLOWLIST = frozenset(
         ("GET", "/companies/search"),
         ("GET", "/compare"),
         ("POST", "/discover/personalized"),
+        ("GET", "/recommendations/goal-modes"),
+        ("POST", "/recommendations/strategy"),
     }
 )
 

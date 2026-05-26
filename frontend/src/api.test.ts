@@ -9,6 +9,8 @@ import {
   explainCompany,
   explainRegion,
   getCurrentUser,
+  getRecommendationGoalModes,
+  getRecommendationStrategy,
   getRegions,
   listAlerts,
   listSavedMarketArtifacts,
@@ -55,6 +57,30 @@ describe("frontend API client auth boundary", () => {
     const [, init] = fetchMock.mock.calls[0];
     expect(fetchMock.mock.calls[0][0]).toBe("/regions");
     expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
+  });
+
+  test("recommendation API calls stay public and structured", async () => {
+    const fetchMock = mockFetch({ goal_modes: [] });
+
+    await getRecommendationGoalModes();
+    await getRecommendationStrategy({
+      goal_mode: "maximize_entry_level_access",
+      region_limit: 10,
+      company_limit: 10,
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/recommendations/goal-modes");
+    expect(fetchMock.mock.calls[1][0]).toBe("/recommendations/strategy");
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("POST");
+    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual({
+      goal_mode: "maximize_entry_level_access",
+      region_limit: 10,
+      company_limit: 10,
+    });
+    expect(String((fetchMock.mock.calls[1][1] as RequestInit).body)).not.toContain("prompt");
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
+    }
   });
 
   test("protected /me requests attach bearer tokens", async () => {

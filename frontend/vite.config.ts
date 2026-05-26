@@ -10,6 +10,7 @@ export default defineConfig({
       "/companies": "http://127.0.0.1:8000",
       "/compare": "http://127.0.0.1:8000",
       "/discover": "http://127.0.0.1:8000",
+      "/recommendations": "http://127.0.0.1:8000",
       "/me": "http://127.0.0.1:8000",
     },
   },

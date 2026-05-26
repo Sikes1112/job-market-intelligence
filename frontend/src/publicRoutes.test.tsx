@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
 import { FrontendAuthProvider } from "./auth";
@@ -172,6 +172,365 @@ function coverageWarning(scopeRef: string) {
     message: `Region ${scopeRef} is not covered enough for confident recommendations.`,
     scope_type: "region",
     scope_ref: scopeRef,
+  };
+}
+
+function evidenceRef(basis = "structured_score") {
+  return {
+    basis,
+    strength: basis === "heuristic_inference" ? "inferred" : "moderate",
+    label: `${basis} fixture evidence`,
+    reference_type: "fixture",
+    reference_id: `${basis}:fixture`,
+  };
+}
+
+function recommendationGoalModes() {
+  return {
+    goal_modes: [
+      {
+        goal_mode: "maximize_entry_level_access",
+        label: "Maximize entry-level access",
+        description: "Favor markets and employers with stronger early-career access signals.",
+        prioritization_summary: "Prioritizes entry-level and internship signals.",
+        weighted_components: [
+          {
+            component: "entry_level_access",
+            weight: 0.42,
+            evidence_basis: ["structured_score"],
+            is_proxy: false,
+            requires_heuristic_inference: false,
+            unavailable_behavior: "Show missing data.",
+          },
+        ],
+        penalty_components: [],
+        missing_data_behavior: "Do not impute missing entry-level inputs.",
+        warnings: [],
+      },
+      {
+        goal_mode: "maximize_ai_cloud_concentration",
+        label: "Maximize AI/cloud concentration",
+        description: "Favor targets with stronger AI and cloud concentration signals.",
+        prioritization_summary: "Current AI/cloud concentration is a proxy component.",
+        weighted_components: [
+          {
+            component: "ai_cloud_concentration",
+            weight: 0.46,
+            evidence_basis: ["company_metadata", "market_coverage"],
+            is_proxy: true,
+            requires_heuristic_inference: false,
+            unavailable_behavior: "Show weak AI/cloud evidence.",
+            warning: "Current AI/cloud concentration is derived from sector metadata proxies.",
+          },
+        ],
+        penalty_components: [
+          {
+            component: "company_density",
+            weight: 0.06,
+            evidence_basis: ["region_metadata"],
+            is_proxy: true,
+            requires_heuristic_inference: false,
+            unavailable_behavior: "Do not apply when missing.",
+            penalty_explanation: "Narrow company universes can make concentration less actionable.",
+          },
+        ],
+        missing_data_behavior: "Missing sector inputs must become weak evidence.",
+        warnings: ["AI/cloud concentration is currently a proxy component."],
+      },
+    ],
+  };
+}
+
+function recommendationTarget(targetId = "greater_boston", label = "Greater Boston", targetType = "region") {
+  return {
+    target_type: targetType,
+    target_id: targetId,
+    display_label: label,
+    parent_target_id: null,
+    related_target_ids: [],
+  };
+}
+
+function recommendationExplanation(target = recommendationTarget()) {
+  const refs = [evidenceRef("structured_score"), evidenceRef("market_coverage")];
+  return {
+    target,
+    goal_mode: "maximize_entry_level_access",
+    headline: `${target.display_label} recommendation evidence`,
+    fit_reasons: [
+      {
+        reason_category: "goal_alignment",
+        label: "Ranked by Maximize entry-level access",
+        detail: "Used weighted components: entry_level_access, market_coverage.",
+        evidence_strength: "moderate",
+        evidence_basis: ["structured_score", "market_coverage"],
+        support: "direct",
+        evidence_refs: refs,
+      },
+    ],
+    data_strengths: [
+      {
+        reason_category: "data_strength",
+        label: "Coverage supports comparison",
+        detail: "Coverage metadata was attached.",
+        evidence_strength: "moderate",
+        evidence_basis: ["market_coverage"],
+        support: "direct",
+        evidence_refs: [refs[1]],
+      },
+    ],
+    tradeoffs: [
+      {
+        tradeoff_category: "prestige_vs_entry_level_access",
+        label: "High prestige but weaker entry-level accessibility",
+        positive_side: "Prestige density is represented in structured metadata.",
+        negative_side: "Entry-level access must be verified before acting.",
+        importance: "high",
+        evidence_strength: "moderate",
+        evidence_basis: ["structured_score"],
+        support: "direct",
+        evidence_refs: [refs[0]],
+      },
+    ],
+    weaknesses: [
+      {
+        weakness_category: "heuristic_limitation",
+        label: "Ranking uses proxy components",
+        detail: "Proxy components used: lower_competition_proxy.",
+        evidence_strength: "inferred",
+        evidence_basis: ["heuristic_inference"],
+        support: "inferred",
+        evidence_refs: [],
+      },
+    ],
+    manual_verification: [
+      {
+        verification_category: "current_job_postings",
+        label: "Verify current job postings",
+        question: "Are current postings available before acting?",
+        rationale: "Recommendation output is not a live jobs feed.",
+        importance: "high",
+        evidence_strength: "missing",
+        evidence_basis: ["missing_data"],
+        support: "direct",
+        evidence_refs: [],
+      },
+    ],
+    evidence_refs: refs,
+    confidence_summary: {
+      confidence_status: "moderate",
+      confidence_score: 0.66,
+      confidence_ref: "coverage:greater_boston:confidence",
+      warnings: [],
+    },
+    freshness_summary: {
+      freshness_status: "fresh",
+      data_basis: "real_imported",
+      source_count: 2,
+      freshness_ref: "freshness:greater_boston",
+      warnings: [],
+    },
+    provenance_refs: [],
+    coverage_warnings: ["region_coverage_not_confident"],
+    data_quality_warnings: [],
+  };
+}
+
+function rankedRecommendation(target = recommendationTarget(), rank = 1) {
+  return {
+    rank,
+    target,
+    goal_mode: "maximize_entry_level_access",
+    final_score: 0.74,
+    normalized_score: 0.74,
+    score_components_used: [
+      {
+        component: "entry_level_access",
+        value: 0.8,
+        weight: 0.42,
+        weighted_value: 0.336,
+        evidence_basis: ["structured_score"],
+        evidence_refs: [evidenceRef("structured_score")],
+        source_fields: ["region.scores.early_career_accessibility_score"],
+        is_proxy: false,
+        inferred: false,
+        warning: null,
+      },
+      {
+        component: "lower_competition_proxy",
+        value: 0.58,
+        weight: 0.22,
+        weighted_value: 0.128,
+        evidence_basis: ["heuristic_inference"],
+        evidence_refs: [],
+        source_fields: ["proxy"],
+        is_proxy: true,
+        inferred: true,
+        warning: "Competition is not directly measured; this component is heuristic.",
+      },
+    ],
+    score_components_missing: [
+      {
+        component: "geographic_flexibility",
+        weight: 0.34,
+        unavailable_behavior: "Location-flexibility policy data is unavailable.",
+        evidence_basis: ["missing_data"],
+        warning: "Verify location requirements manually.",
+      },
+    ],
+    score_components_proxy: [
+      {
+        component: "lower_competition_proxy",
+        value: 0.58,
+        weight: 0.22,
+        weighted_value: 0.128,
+        evidence_basis: ["heuristic_inference"],
+        evidence_refs: [],
+        source_fields: ["proxy"],
+        is_proxy: true,
+        inferred: true,
+        warning: "Competition is not directly measured; this component is heuristic.",
+      },
+    ],
+    penalties_applied: [
+      {
+        component: "prestige_density",
+        value: 0.7,
+        weight: 0.08,
+        penalty_value: 0.056,
+        application_mode: "high_value",
+        explanation: "High prestige can indicate harder entry-level access.",
+        evidence_basis: ["company_metadata", "heuristic_inference"],
+        evidence_refs: [],
+        is_proxy: true,
+        inferred: true,
+      },
+    ],
+    confidence_contribution: 0.04,
+    freshness_contribution: 0.05,
+    coverage_contribution: 0.08,
+    explanation: recommendationExplanation(target),
+    warnings: ["Proxy-heavy recommendation: verify inferred components."],
+  };
+}
+
+function recommendationStrategyPayload(goalMode = "maximize_entry_level_access") {
+  const regionTarget = recommendationTarget();
+  const roleTarget = recommendationTarget("ai_product_operations", "AI product operations", "role_family");
+  return {
+    available_goal_modes: recommendationGoalModes().goal_modes,
+    selected_goal_mode: recommendationGoalModes().goal_modes.find((goal) => goal.goal_mode === goalMode)
+      ?? recommendationGoalModes().goal_modes[0],
+    ranking_profile_version: "layer14c_deterministic_ranking_v1",
+    ranking_tie_breaker: "Sort by final_score descending, then display label, then stable target id.",
+    ranked_region_recommendations: [rankedRecommendation(regionTarget)],
+    ranked_company_recommendations: [],
+    market_strategy_plan: {
+      goal_mode: goalMode,
+      strategy_version: "layer14d_market_strategy_v1",
+      source_recommendations: [
+        {
+          source_id: "region:greater_boston:rank:1",
+          rank: 1,
+          target: regionTarget,
+          final_score: 0.74,
+          warnings: [],
+        },
+      ],
+      primary_region_targets: [
+        {
+          target: regionTarget,
+          target_role: "primary",
+          source_rank: 1,
+          final_score: 0.74,
+          rationale: "Top ranked actionable target",
+          tradeoff_categories: ["prestige_vs_entry_level_access"],
+          source_recommendation_ids: ["region:greater_boston:rank:1"],
+          evidence_strength: "moderate",
+          evidence_basis: ["structured_score"],
+          support: "direct",
+          evidence_refs: [evidenceRef("structured_score")],
+        },
+      ],
+      secondary_region_targets: [],
+      fallback_region_targets: [
+        {
+          target: recommendationTarget("raleigh_durham", "Raleigh-Durham"),
+          target_role: "fallback",
+          source_rank: 2,
+          final_score: 0.51,
+          rationale: "Fallback market from ranked outputs",
+          tradeoff_categories: ["lower_competition_vs_role_volume"],
+          source_recommendation_ids: ["region:greater_boston:rank:1"],
+          evidence_strength: "inferred",
+          evidence_basis: ["heuristic_inference"],
+          support: "inferred",
+          evidence_refs: [],
+        },
+      ],
+      company_targets: [],
+      company_category_targets: [],
+      role_family_targets: [
+        {
+          target: roleTarget,
+          rationale: "Heuristic role-family suggestion tied to the selected goal mode; it does not claim current openings.",
+          source_recommendation_ids: ["region:greater_boston:rank:1"],
+          evidence_strength: "inferred",
+          evidence_basis: ["heuristic_inference"],
+          support: "inferred",
+          evidence_refs: [],
+        },
+      ],
+      timing_guidance: [
+        {
+          timing_category: "verify_current_postings",
+          label: "Verify current postings before acting",
+          guidance: "Check current company/career pages before treating ranked targets as actionable.",
+          importance: "high",
+          source_recommendation_ids: ["region:greater_boston:rank:1"],
+          evidence_strength: "missing",
+          evidence_basis: ["missing_data"],
+          support: "direct",
+          evidence_refs: [],
+        },
+      ],
+      watchlist_items: [
+        {
+          watchlist_category: "proxy_heavy",
+          target: regionTarget,
+          reason: "Ranked target uses proxy-heavy evidence.",
+          upside: "Useful ranked upside remains visible.",
+          what_to_verify: "Verify proxy and missing inputs before acting.",
+          revisit_after_refresh: true,
+          source_recommendation_ids: ["region:greater_boston:rank:1"],
+          evidence_strength: "inferred",
+          evidence_basis: ["heuristic_inference"],
+          support: "inferred",
+          evidence_refs: [],
+        },
+      ],
+      manual_verification_checklist: {
+        items: [
+          {
+            item: recommendationExplanation(regionTarget).manual_verification[0],
+            source_recommendation_ids: ["region:greater_boston:rank:1"],
+          },
+        ],
+      },
+      evidence_warnings: [
+        {
+          warning_category: "proxy",
+          label: "Proxy-heavy recommendation",
+          detail: "Lower competition is not directly measured.",
+          source_recommendation_ids: ["region:greater_boston:rank:1"],
+          evidence_strength: "inferred",
+          evidence_basis: ["heuristic_inference"],
+          support: "inferred",
+          evidence_refs: [],
+        },
+      ],
+    },
+    warnings: ["Company rankings unavailable: no company outputs were available."],
   };
 }
 
@@ -452,6 +811,12 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
       warnings: [coverageWarning("greater_boston")],
     };
   }
+  if (value === "/recommendations/goal-modes") {
+    return { data: recommendationGoalModes() };
+  }
+  if (value === "/recommendations/strategy") {
+    return { data: recommendationStrategyPayload() };
+  }
   return { data: null };
 }
 
@@ -559,6 +924,66 @@ describe("public demo routes", () => {
     expect(screen.getAllByText("Coverage: Tier 3 - watchlist / emerging market").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Coverage: Tier 4 - placeholder only").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/not covered enough for confident recommendations/i).length).toBeGreaterThan(0);
+  });
+
+  test("recommendations page loads goal modes and renders evidence-bound ranking cards", async () => {
+    stubPublicFetch();
+    renderAt("/markets/recommendations");
+
+    expect(await screen.findByRole("heading", { name: "Recommendation decision support" })).toBeTruthy();
+    expect((screen.getByLabelText("Recommendation goal mode") as HTMLSelectElement).value).toBe(
+      "maximize_entry_level_access",
+    );
+    expect(screen.getAllByText("Maximize entry-level access").length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "Ranked region recommendations" })).toBeTruthy();
+    expect(screen.getAllByText("Greater Boston").length).toBeGreaterThan(0);
+    expect(screen.getByText("Final score")).toBeTruthy();
+    expect(screen.getByText("Ranked by Maximize entry-level access")).toBeTruthy();
+    expect(screen.getByText("High prestige but weaker entry-level accessibility")).toBeTruthy();
+    expect(screen.getAllByText("Verify current job postings").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Proxy").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Inferred").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Company rankings unavailable: no company outputs were available.").length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByRole("textbox", { name: /prompt/i })).toBeNull();
+    expect(screen.queryByText(/AI summary/i)).toBeNull();
+  });
+
+  test("recommendations selector reloads strategy for selected goal mode", async () => {
+    const fetchMock = stubPublicFetch();
+    renderAt("/markets/recommendations");
+
+    await screen.findByRole("heading", { name: "Recommendation decision support" });
+    fireEvent.change(screen.getByLabelText("Recommendation goal mode"), {
+      target: { value: "maximize_ai_cloud_concentration" },
+    });
+
+    expect(window.location.pathname).toBe("/markets/recommendations");
+    expect(window.location.search).toContain("maximize_ai_cloud_concentration");
+    await waitFor(() => {
+      const strategyCalls = fetchMock.mock.calls.filter(([url]) => url === "/recommendations/strategy");
+      expect(strategyCalls.length).toBeGreaterThanOrEqual(2);
+      expect(String((strategyCalls.at(-1)?.[1] as RequestInit).body)).toContain(
+        "maximize_ai_cloud_concentration",
+      );
+    });
+  });
+
+  test("recommendations strategy renders fallback watchlist timing and heuristic role guidance", async () => {
+    stubPublicFetch();
+    renderAt("/markets/recommendations");
+
+    expect(await screen.findByRole("heading", { name: "Market strategy plan" })).toBeTruthy();
+    expect(screen.getByText("Primary regions")).toBeTruthy();
+    expect(screen.getByText("Fallback regions")).toBeTruthy();
+    expect(screen.getByText("Watchlist")).toBeTruthy();
+    expect(screen.getByText("Timing guidance")).toBeTruthy();
+    expect(screen.getByText("Role-family guidance")).toBeTruthy();
+    expect(screen.getAllByText("Heuristic / inferred").length).toBeGreaterThan(0);
+    expect(screen.getByText("Ranked target uses proxy-heavy evidence.")).toBeTruthy();
+    expect(screen.getByText("Check current company/career pages before treating ranked targets as actionable.")).toBeTruthy();
+    expect(screen.getByText("Lower competition is not directly measured.")).toBeTruthy();
   });
 
   test("company geography keeps coverage separate from freshness and sector coverage", async () => {

@@ -6,7 +6,7 @@ export const INDUSTRY_OPTIONS = ["software", "ai", "cloud", "data", "cybersecuri
 export const PREFERENCE_LEVELS = ["low", "medium", "high"];
 export const CAREER_STAGE_OPTIONS = ["entry_level"];
 
-export type ProductPage = "explore" | "region" | "company" | "compare" | "discovery" | "account";
+export type ProductPage = "explore" | "region" | "company" | "compare" | "discovery" | "recommendations" | "account";
 export type PublicPage = "landing" | "data-limitations" | "privacy" | "terms" | "sources";
 export type AppPage = ProductPage | PublicPage;
 
@@ -31,6 +31,7 @@ export type RouteState = {
   companyId?: string;
   comparison: ComparisonUrlState;
   discovery: DiscoveryFilters;
+  recommendationGoalMode: string;
   unknownPath?: string;
 };
 
@@ -53,7 +54,8 @@ export const PUBLIC_PAGE_PATHS: Record<Exclude<PublicPage, "landing">, string> =
   sources: "/sources",
 };
 
-const PRODUCT_PAGES: ProductPage[] = ["explore", "region", "company", "compare", "discovery", "account"];
+const PRODUCT_PAGES: ProductPage[] = ["explore", "region", "company", "compare", "discovery", "recommendations", "account"];
+const DEFAULT_RECOMMENDATION_GOAL_MODE = "maximize_entry_level_access";
 
 export function isProductPage(page: AppPage): page is ProductPage {
   return PRODUCT_PAGES.includes(page as ProductPage);
@@ -167,6 +169,7 @@ function baseRoute(
     page,
     comparison: parseComparison(params),
     discovery: parseDiscovery(params),
+    recommendationGoalMode: cleanToken(params.get("goal")) ?? DEFAULT_RECOMMENDATION_GOAL_MODE,
     ...extra,
   };
 }
@@ -203,6 +206,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
 
   if (section === "compare") return baseRoute("compare", params);
   if (section === "discovery") return baseRoute("discovery", params);
+  if (section === "recommendations") return baseRoute("recommendations", params);
   if (section === "account") return baseRoute("account", params);
 
   return baseRoute("explore", params, { unknownPath: pathname });
@@ -251,6 +255,11 @@ export function personalizedDiscoveryUrl(filters: DiscoveryFilters): string {
   params.set("brand", filters.brandPreference);
   params.set("limit", String(filters.limit));
   return `${PRODUCT_ROOT}/discovery?${params.toString()}`;
+}
+
+export function recommendationsUrl(goalMode = DEFAULT_RECOMMENDATION_GOAL_MODE): string {
+  const params = new URLSearchParams({ goal: goalMode });
+  return `${PRODUCT_ROOT}/recommendations?${params.toString()}`;
 }
 
 export function accountUrl(): string {

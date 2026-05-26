@@ -13,7 +13,10 @@ import type {
   PersonalizedRecommendationSnapshotInput,
   PersonalizedRequest,
   PersonalizedResult,
+  RecommendationGoalModesPayload,
   RecommendationSnapshotList,
+  RecommendationStrategyPayload,
+  RecommendationStrategyRequest,
   RegionDetail,
   RegionListItem,
   RegionSearchResponse,
@@ -291,6 +294,17 @@ export function getComparison(regionA: string, regionB: string) {
 
 export function discoverPersonalized(body: PersonalizedRequest) {
   return request<PersonalizedResult>("/discover/personalized", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getRecommendationGoalModes() {
+  return request<RecommendationGoalModesPayload>("/recommendations/goal-modes");
+}
+
+export function getRecommendationStrategy(body: RecommendationStrategyRequest) {
+  return request<RecommendationStrategyPayload>("/recommendations/strategy", {
     method: "POST",
     body: JSON.stringify(body),
   });

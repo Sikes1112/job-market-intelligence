@@ -21,6 +21,8 @@ import {
   getHealth,
   getPreferences,
   getRegion,
+  getRecommendationGoalModes,
+  getRecommendationStrategy,
   getRegionSources,
   getRegions,
   listAlerts,
@@ -70,6 +72,18 @@ import type {
   PersonalizedResult,
   PreferenceLevel,
   PriorityMarket,
+  AppliedRankingPenalty,
+  MissingScoreComponent,
+  RecommendationEvidenceReference,
+  RecommendationGoalMode,
+  RecommendationGoalModeProfilePayload,
+  RecommendationGoalModesPayload,
+  RecommendationManualVerificationItem,
+  RecommendationRankingItem,
+  RecommendationReason,
+  RecommendationStrategyPayload,
+  RecommendationTradeoff,
+  RecommendationWeakness,
   RegionDetail,
   RegionListItem,
   RegionSearchResult,
@@ -87,6 +101,14 @@ import type {
   UserPreferenceProfile,
   UserPreferenceProfileInput,
   WarningItem,
+  StrategyCompanyCategoryTarget,
+  StrategyCompanyTarget,
+  StrategyEvidenceWarning,
+  StrategyRegionTarget,
+  StrategyRoleFamilyTarget,
+  StrategyTimingGuidance,
+  StrategyWatchlistItem,
+  WeightedScoreComponent,
 } from "./types";
 import {
   DEFAULT_REGION_A,
@@ -104,6 +126,7 @@ import {
   parseRoute,
   personalizedDiscoveryUrl,
   publicPageUrl,
+  recommendationsUrl,
   regionDetailUrl,
   type DiscoveryFilters,
   type ProductPage,
@@ -157,6 +180,16 @@ const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   industry_fit: 0.15,
   role_fit: 0.15,
 };
+const DEFAULT_RECOMMENDATION_GOAL_MODE: RecommendationGoalMode = "maximize_entry_level_access";
+const RECOMMENDATION_GOAL_MODES: RecommendationGoalMode[] = [
+  "maximize_entry_level_access",
+  "maximize_prestige",
+  "maximize_ai_cloud_concentration",
+  "maximize_underrated_markets",
+  "maximize_internship_coop_access",
+  "maximize_lower_competition",
+  "maximize_geographic_flexibility",
+];
 
 type LoadState<T> = {
   loading: boolean;
@@ -194,6 +227,7 @@ const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
   { id: "company", label: "Company Geography", kicker: "Presence and hiring" },
   { id: "compare", label: "Compare Markets", kicker: "Score comparison" },
   { id: "discovery", label: "Personalized Discovery", kicker: "Personal overlay" },
+  { id: "recommendations", label: "Recommendations", kicker: "Decision support" },
   { id: "account", label: "Account", kicker: "Saved overlays" },
 ];
 
@@ -244,12 +278,17 @@ function getNavigationUrl(
   if (page === "company") return companyGeographyUrl(selectedCompanyId);
   if (page === "compare") return compareMarketsUrl(comparisonA, comparisonB);
   if (page === "discovery") return personalizedDiscoveryUrl(discoveryFilters);
+  if (page === "recommendations") return recommendationsUrl();
   if (page === "account") return accountUrl();
   return exploreUrl();
 }
 
 function prettyKey(value: string) {
   return value.replaceAll("_", " ");
+}
+
+function isRecommendationGoalMode(value: string): value is RecommendationGoalMode {
+  return RECOMMENDATION_GOAL_MODES.includes(value as RecommendationGoalMode);
 }
 
 function formatValue(value: unknown): string {
@@ -3767,6 +3806,673 @@ function PersonalizedDiscovery({
   );
 }
 
+function recommendationTargetLabel(target?: { display_label?: string | null; target_id: string }) {
+  return target?.display_label ?? target?.target_id ?? "Unknown target";
+}
+
+function evidenceBasisText(values?: string[]): string {
+  return values?.length ? values.map(prettyKey).join(", ") : "No evidence basis returned";
+}
+
+function isHeuristicEvidence(values?: string[], support?: string): boolean {
+  return support === "inferred" || Boolean(values?.includes("heuristic_inference"));
+}
+
+function evidenceBadgeClass(strength?: string): string {
+  if (strength === "strong") return "badge badge-success";
+  if (strength === "moderate") return "badge badge-real";
+  if (strength === "weak" || strength === "missing" || strength === "inferred") return "badge badge-warning";
+  return "badge badge-unknown";
+}
+
+function evidenceRefLabel(ref: RecommendationEvidenceReference): string {
+  const anchor = ref.reference_id ?? ref.provenance?.source_ref_id ?? ref.provenance?.provenance_ref;
+  return [
+    prettyKey(ref.basis),
+    ref.label ?? null,
+    anchor ? `ref ${anchor}` : null,
+  ].filter(Boolean).join(" · ");
+}
+
+function RecommendationGoalModeSelector({
+  goalModes,
+  loading,
+  selectedGoalMode,
+  onSelectGoalMode,
+}: {
+  goalModes: RecommendationGoalModeProfilePayload[];
+  loading: boolean;
+  selectedGoalMode: RecommendationGoalMode;
+  onSelectGoalMode: (goalMode: RecommendationGoalMode) => void;
+}) {
+  const selected = goalModes.find((goal) => goal.goal_mode === selectedGoalMode);
+  return (
+    <div className="recommendation-control-grid">
+      <label>
+        Goal mode
+        <select
+          aria-label="Recommendation goal mode"
+          disabled={loading || !goalModes.length}
+          value={selectedGoalMode}
+          onChange={(event) => {
+            if (isRecommendationGoalMode(event.target.value)) {
+              onSelectGoalMode(event.target.value);
+            }
+          }}
+        >
+          {(goalModes.length ? goalModes : [{
+            goal_mode: DEFAULT_RECOMMENDATION_GOAL_MODE,
+            label: "Maximize entry-level access",
+            description: "Favor markets and employers with stronger early-career access signals.",
+            prioritization_summary: "",
+            weighted_components: [],
+            penalty_components: [],
+            missing_data_behavior: "",
+            warnings: [],
+          }]).map((goal) => (
+            <option key={goal.goal_mode} value={goal.goal_mode}>
+              {goal.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="recommendation-profile-card">
+        <div className="metadata-row">
+          <span className="badge">{selected?.label ?? prettyKey(selectedGoalMode)}</span>
+          {selected?.warnings?.map((warning) => (
+            <span className="badge badge-warning" key={warning}>{warning}</span>
+          ))}
+        </div>
+        <p className="meta-copy">{selected?.description ?? "Goal mode metadata is loading."}</p>
+        {selected?.prioritization_summary ? (
+          <p className="meta-copy">{selected.prioritization_summary}</p>
+        ) : null}
+        {selected?.weighted_components?.length ? (
+          <div className="component-chip-grid" aria-label="Goal mode weighted components">
+            {selected.weighted_components.slice(0, 6).map((component) => (
+              <span className={component.is_proxy ? "badge badge-warning" : "badge"} key={component.component}>
+                {prettyKey(component.component)} · {Math.round(component.weight * 100)}%
+                {component.is_proxy ? " · proxy" : ""}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {selected?.missing_data_behavior ? (
+          <p className="meta-copy">{selected.missing_data_behavior}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function WeightedComponentList({ components }: { components: WeightedScoreComponent[] }) {
+  if (!components.length) {
+    return <EmptyState title="No components" body="No score components were returned in this section." />;
+  }
+  return (
+    <div className="component-list">
+      {components.map((component) => (
+        <div className="component-row" key={`${component.component}-${component.weighted_value}-${component.is_proxy}`}>
+          <div>
+            <strong>{prettyKey(component.component)}</strong>
+            <small>
+              value {formatValue(component.value)} · weight {Math.round(component.weight * 100)}% · contribution{" "}
+              {formatValue(component.weighted_value)}
+            </small>
+          </div>
+          <div className="metadata-row">
+            {component.is_proxy ? <span className="badge badge-warning">Proxy</span> : null}
+            {component.inferred ? <span className="badge badge-warning">Inferred</span> : null}
+            <span className="badge badge-unknown">{evidenceBasisText(component.evidence_basis)}</span>
+          </div>
+          {component.warning ? <p className="meta-copy">{component.warning}</p> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MissingComponentList({ components }: { components: MissingScoreComponent[] }) {
+  if (!components.length) return null;
+  return (
+    <div className="warning-list" aria-label="Missing recommendation score components">
+      {components.map((component) => (
+        <div className="warning-item" key={component.component}>
+          <div className="warning-header">
+            <span className="warning-code">Missing component</span>
+            <span className="badge badge-warning">{prettyKey(component.component)}</span>
+          </div>
+          <p>{component.unavailable_behavior}</p>
+          {component.warning ? <small>{component.warning}</small> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PenaltyList({ penalties }: { penalties: AppliedRankingPenalty[] }) {
+  if (!penalties.length) return null;
+  return (
+    <div className="warning-list" aria-label="Recommendation ranking penalties">
+      {penalties.map((penalty) => (
+        <div className="warning-item" key={`${penalty.component}-${penalty.penalty_value}`}>
+          <div className="warning-header">
+            <span className="warning-code">Penalty</span>
+            <span className="badge badge-warning">{prettyKey(penalty.component)}</span>
+            <span className="badge badge-unknown">-{formatValue(penalty.penalty_value)}</span>
+          </div>
+          <p>{penalty.explanation}</p>
+          {penalty.is_proxy || penalty.inferred ? (
+            <small>{penalty.is_proxy ? "Proxy" : ""}{penalty.is_proxy && penalty.inferred ? " · " : ""}{penalty.inferred ? "Inferred" : ""}</small>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ClaimList({
+  title,
+  items,
+}: {
+  title: string;
+  items: Array<RecommendationReason | RecommendationWeakness>;
+}) {
+  if (!items.length) return null;
+  return (
+    <div className="claim-list">
+      <strong>{title}</strong>
+      {items.map((item) => (
+        <div className="claim-row" key={`${item.label}-${item.evidence_strength}`}>
+          <div className="metadata-row">
+            <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
+            <span className={isHeuristicEvidence(item.evidence_basis, item.support) ? "badge badge-warning" : "badge"}>
+              {item.support === "inferred" ? "Inferred" : "Direct"}
+            </span>
+            <span className="badge badge-unknown">{evidenceBasisText(item.evidence_basis)}</span>
+          </div>
+          <strong>{item.label}</strong>
+          {item.detail ? <p className="meta-copy">{item.detail}</p> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TradeoffList({ tradeoffs }: { tradeoffs: RecommendationTradeoff[] }) {
+  if (!tradeoffs.length) {
+    return <EmptyState title="No tradeoffs returned" body="The ranking did not generate tradeoffs for this item." />;
+  }
+  return (
+    <div className="claim-list">
+      {tradeoffs.map((tradeoff) => (
+        <div className="claim-row" key={`${tradeoff.tradeoff_category}-${tradeoff.label}`}>
+          <div className="metadata-row">
+            <span className="badge badge-warning">{prettyKey(tradeoff.tradeoff_category)}</span>
+            <span className={evidenceBadgeClass(tradeoff.evidence_strength)}>{prettyKey(tradeoff.evidence_strength)}</span>
+            {isHeuristicEvidence(tradeoff.evidence_basis, tradeoff.support) ? (
+              <span className="badge badge-warning">Inferred</span>
+            ) : null}
+          </div>
+          <strong>{tradeoff.label}</strong>
+          <p className="meta-copy">Upside: {tradeoff.positive_side}</p>
+          <p className="meta-copy">Downside: {tradeoff.negative_side}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ManualVerificationList({ items }: { items: RecommendationManualVerificationItem[] }) {
+  if (!items.length) {
+    return <EmptyState title="No manual checks returned" body="No manual verification items were attached." />;
+  }
+  return (
+    <div className="claim-list">
+      {items.map((item) => (
+        <div className="claim-row" key={`${item.verification_category}-${item.label}`}>
+          <div className="metadata-row">
+            <span className="badge badge-warning">{prettyKey(item.verification_category)}</span>
+            <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
+          </div>
+          <strong>{item.label}</strong>
+          <p className="meta-copy">{item.question}</p>
+          {item.rationale ? <small>{item.rationale}</small> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EvidenceReferencePanel({ refs }: { refs: RecommendationEvidenceReference[] }) {
+  if (!refs.length) {
+    return <EmptyState title="No evidence refs" body="No evidence references were attached to this section." />;
+  }
+  return (
+    <div className="component-list">
+      {refs.slice(0, 12).map((ref, index) => (
+        <div className="component-row" key={`${ref.basis}-${ref.reference_id ?? index}`}>
+          <div className="metadata-row">
+            <span className={evidenceBadgeClass(ref.strength)}>{prettyKey(ref.strength)}</span>
+            <span className="badge badge-unknown">{prettyKey(ref.basis)}</span>
+          </div>
+          <strong>{evidenceRefLabel(ref)}</strong>
+          {ref.confidence ? (
+            <small>
+              Confidence: {formatValue(ref.confidence.confidence_status ?? ref.confidence.confidence_level)}
+              {typeof ref.confidence.confidence_score === "number" ? ` · ${formatValue(ref.confidence.confidence_score)}` : ""}
+            </small>
+          ) : null}
+          {ref.freshness ? (
+            <small>
+              Freshness: {formatValue(ref.freshness.freshness_status)} · sources {formatValue(ref.freshness.source_count)}
+            </small>
+          ) : null}
+          {ref.provenance ? (
+            <small>
+              Provenance: {formatValue(ref.provenance.source_ref_id ?? ref.provenance.provenance_ref)}
+            </small>
+          ) : null}
+          {ref.note ? <p className="meta-copy">{ref.note}</p> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RecommendationCard({ item }: { item: RecommendationRankingItem }) {
+  const explanation = item.explanation;
+  return (
+    <article className="recommendation-card">
+      <div className="recommendation-card-header">
+        <span className="rank-number">{item.rank}</span>
+        <div>
+          <div className="metadata-row">
+            <span className="badge">{prettyKey(item.target.target_type)}</span>
+            <span className="badge badge-unknown">{prettyKey(item.goal_mode)}</span>
+          </div>
+          <h3>{recommendationTargetLabel(item.target)}</h3>
+          <small>{item.target.target_id}</small>
+        </div>
+        <div className="recommendation-score-pair">
+          <ScoreCard compact label="Final score" value={item.final_score} />
+          <ScoreCard compact label="Normalized" value={item.normalized_score} />
+        </div>
+      </div>
+
+      <div className="metadata-row">
+        {typeof item.confidence_contribution === "number" ? (
+          <span className="badge">Confidence contribution {formatValue(item.confidence_contribution)}</span>
+        ) : null}
+        {typeof item.freshness_contribution === "number" ? (
+          <span className="badge">Freshness contribution {formatValue(item.freshness_contribution)}</span>
+        ) : null}
+        {typeof item.coverage_contribution === "number" ? (
+          <span className="badge">Coverage contribution {formatValue(item.coverage_contribution)}</span>
+        ) : null}
+      </div>
+
+      {item.warnings.length ? (
+        <div className="warning-list">
+          {item.warnings.map((warning) => (
+            <div className="warning-item" key={warning}>
+              <div className="warning-header">
+                <span className="warning-code">Recommendation warning</span>
+              </div>
+              <p>{warning}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <details className="recommendation-details" open>
+        <summary>Why this fits</summary>
+        <ClaimList title="Fit reasons" items={explanation.fit_reasons} />
+        <ClaimList title="Data strengths" items={explanation.data_strengths} />
+      </details>
+
+      <details className="recommendation-details" open>
+        <summary>Score components and penalties</summary>
+        <WeightedComponentList components={item.score_components_used.slice(0, 8)} />
+        {item.score_components_proxy.length ? (
+          <>
+            <h3>Proxy or inferred components</h3>
+            <WeightedComponentList components={item.score_components_proxy} />
+          </>
+        ) : null}
+        <MissingComponentList components={item.score_components_missing} />
+        <PenaltyList penalties={item.penalties_applied} />
+      </details>
+
+      <details className="recommendation-details" open>
+        <summary>Tradeoffs</summary>
+        <TradeoffList tradeoffs={explanation.tradeoffs} />
+      </details>
+
+      <details className="recommendation-details">
+        <summary>Weak evidence and manual verification</summary>
+        <ClaimList title="Weaknesses" items={explanation.weaknesses} />
+        <ManualVerificationList items={explanation.manual_verification} />
+      </details>
+
+      <details className="recommendation-details">
+        <summary>Evidence references</summary>
+        <div className="metadata-row">
+          {explanation.confidence_summary ? (
+            <span className="badge">Confidence: {formatValue(explanation.confidence_summary.confidence_status ?? explanation.confidence_summary.confidence_level)}</span>
+          ) : null}
+          {explanation.freshness_summary ? (
+            <span className="badge">Freshness: {formatValue(explanation.freshness_summary.freshness_status)}</span>
+          ) : null}
+          {explanation.provenance_refs.length ? (
+            <span className="badge">Provenance refs: {explanation.provenance_refs.length}</span>
+          ) : null}
+          {explanation.coverage_warnings.length ? (
+            <span className="badge badge-warning">Coverage warnings: {explanation.coverage_warnings.length}</span>
+          ) : null}
+        </div>
+        <EvidenceReferencePanel refs={explanation.evidence_refs} />
+      </details>
+    </article>
+  );
+}
+
+function RecommendationRankingSection({
+  title,
+  items,
+  emptyTitle,
+  emptyBody,
+}: {
+  title: string;
+  items: RecommendationRankingItem[];
+  emptyTitle: string;
+  emptyBody: string;
+}) {
+  return (
+    <ShellCard title={title} eyebrow="Deterministic ranking">
+      {items.length ? (
+        <div className="recommendation-card-list">
+          {items.map((item) => (
+            <RecommendationCard item={item} key={`${item.target.target_type}:${item.target.target_id}`} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState title={emptyTitle} body={emptyBody} />
+      )}
+    </ShellCard>
+  );
+}
+
+function StrategyRegionTargetList({
+  title,
+  items,
+}: {
+  title: string;
+  items: StrategyRegionTarget[];
+}) {
+  return (
+    <div className="strategy-section">
+      <h3>{title}</h3>
+      {items.length ? (
+        <div className="stack-list">
+          {items.map((item) => (
+            <div className="stack-row" key={`${item.target_role}-${item.target.target_id}`}>
+              <div className="metadata-row">
+                <span className="badge">{prettyKey(item.target_role)}</span>
+                <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
+                {isHeuristicEvidence(item.evidence_basis, item.support) ? (
+                  <span className="badge badge-warning">Heuristic / inferred</span>
+                ) : null}
+              </div>
+              <strong>{recommendationTargetLabel(item.target)}</strong>
+              <small>Source rank {item.source_rank} · score {formatValue(item.final_score)}</small>
+              <p className="meta-copy">{item.rationale}</p>
+              {item.tradeoff_categories.length ? (
+                <div className="chip-row">
+                  {item.tradeoff_categories.map((category) => (
+                    <span className="badge badge-warning" key={category}>{prettyKey(category)}</span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title={`No ${title.toLocaleLowerCase()}`} body="The strategy plan did not include items for this section." />
+      )}
+    </div>
+  );
+}
+
+function StrategyTargetList({
+  title,
+  items,
+}: {
+  title: string;
+  items: Array<StrategyCompanyTarget | StrategyCompanyCategoryTarget | StrategyRoleFamilyTarget>;
+}) {
+  return (
+    <div className="strategy-section">
+      <h3>{title}</h3>
+      {items.length ? (
+        <div className="stack-list">
+          {items.map((item) => (
+            <div className="stack-row" key={`${item.target.target_type}:${item.target.target_id}`}>
+              <div className="metadata-row">
+                <span className="badge">{prettyKey(item.target.target_type)}</span>
+                <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
+                {isHeuristicEvidence(item.evidence_basis, item.support) ? (
+                  <span className="badge badge-warning">Heuristic / inferred</span>
+                ) : null}
+              </div>
+              <strong>{recommendationTargetLabel(item.target)}</strong>
+              {"final_score" in item ? <small>Score {formatValue(item.final_score)}</small> : null}
+              <p className="meta-copy">{item.rationale}</p>
+              {item.target.related_target_ids?.length ? (
+                <small>Related targets: {item.target.related_target_ids.join(", ")}</small>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title={`No ${title.toLocaleLowerCase()}`} body="No grounded items were returned for this section." />
+      )}
+    </div>
+  );
+}
+
+function TimingGuidanceList({ items }: { items: StrategyTimingGuidance[] }) {
+  if (!items.length) {
+    return <EmptyState title="No timing guidance" body="No conservative timing guidance was returned." />;
+  }
+  return (
+    <div className="stack-list">
+      {items.map((item) => (
+        <div className="stack-row" key={`${item.timing_category}-${item.label}`}>
+          <div className="metadata-row">
+            <span className="badge">{prettyKey(item.timing_category)}</span>
+            <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
+            {isHeuristicEvidence(item.evidence_basis, item.support) ? (
+              <span className="badge badge-warning">Heuristic / inferred</span>
+            ) : null}
+          </div>
+          <strong>{item.label}</strong>
+          <p className="meta-copy">{item.guidance}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StrategyWatchlist({ items }: { items: StrategyWatchlistItem[] }) {
+  if (!items.length) {
+    return <EmptyState title="No watchlist items" body="No watchlist targets were returned for this strategy." />;
+  }
+  return (
+    <div className="stack-list">
+      {items.map((item) => (
+        <div className="stack-row" key={`${item.watchlist_category}-${item.target.target_id}`}>
+          <div className="metadata-row">
+            <span className="badge badge-warning">{prettyKey(item.watchlist_category)}</span>
+            <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
+            {item.revisit_after_refresh ? <span className="badge badge-warning">Revisit after refresh</span> : null}
+          </div>
+          <strong>{recommendationTargetLabel(item.target)}</strong>
+          <p className="meta-copy">{item.reason}</p>
+          <p className="meta-copy">Upside: {item.upside}</p>
+          <p className="meta-copy">Verify: {item.what_to_verify}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StrategyWarnings({ warnings }: { warnings: StrategyEvidenceWarning[] }) {
+  if (!warnings.length) {
+    return <EmptyState title="No strategy evidence warnings" body="The strategy plan did not return evidence warnings." />;
+  }
+  return (
+    <div className="warning-list">
+      {warnings.map((warning) => (
+        <div className="warning-item" key={`${warning.warning_category}-${warning.label}`}>
+          <div className="warning-header">
+            <span className="warning-code">{prettyKey(warning.warning_category)}</span>
+            <span className={evidenceBadgeClass(warning.evidence_strength)}>{prettyKey(warning.evidence_strength)}</span>
+            {isHeuristicEvidence(warning.evidence_basis, warning.support) ? (
+              <span className="badge badge-warning">Heuristic / inferred</span>
+            ) : null}
+          </div>
+          <p>{warning.label}</p>
+          {warning.detail ? <small>{warning.detail}</small> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MarketStrategyView({ strategy }: { strategy: RecommendationStrategyPayload["market_strategy_plan"] }) {
+  return (
+    <ShellCard title="Market strategy plan" eyebrow="Structured plan from ranked outputs">
+      <div className="metadata-row">
+        <span className="badge">{prettyKey(strategy.goal_mode)}</span>
+        <span className="badge badge-unknown">{strategy.strategy_version}</span>
+        <span className="badge">Sources: {strategy.source_recommendations.length}</span>
+      </div>
+      <div className="strategy-grid">
+        <StrategyRegionTargetList title="Primary regions" items={strategy.primary_region_targets} />
+        <StrategyRegionTargetList title="Secondary regions" items={strategy.secondary_region_targets} />
+        <StrategyRegionTargetList title="Fallback regions" items={strategy.fallback_region_targets} />
+        <div className="strategy-section">
+          <h3>Watchlist</h3>
+          <StrategyWatchlist items={strategy.watchlist_items} />
+        </div>
+        <StrategyTargetList title="Company targets" items={strategy.company_targets} />
+        <StrategyTargetList title="Company categories" items={strategy.company_category_targets} />
+        <StrategyTargetList title="Role-family guidance" items={strategy.role_family_targets} />
+        <div className="strategy-section">
+          <h3>Timing guidance</h3>
+          <TimingGuidanceList items={strategy.timing_guidance} />
+        </div>
+      </div>
+      <div className="split-grid">
+        <div className="strategy-section">
+          <h3>Manual verification checklist</h3>
+          <div className="stack-list">
+            {strategy.manual_verification_checklist.items.map((entry) => (
+              <div className="stack-row" key={`${entry.item.verification_category}-${entry.item.label}`}>
+                <ManualVerificationList items={[entry.item]} />
+                <small>Source recommendations: {entry.source_recommendation_ids.join(", ")}</small>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="strategy-section">
+          <h3>Evidence warnings</h3>
+          <StrategyWarnings warnings={strategy.evidence_warnings} />
+        </div>
+      </div>
+    </ShellCard>
+  );
+}
+
+function RecommendationsView({
+  goalModesState,
+  strategyState,
+  selectedGoalMode,
+  onSelectGoalMode,
+}: {
+  goalModesState: LoadState<RecommendationGoalModesPayload>;
+  strategyState: LoadState<RecommendationStrategyPayload>;
+  selectedGoalMode: RecommendationGoalMode;
+  onSelectGoalMode: (goalMode: RecommendationGoalMode) => void;
+}) {
+  const strategy = strategyState.envelope?.data;
+  const goalModes = goalModesState.envelope?.data?.goal_modes ?? strategy?.available_goal_modes ?? [];
+  const companyWarnings = strategy?.warnings.filter((warning) => warning.toLocaleLowerCase().includes("company")) ?? [];
+
+  return (
+    <div className="view-grid">
+      <ShellCard
+        title="Recommendation decision support"
+        eyebrow="Layer 14 structured recommendations"
+        action={<StateBadge envelope={strategyState.envelope} loading={strategyState.loading} error={strategyState.error} />}
+      >
+        <p className="lead-copy">
+          Select a goal mode to load ranked recommendations and a structured market strategy
+          from backend-owned evidence, confidence, freshness, provenance, coverage, and
+          explicitly labeled heuristic inference.
+        </p>
+        {goalModesState.loading ? <LoadingBlock label="Loading goal modes" /> : null}
+        {goalModesState.error ? <ErrorState message={goalModesState.error} /> : null}
+        <RecommendationGoalModeSelector
+          goalModes={goalModes}
+          loading={goalModesState.loading}
+          selectedGoalMode={selectedGoalMode}
+          onSelectGoalMode={onSelectGoalMode}
+        />
+        {strategyState.loading ? <LoadingBlock label="Loading recommendation strategy" /> : null}
+        {strategyState.error ? <ErrorState message={strategyState.error} /> : null}
+        {strategy?.warnings.length ? (
+          <div className="warning-list">
+            {strategy.warnings.map((warning) => (
+              <div className="warning-item" key={warning}>
+                <div className="warning-header">
+                  <span className="warning-code">API warning</span>
+                </div>
+                <p>{warning}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <MetadataPanel envelope={strategyState.envelope} />
+      </ShellCard>
+
+      {strategy ? (
+        <>
+          <RecommendationRankingSection
+            title="Ranked region recommendations"
+            items={strategy.ranked_region_recommendations}
+            emptyTitle="No region recommendations"
+            emptyBody="The backend returned no ranked region recommendations."
+          />
+          <RecommendationRankingSection
+            title="Ranked company recommendations"
+            items={strategy.ranked_company_recommendations}
+            emptyTitle="No company recommendations"
+            emptyBody={companyWarnings[0] ?? "The backend returned no company recommendations and did not invent company targets."}
+          />
+          <MarketStrategyView strategy={strategy.market_strategy_plan} />
+        </>
+      ) : !strategyState.loading ? (
+        <EmptyState
+          title="No recommendation strategy loaded"
+          body="Goal modes may still be loading or the backend recommendation endpoint returned an error."
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function App() {
   const auth = useFrontendAuth();
   const [route, setRoute] = useState<RouteState>(() => readCurrentRoute());
@@ -3784,6 +4490,10 @@ function App() {
   const [companyGeographyStates, setCompanyGeographyStates] = useState<Record<string, LoadState<CompanyGeographyResponse>>>({});
   const [comparisonState, setComparisonState] = useState<LoadState<ComparisonDetail>>(emptyLoadState);
   const [discoveryState, setDiscoveryState] = useState<LoadState<PersonalizedResult>>(emptyLoadState);
+  const [recommendationGoalModesState, setRecommendationGoalModesState] =
+    useState<LoadState<RecommendationGoalModesPayload>>(emptyLoadState);
+  const [recommendationStrategyState, setRecommendationStrategyState] =
+    useState<LoadState<RecommendationStrategyPayload>>(emptyLoadState);
   const [currentUserState, setCurrentUserState] = useState<LoadState<CurrentUserProfile>>(emptyLoadState);
   const [preferenceState, setPreferenceState] = useState<LoadState<UserPreferenceProfile>>(emptyLoadState);
   const [preferenceDraft, setPreferenceDraft] = useState<PreferenceDraft>(() => emptyPreferenceDraft());
@@ -3798,6 +4508,7 @@ function App() {
   const [deactivateConfirmed, setDeactivateConfirmed] = useState(false);
   const [accountDeactivated, setAccountDeactivated] = useState(false);
   const discoveryRequestKey = useRef(0);
+  const recommendationRequestKey = useRef(0);
 
   const regionList = useMemo(() => regions.envelope?.data?.regions ?? [], [regions.envelope]);
   const hasLoadedRegionList = Boolean(regions.envelope?.data?.regions);
@@ -3812,6 +4523,9 @@ function App() {
   const comparisonRegionBKnown = isKnownRegion(comparisonB, regionList, hasLoadedRegionList);
   const discoveryFilters = route.discovery;
   const discoveryUrl = personalizedDiscoveryUrl(discoveryFilters);
+  const selectedRecommendationGoalMode = isRecommendationGoalMode(route.recommendationGoalMode)
+    ? route.recommendationGoalMode
+    : DEFAULT_RECOMMENDATION_GOAL_MODE;
   const protectedOptions = useMemo<ProtectedRequestOptions>(
     () => ({ getAccessToken: auth.getAccessTokenSilently }),
     [auth.getAccessTokenSilently],
@@ -4073,6 +4787,61 @@ function App() {
   }, [isProductRoute]);
 
   useEffect(() => {
+    if (route.page !== "recommendations") return;
+    if (recommendationGoalModesState.loading || recommendationGoalModesState.envelope) return;
+
+    async function loadRecommendationGoalModes() {
+      setRecommendationGoalModesState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await getRecommendationGoalModes();
+        setRecommendationGoalModesState({ loading: false, envelope, error: null });
+      } catch (error) {
+        setRecommendationGoalModesState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to load recommendation goal modes",
+        });
+      }
+    }
+
+    void loadRecommendationGoalModes();
+  }, [recommendationGoalModesState.envelope, recommendationGoalModesState.loading, route.page]);
+
+  useEffect(() => {
+    if (route.page !== "recommendations") {
+      recommendationRequestKey.current += 1;
+      setRecommendationStrategyState(emptyLoadState());
+      return;
+    }
+
+    const requestKey = ++recommendationRequestKey.current;
+    async function loadRecommendationStrategy() {
+      setRecommendationStrategyState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await getRecommendationStrategy({
+          goal_mode: selectedRecommendationGoalMode,
+          include_company_recommendations: true,
+          region_limit: 10,
+          company_limit: 10,
+        });
+        if (requestKey === recommendationRequestKey.current) {
+          setRecommendationStrategyState({ loading: false, envelope, error: null });
+        }
+      } catch (error) {
+        if (requestKey === recommendationRequestKey.current) {
+          setRecommendationStrategyState({
+            loading: false,
+            envelope: null,
+            error: error instanceof Error ? error.message : "Failed to load recommendation strategy",
+          });
+        }
+      }
+    }
+
+    void loadRecommendationStrategy();
+  }, [route.page, selectedRecommendationGoalMode]);
+
+  useEffect(() => {
     if (!isProductRoute) return;
     if (
       !selectedRegionId
@@ -4328,6 +5097,10 @@ function App() {
 
   function updateDiscoveryFilters(nextFilters: DiscoveryFilters) {
     navigateTo(personalizedDiscoveryUrl(nextFilters));
+  }
+
+  function updateRecommendationGoalMode(goalMode: RecommendationGoalMode) {
+    navigateTo(recommendationsUrl(goalMode));
   }
 
   function toggleFilterValue(value: string, values: string[]): string[] {
@@ -4965,6 +5738,15 @@ function App() {
             roleTargets={discoveryFilters.roleTargets}
             selectedRegions={discoveryFilters.selectedRegions}
             sourceStates={regionSourceStates}
+          />
+        ) : null}
+
+        {route.page === "recommendations" ? (
+          <RecommendationsView
+            goalModesState={recommendationGoalModesState}
+            onSelectGoalMode={updateRecommendationGoalMode}
+            selectedGoalMode={selectedRecommendationGoalMode}
+            strategyState={recommendationStrategyState}
           />
         ) : null}
 

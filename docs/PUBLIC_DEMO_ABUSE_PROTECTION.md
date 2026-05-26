@@ -111,6 +111,9 @@ The public demo allowlist remains:
 - public market/search/source GET routes used by `/markets`
 - `POST /discover/personalized`, explicitly allowed because it is
   request-scoped and non-persistent
+- `GET /recommendations/goal-modes`
+- `POST /recommendations/strategy`, explicitly allowed because it is
+  request-scoped, non-persistent, and uses existing app-owned outputs
 - `OPTIONS *` for CORS preflight
 
 Admin routes, user persistence, overrides, repairs, canonical writes, refresh

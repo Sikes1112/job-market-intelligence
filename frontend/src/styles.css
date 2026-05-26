@@ -1565,6 +1565,102 @@ legend {
   width: 2rem;
 }
 
+.recommendation-control-grid,
+.recommendation-card-header {
+  align-items: start;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(220px, 0.55fr) minmax(0, 1fr);
+}
+
+.recommendation-profile-card,
+.recommendation-card,
+.strategy-section,
+.claim-row,
+.component-row {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem;
+}
+
+.recommendation-card {
+  background: rgb(255 253 247 / 78%);
+}
+
+.recommendation-card-list,
+.component-list,
+.claim-list,
+.strategy-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.strategy-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin-top: 1rem;
+}
+
+.recommendation-card-header {
+  grid-template-columns: auto minmax(0, 1fr) minmax(240px, 0.7fr);
+}
+
+.recommendation-card-header h3 {
+  color: var(--green);
+  font-size: 1.15rem;
+  margin: 0.25rem 0 0.1rem;
+  text-transform: none;
+}
+
+.recommendation-card-header small,
+.component-row small,
+.claim-row small,
+.strategy-section small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.recommendation-score-pair {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.recommendation-details {
+  background: rgb(248 245 234 / 66%);
+  border: 1px solid rgb(29 40 34 / 8%);
+  border-radius: 0.85rem;
+  padding: 0.8rem;
+}
+
+.recommendation-details summary {
+  color: var(--green);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 950;
+}
+
+.recommendation-details > :not(summary) {
+  margin-top: 0.75rem;
+}
+
+.component-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.component-row {
+  background: rgb(255 253 247 / 70%);
+}
+
+.claim-list > strong,
+.strategy-section h3 {
+  color: var(--green);
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -1598,7 +1694,8 @@ legend {
   .comparison-table-head,
   .comparison-table-row,
   .visual-bar-row,
-  .comparison-visual-row {
+  .comparison-visual-row,
+  .recommendation-card-header {
     grid-template-columns: 1fr;
   }
 
@@ -1638,8 +1735,10 @@ legend {
   .source-compare-grid,
   .tradeoff-grid,
   .preview-row,
-  .discovery-form,
-  .quick-score-row,
+    .discovery-form,
+    .recommendation-control-grid,
+    .recommendation-score-pair,
+    .quick-score-row,
   .rank-row,
   .rank-row-company {
     grid-template-columns: 1fr;
