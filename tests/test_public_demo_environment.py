@@ -157,6 +157,11 @@ def test_public_demo_allows_frontend_public_read_and_metadata_routes(
         "/companies/comp_a/sources",
         "/compare?region_a=greater_boston&region_b=greater_sf",
         "/recommendations/goal-modes",
+        "/monetization/plans",
+        "/monetization/features",
+        "/monetization/reports",
+        "/monetization/access-preview?feature_key=basic_recommendation_preview",
+        "/billing/status",
     ]
 
     for path in get_paths:
@@ -210,6 +215,27 @@ def test_public_demo_denies_admin_and_override_mutations_before_auth(
         _assert_public_demo_denied(response)
     assert session.query(AdminOverride).count() == 0
     assert session.query(AdminRepairAction).count() == 0
+
+
+def test_public_demo_denies_billing_checkout_and_webhook_writes(
+    session: Session,
+) -> None:
+    client = _api_client_for_env(session, "public_demo")
+
+    _assert_public_demo_denied(
+        client.post(
+            "/billing/checkout-session",
+            headers=_auth_headers(),
+            json={"plan_key": "individual_monthly"},
+        )
+    )
+    _assert_public_demo_denied(
+        client.post(
+            "/billing/stripe/webhook",
+            content=b"{}",
+            headers={"stripe-signature": "t=1,v1=bad"},
+        )
+    )
 
 
 def test_public_demo_denies_protected_gets_that_can_create_user_state(

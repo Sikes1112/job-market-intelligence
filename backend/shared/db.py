@@ -125,11 +125,13 @@ def import_all_models() -> None:
     # Base.metadata. Keep this list in sync as canonical entities are added.
     from backend.admin import models as _admin  # noqa: F401
     from backend.alerts import models as _alerts  # noqa: F401
+    from backend.billing import models as _billing  # noqa: F401
     from backend.companies import models as _companies  # noqa: F401
     from backend.entry_level import models as _entry_level  # noqa: F401
     from backend.geography import models as _geography  # noqa: F401
     from backend.hiring import models as _hiring  # noqa: F401
     from backend.ingestion import models as _ingestion  # noqa: F401
+    from backend.monetization import models as _monetization  # noqa: F401
     from backend.orchestration.jobs import models as _jobs  # noqa: F401
     from backend.outputs import models as _outputs  # noqa: F401
     from backend.presence import models as _presence  # noqa: F401

@@ -1,0 +1,137 @@
+"""Layer 15 monetization foundation.
+
+The package defines product segments, feature boundaries, plans, entitlements,
+account state, usage limits, and report catalog metadata. It deliberately does
+not implement checkout, webhooks, billing portals, payment-provider authority,
+or recommendation ranking.
+"""
+
+from .accounts import (
+    ENTITLING_PLAN_STATUSES,
+    MonetizationAccountSnapshot,
+    MonetizationAccountType,
+    PlanAssignmentSnapshot,
+    PlanAssignmentSource,
+    PlanStatus,
+    assignment_is_effective,
+    plan_status_grants_entitlements,
+)
+from .enforcement import (
+    evaluate_account_access,
+    increment_feature_usage,
+    usage_counter_snapshot,
+)
+from .entitlements import AccessDecision, UsageContext, decide_access
+from .features import (
+    FEATURES,
+    FeatureBoundary,
+    FeatureDefinition,
+    MonetizationFeatureKey,
+    feature_definition,
+    feature_definitions,
+    free_feature_keys,
+    paid_feature_keys,
+)
+from .plans import (
+    PLANS,
+    BillingInterval,
+    BuyerKind,
+    PlanDefinition,
+    PlanKey,
+    PriceConfiguration,
+    UsageLimit,
+    UsageLimitUnit,
+    plan_definition,
+    plan_definitions,
+    usage_limit_for_feature,
+)
+from .reports import (
+    REPORTS,
+    ReportProductDefinition,
+    ReportProductKey,
+    report_product_definition,
+    report_product_definitions,
+)
+from .resolver import (
+    EntitlementSnapshot,
+    build_entitlement_snapshot,
+    get_effective_plan_key,
+    resolve_account_entitlements,
+)
+from .segments import (
+    AUDIENCE_SEGMENTS,
+    BUYER_SEGMENTS,
+    AudienceSegmentKey,
+    BuyerSegmentKey,
+    SegmentCategory,
+    SegmentDefinition,
+    audience_segment_definitions,
+    buyer_segment_definitions,
+    segment_definition,
+)
+from .usage import (
+    UsageCounterSnapshot,
+    UsagePeriod,
+    UsageResetPolicy,
+    remaining_usage,
+    usage_period_for_limit,
+)
+
+__all__ = [
+    "AUDIENCE_SEGMENTS",
+    "BUYER_SEGMENTS",
+    "ENTITLING_PLAN_STATUSES",
+    "FEATURES",
+    "PLANS",
+    "REPORTS",
+    "AccessDecision",
+    "AudienceSegmentKey",
+    "BillingInterval",
+    "BuyerKind",
+    "BuyerSegmentKey",
+    "EntitlementSnapshot",
+    "FeatureBoundary",
+    "FeatureDefinition",
+    "MonetizationFeatureKey",
+    "MonetizationAccountSnapshot",
+    "MonetizationAccountType",
+    "PlanAssignmentSnapshot",
+    "PlanAssignmentSource",
+    "PlanDefinition",
+    "PlanKey",
+    "PlanStatus",
+    "PriceConfiguration",
+    "ReportProductDefinition",
+    "ReportProductKey",
+    "SegmentCategory",
+    "SegmentDefinition",
+    "UsageCounterSnapshot",
+    "UsageContext",
+    "UsageLimit",
+    "UsageLimitUnit",
+    "UsagePeriod",
+    "UsageResetPolicy",
+    "assignment_is_effective",
+    "audience_segment_definitions",
+    "build_entitlement_snapshot",
+    "buyer_segment_definitions",
+    "decide_access",
+    "evaluate_account_access",
+    "feature_definition",
+    "feature_definitions",
+    "free_feature_keys",
+    "get_effective_plan_key",
+    "increment_feature_usage",
+    "paid_feature_keys",
+    "plan_definition",
+    "plan_definitions",
+    "plan_status_grants_entitlements",
+    "remaining_usage",
+    "report_product_definition",
+    "report_product_definitions",
+    "resolve_account_entitlements",
+    "segment_definition",
+    "usage_limit_for_feature",
+    "usage_counter_snapshot",
+    "usage_period_for_limit",
+]

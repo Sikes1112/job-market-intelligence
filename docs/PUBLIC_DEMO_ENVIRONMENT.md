@@ -37,10 +37,21 @@ In `APP_ENV=public_demo`, the backend exposes only these HTTP surfaces:
 - `GET /companies/{company_id}/sources`
 - `GET /compare`
 - `POST /discover/personalized`
+- `GET /recommendations/goal-modes`
+- `POST /recommendations/strategy`
+- `GET /monetization/plans`
+- `GET /monetization/features`
+- `GET /monetization/reports`
+- `GET /monetization/access-preview`
+- `GET /billing/status`
 - `OPTIONS *` for preflight handling
 
 `POST /discover/personalized` is allowed because it is request-scoped and does
 not persist preferences, snapshots, output metadata, scores, or canonical facts.
+The recommendation strategy and monetization catalog routes are read-only or
+request-scoped; they expose public product metadata and do not create billing
+or user state.
+Billing status is read-only and reports checkout disabled in public demo.
 
 ## public_demo Denials
 
@@ -71,6 +82,10 @@ Denied mutation surfaces:
   `POST /me/explanations/{entity_type}`,
   `POST /me/recommendation-snapshots`,
   `DELETE /me`
+- Billing writes:
+  `POST /billing/checkout-session`,
+  `POST /billing/portal-session`,
+  `POST /billing/stripe/webhook`
 - Canonical write-shaped requests such as `POST`, `PUT`, `PATCH`, or `DELETE`
   under public market paths.
 

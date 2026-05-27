@@ -20,12 +20,15 @@ from backend.api.envelope import (
     error_envelope,
     lightweight_success_envelope,
 )
+from backend.api.monetization_access import require_current_user_feature
 from backend.explanations.payloads import (
     ExplanationEntityType,
     ExplanationRequest,
 )
 from backend.explanations.service import ExplanationService
 from backend.geography.repository import RegionRepository
+from backend.monetization.features import MonetizationFeatureKey
+from backend.monetization.repository import MonetizationRepository
 from backend.personalization.exceptions import MissingRegionForPersonalization
 from backend.personalization.payloads import ScoringPreviewRequest
 from backend.personalization.service import PersonalizationService
@@ -165,6 +168,13 @@ def create_saved_market_artifact(
     current: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
+    access = require_current_user_feature(
+        repository=MonetizationRepository(session),
+        current=current,
+        feature_key=MonetizationFeatureKey.SAVED_WATCHLISTS,
+    )
+    if isinstance(access, JSONResponse):
+        return access
     row = _service(session).save_market_artifact(current.user.user_id, artifact)
     return lightweight_success_envelope(data=_saved_artifact_data(row))
 
@@ -226,6 +236,13 @@ def list_alerts(
     current: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
+    access = require_current_user_feature(
+        repository=MonetizationRepository(session),
+        current=current,
+        feature_key=MonetizationFeatureKey.ALERTS,
+    )
+    if isinstance(access, JSONResponse):
+        return access
     rows = _alert_service(session).list_user_alerts(
         current.user.user_id,
         include_dismissed=include_dismissed,
@@ -242,6 +259,13 @@ def mark_alert_read(
     current: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
+    access = require_current_user_feature(
+        repository=MonetizationRepository(session),
+        current=current,
+        feature_key=MonetizationFeatureKey.ALERTS,
+    )
+    if isinstance(access, JSONResponse):
+        return access
     try:
         alert = _alert_service(session).mark_read(
             user_id=current.user.user_id,
@@ -261,6 +285,13 @@ def dismiss_alert(
     current: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
+    access = require_current_user_feature(
+        repository=MonetizationRepository(session),
+        current=current,
+        feature_key=MonetizationFeatureKey.ALERTS,
+    )
+    if isinstance(access, JSONResponse):
+        return access
     try:
         alert = _alert_service(session).dismiss(
             user_id=current.user.user_id,

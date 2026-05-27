@@ -71,7 +71,7 @@ Render backend settings:
 - Service type: Python Web Service from the repo root
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn backend.api.app:app --host 0.0.0.0 --port $PORT`
-- Environment: `APP_ENV=prod`, `DATABASE_URL`, `LOG_LEVEL=INFO`, `SERVICE_NAME=jmi-backend`, `CORS_ALLOWED_ORIGINS`, `RATE_LIMIT_ENABLED`, `SECURITY_HEADERS_ENABLED`, `MAX_REQUEST_BODY_BYTES`, `RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`, `AUTH0_ISSUER`, `AUTH0_AUDIENCE`, `AUTH0_JWKS_URL` if the issuer default is not sufficient, `AUTH0_JWKS_CACHE_SECONDS`, `PYTHON_VERSION=3.11.11`
+- Environment: `APP_ENV=prod`, `DATABASE_URL`, `LOG_LEVEL=INFO`, `SERVICE_NAME=jmi-backend`, `CORS_ALLOWED_ORIGINS`, `RATE_LIMIT_ENABLED`, `SECURITY_HEADERS_ENABLED`, `MAX_REQUEST_BODY_BYTES`, `RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`, `AUTH0_ISSUER`, `AUTH0_AUDIENCE`, `AUTH0_JWKS_URL` if the issuer default is not sufficient, `AUTH0_JWKS_CACHE_SECONDS`, optional Stripe adapter settings (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, `STRIPE_BILLING_PORTAL_RETURN_URL`, `STRIPE_PRICE_*` mappings), `PYTHON_VERSION=3.11.11`
 - `APP_ENV=prod` rejects SQLite database URLs and requires rate limiting and security headers to remain enabled.
 - Final CORS lockdown: `CORS_ALLOWED_ORIGINS=https://<vercel-app>.vercel.app`
 - Do not use wildcard CORS. For local dev, leave `CORS_ALLOWED_ORIGINS` empty and use the Vite proxy, or set exact local origins explicitly.

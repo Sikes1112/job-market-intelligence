@@ -84,6 +84,18 @@ class Settings(BaseSettings):
     auth0_audience: str = Field(default="")
     auth0_jwks_url: str = Field(default="")
     auth0_jwks_cache_seconds: int = Field(default=300)
+    stripe_secret_key: str = Field(default="", repr=False)
+    stripe_webhook_secret: str = Field(default="", repr=False)
+    stripe_success_url: str = Field(default="")
+    stripe_cancel_url: str = Field(default="")
+    stripe_billing_portal_return_url: str = Field(default="")
+    stripe_price_individual_monthly: str = Field(default="")
+    stripe_price_individual_annual: str = Field(default="")
+    stripe_price_student_annual: str = Field(default="")
+    stripe_price_career_center_license: str = Field(default="")
+    stripe_price_bootcamp_license: str = Field(default="")
+    stripe_price_university_license: str = Field(default="")
+    stripe_price_workforce_board_license: str = Field(default="")
 
     @field_validator("app_env", mode="before")
     @classmethod
@@ -134,6 +146,44 @@ class Settings(BaseSettings):
         if not isinstance(value, str):
             raise ValueError("Auth0 settings must be strings")
         return value.strip()
+
+    @field_validator(
+        "stripe_secret_key",
+        "stripe_webhook_secret",
+        "stripe_price_individual_monthly",
+        "stripe_price_individual_annual",
+        "stripe_price_student_annual",
+        "stripe_price_career_center_license",
+        "stripe_price_bootcamp_license",
+        "stripe_price_university_license",
+        "stripe_price_workforce_board_license",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_stripe_string(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise ValueError("Stripe settings must be strings")
+        return value.strip()
+
+    @field_validator(
+        "stripe_success_url",
+        "stripe_cancel_url",
+        "stripe_billing_portal_return_url",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_stripe_url(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise ValueError("Stripe URL settings must be strings")
+        normalized = value.strip()
+        if not normalized:
+            return ""
+        _validate_external_redirect_url(normalized)
+        return normalized
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
@@ -317,6 +367,16 @@ def _normalize_cors_origin(origin: str) -> str:
         raise ValueError("CORS_ALLOWED_ORIGINS entries must be exact origins")
 
     return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), "", "", ""))
+
+
+def _validate_external_redirect_url(url: str) -> None:
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Stripe redirect URL settings must be HTTP(S) URLs")
+    if parsed.username or parsed.password:
+        raise ValueError("Stripe redirect URL settings must not include credentials")
+    if parsed.fragment:
+        raise ValueError("Stripe redirect URL settings must not include fragments")
 
 
 def redact_database_url(database_url: str) -> str:

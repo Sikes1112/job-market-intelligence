@@ -319,6 +319,172 @@ Layer 12 expands the initial planned target set through the canonical priority
 market registry documented below. Target candidates are not automatically
 approved, published, or refresh-enabled.
 
+### Layer 15 Addendum: Monetization Account State
+
+Layer 15 Batch 3 adds provider-agnostic monetization account state. These
+tables are product-access state, not canonical market truth and not
+recommendation state. They must not store private recommendation inputs,
+preference details, copied market outputs, checkout sessions, payment-provider
+objects, or Stripe-specific identifiers.
+
+### Entity: `monetization_accounts`
+
+Purpose:
+Stores the internal account/license profile that future billing adapters may
+update indirectly through plan assignments.
+
+Required fields:
+- `monetization_account_id`
+- `user_id`
+- `account_type`
+- `assigned_seats_count`
+- `safe_metadata`
+- `created_at`
+- `updated_at`
+
+Allowed `account_type` values:
+- `individual`
+- `student`
+- `institutional`
+- `public_demo`
+- `internal_test`
+
+Required constraints:
+- nullable foreign key `user_id` -> `users.user_id`
+- unique (`user_id`)
+
+### Entity: `monetization_plan_assignments`
+
+Purpose:
+Stores effective internal plan assignments for an account. Payment providers
+may later update these rows through an adapter, but product authority remains
+the internal plan and entitlement catalog.
+
+Required fields:
+- `plan_assignment_id`
+- `monetization_account_id`
+- `plan_key`
+- `plan_status`
+- `assignment_source`
+- `effective_at`
+- `expires_at`
+- `seat_limit`
+- `safe_metadata`
+- `created_at`
+- `updated_at`
+
+Allowed `plan_status` values are `active`, `trialing`, `paused`, `expired`,
+`canceled`, `test`, and `manual`.
+
+Allowed `assignment_source` values are `manual`, `admin_seed`, `test_fixture`,
+and `future_billing_provider`.
+
+Required constraints:
+- foreign key `monetization_account_id` ->
+  `monetization_accounts.monetization_account_id`
+
+### Entity: `monetization_usage_counters`
+
+Purpose:
+Stores internal usage counters for limited monetization features such as
+limited comparisons, personalized discovery, full report generation, exports,
+alerts, and watchlists. These are not billing-provider metering events.
+
+Required fields:
+- `usage_counter_id`
+- `monetization_account_id`
+- `feature_key`
+- `period_start`
+- `period_end`
+- `used_count`
+- `limit_count`
+- `reset_policy`
+- `last_incremented_at`
+- `created_at`
+- `updated_at`
+
+Allowed `reset_policy` values are `monthly` and `static`.
+
+Required constraints:
+- foreign key `monetization_account_id` ->
+  `monetization_accounts.monetization_account_id`
+- unique (`monetization_account_id`, `feature_key`, `period_start`,
+  `period_end`)
+
+Usage counters increment only after centrally allowed, successful workflow
+requests. Blocked entitlement decisions, validation errors, and missing-object
+responses must not increment counters. Counters must not store private
+recommendation inputs or billing-provider metering identifiers.
+
+### Layer 15 Batch 5 Addendum: Billing Provider References
+
+Billing provider references are isolated from monetization product logic.
+Stripe IDs belong only in billing reference tables. The entitlement resolver
+does not read these tables; it reads internal plan assignments produced by the
+billing service after verified provider events.
+
+### Entity: `billing_customer_refs`
+
+Required fields:
+- `billing_customer_ref_id`
+- `monetization_account_id`
+- `provider`
+- `provider_customer_id`
+- `safe_metadata`
+- `created_at`
+- `updated_at`
+
+Required constraints:
+- foreign key `monetization_account_id` ->
+  `monetization_accounts.monetization_account_id`
+- unique (`provider`, `provider_customer_id`)
+- unique (`provider`, `monetization_account_id`)
+
+### Entity: `billing_subscription_refs`
+
+Required fields:
+- `billing_subscription_ref_id`
+- `monetization_account_id`
+- `provider`
+- `provider_subscription_id`
+- `provider_customer_id`
+- `provider_price_id`
+- `plan_key`
+- `provider_status`
+- `current_period_end`
+- `canceled_at`
+- `active_plan_assignment_id`
+- `safe_metadata`
+- `created_at`
+- `updated_at`
+
+Required constraints:
+- foreign key `monetization_account_id` ->
+  `monetization_accounts.monetization_account_id`
+- nullable foreign key `active_plan_assignment_id` ->
+  `monetization_plan_assignments.plan_assignment_id`
+- unique (`provider`, `provider_subscription_id`)
+
+### Entity: `billing_webhook_events`
+
+Required fields:
+- `billing_webhook_event_id`
+- `provider`
+- `provider_event_id`
+- `event_type`
+- `processing_status`
+- `received_at`
+- `processed_at`
+- `error_code`
+- `safe_metadata`
+
+Required constraints:
+- unique (`provider`, `provider_event_id`)
+
+Billing webhook events are idempotency/audit records. They must not store raw
+recommendation data, private preferences, Stripe secrets, or full payment
+payloads.
+
 ### Layer 12 Addendum: Market Coverage Foundation
 
 Layer 12 adds backend/domain coverage metadata only. It does not add a table,

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   ApiError,
+  createBillingCheckoutSession,
+  createBillingPortalSession,
   createSavedMarketArtifact,
   deleteSavedMarketArtifact,
   dismissAlert,
@@ -9,6 +11,14 @@ import {
   explainCompany,
   explainRegion,
   getCurrentUser,
+  getBillingStatus,
+  getMonetizationAccessPreview,
+  getMonetizationFeatures,
+  getMonetizationPlans,
+  getMonetizationReports,
+  getMyMonetization,
+  getMyMonetizationEntitlements,
+  getMyMonetizationUsage,
   getRecommendationGoalModes,
   getRecommendationStrategy,
   getRegions,
@@ -83,6 +93,40 @@ describe("frontend API client auth boundary", () => {
     }
   });
 
+  test("monetization catalog and access-preview calls stay public", async () => {
+    const fetchMock = mockFetch({
+      plans: [],
+      features: [],
+      reports: [],
+      decision: { allowed: false },
+    });
+
+    await getMonetizationPlans();
+    await getMonetizationFeatures();
+    await getMonetizationReports();
+    await getBillingStatus();
+    await getMonetizationAccessPreview({
+      plan_key: "free",
+      feature_key: "full_report_generation",
+      used: 2,
+    });
+    await getMonetizationAccessPreview({
+      feature_key: "saved_watchlists",
+    });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/monetization/plans",
+      "/monetization/features",
+      "/monetization/reports",
+      "/billing/status",
+      "/monetization/access-preview?feature_key=full_report_generation&plan_key=free&used=2",
+      "/monetization/access-preview?feature_key=saved_watchlists",
+    ]);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
+    }
+  });
+
   test("protected /me requests attach bearer tokens", async () => {
     const fetchMock = mockFetch({
       user: { user_id: "user_a", status: "active" },
@@ -97,6 +141,60 @@ describe("frontend API client auth boundary", () => {
       "Authorization": "Bearer access-token",
       "Content-Type": "application/json",
     });
+  });
+
+  test("protected monetization account requests attach bearer tokens", async () => {
+    const fetchMock = mockFetch({
+      account: { account_type: "individual", account_status: "active" },
+      entitlements: { plan_key: "free" },
+      usage: [],
+    });
+    const auth = { getAccessToken: async () => "monetization-token" };
+
+    await getMyMonetization(auth);
+    await getMyMonetizationEntitlements(auth);
+    await getMyMonetizationUsage(auth);
+    await getMonetizationAccessPreview({ feature_key: "alerts" }, auth);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/monetization/me",
+      "/monetization/entitlements",
+      "/monetization/usage",
+      "/monetization/access-preview?feature_key=alerts",
+    ]);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toMatchObject({
+        "Authorization": "Bearer monetization-token",
+        "Content-Type": "application/json",
+      });
+    }
+  });
+
+  test("protected billing requests attach bearer tokens", async () => {
+    const fetchMock = mockFetch({
+      checkout_session_id: "cs_test",
+      checkout_url: "https://checkout.stripe.test/session/cs_test",
+      portal_session_id: "bps_test",
+      portal_url: "https://billing.stripe.test/session/bps_test",
+    });
+    const auth = { getAccessToken: async () => "billing-token" };
+
+    await createBillingCheckoutSession("individual_monthly", auth);
+    await createBillingPortalSession(auth);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/billing/checkout-session",
+      "/billing/portal-session",
+    ]);
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      plan_key: "individual_monthly",
+    });
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toMatchObject({
+        "Authorization": "Bearer billing-token",
+        "Content-Type": "application/json",
+      });
+    }
   });
 
   test("protected /me requests fail before fetch without a token", async () => {

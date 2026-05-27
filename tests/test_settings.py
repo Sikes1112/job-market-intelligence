@@ -16,6 +16,18 @@ SETTINGS_ENV_VARS = (
     "MAX_REQUEST_BODY_BYTES",
     "RATE_LIMIT_REQUESTS",
     "RATE_LIMIT_WINDOW_SECONDS",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_SUCCESS_URL",
+    "STRIPE_CANCEL_URL",
+    "STRIPE_BILLING_PORTAL_RETURN_URL",
+    "STRIPE_PRICE_INDIVIDUAL_MONTHLY",
+    "STRIPE_PRICE_INDIVIDUAL_ANNUAL",
+    "STRIPE_PRICE_STUDENT_ANNUAL",
+    "STRIPE_PRICE_CAREER_CENTER_LICENSE",
+    "STRIPE_PRICE_BOOTCAMP_LICENSE",
+    "STRIPE_PRICE_UNIVERSITY_LICENSE",
+    "STRIPE_PRICE_WORKFORCE_BOARD_LICENSE",
 )
 
 
@@ -41,6 +53,31 @@ def test_default_settings_are_local_and_demo_safe() -> None:
     assert settings.max_request_body_bytes == 1_048_576
     assert settings.rate_limit_requests == 120
     assert settings.rate_limit_window_seconds == 60
+    assert settings.stripe_secret_key == ""
+    assert settings.stripe_webhook_secret == ""
+    assert settings.stripe_price_individual_monthly == ""
+
+
+def test_stripe_settings_are_optional_and_trimmed() -> None:
+    settings = Settings(
+        stripe_secret_key=" sk_test_example ",
+        stripe_webhook_secret=" whsec_example ",
+        stripe_success_url=" https://app.example/billing/success?session_id={CHECKOUT_SESSION_ID} ",
+        stripe_cancel_url=" https://app.example/markets/plans ",
+        stripe_billing_portal_return_url=" https://app.example/account ",
+        stripe_price_individual_monthly=" price_monthly ",
+        _env_file=None,
+    )
+
+    assert settings.stripe_secret_key == "sk_test_example"
+    assert settings.stripe_webhook_secret == "whsec_example"
+    assert settings.stripe_success_url.startswith("https://app.example")
+    assert settings.stripe_price_individual_monthly == "price_monthly"
+
+
+def test_stripe_redirect_urls_must_be_safe_http_urls() -> None:
+    with pytest.raises(ValidationError, match="Stripe redirect URL"):
+        Settings(stripe_success_url="javascript:alert(1)", _env_file=None)
 
 
 def test_explicit_test_settings_can_use_local_database_default() -> None:

@@ -1,6 +1,9 @@
 import type {
   ApiEnvelope,
   AccountDeactivationResult,
+  BillingCheckoutSessionPayload,
+  BillingPortalSessionPayload,
+  BillingStatusPayload,
   CompanyDetail,
   CompanyGeographyResponse,
   CompanySearchResponse,
@@ -9,6 +12,18 @@ import type {
   ExplanationRequest,
   ExplanationResult,
   FreshnessStatus,
+  MonetizationAccessPreviewPayload,
+  MonetizationFeatureKey,
+  MonetizationFeaturesPayload,
+  MonetizationEntitlementsPayload,
+  MonetizationMePayload,
+  MonetizationPlanKey,
+  MonetizationPlansPayload,
+  MonetizationReportExportPayload,
+  MonetizationReportGenerationPayload,
+  MonetizationReportProductKey,
+  MonetizationReportsPayload,
+  MonetizationUsagePayload,
   PersonalizedRecommendationSnapshot,
   PersonalizedRecommendationSnapshotInput,
   PersonalizedRequest,
@@ -210,8 +225,13 @@ async function protectedRequest<T>(
   auth: ProtectedRequestOptions,
   options?: RequestInit,
 ): Promise<ApiEnvelope<T>> {
-  if (path !== "/me" && !path.startsWith("/me/")) {
-    throw new ApiError("Protected requests are restricted to /me routes");
+  if (
+    path !== "/me"
+    && !path.startsWith("/me/")
+    && !path.startsWith("/monetization/")
+    && !path.startsWith("/billing/")
+  ) {
+    throw new ApiError("Protected requests are restricted to /me, /monetization, and /billing routes");
   }
 
   const token = await auth.getAccessToken();
@@ -307,6 +327,86 @@ export function getRecommendationStrategy(body: RecommendationStrategyRequest) {
   return request<RecommendationStrategyPayload>("/recommendations/strategy", {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+export function getMonetizationPlans() {
+  return request<MonetizationPlansPayload>("/monetization/plans");
+}
+
+export function getMonetizationFeatures() {
+  return request<MonetizationFeaturesPayload>("/monetization/features");
+}
+
+export function getMonetizationReports() {
+  return request<MonetizationReportsPayload>("/monetization/reports");
+}
+
+export function getBillingStatus() {
+  return request<BillingStatusPayload>("/billing/status");
+}
+
+export function getMonetizationAccessPreview(filters: {
+  plan_key?: MonetizationPlanKey;
+  feature_key: MonetizationFeatureKey;
+  used?: number;
+}, auth?: ProtectedRequestOptions) {
+  const params = new URLSearchParams({ feature_key: filters.feature_key });
+  appendOptionalParam(params, "plan_key", filters.plan_key);
+  appendOptionalParam(params, "used", filters.used);
+  const path = `/monetization/access-preview?${params.toString()}`;
+  return auth
+    ? protectedRequest<MonetizationAccessPreviewPayload>(path, auth)
+    : request<MonetizationAccessPreviewPayload>(path);
+}
+
+export function getMyMonetization(auth: ProtectedRequestOptions) {
+  return protectedRequest<MonetizationMePayload>("/monetization/me", auth);
+}
+
+export function getMyMonetizationEntitlements(auth: ProtectedRequestOptions) {
+  return protectedRequest<MonetizationEntitlementsPayload>("/monetization/entitlements", auth);
+}
+
+export function getMyMonetizationUsage(auth: ProtectedRequestOptions) {
+  return protectedRequest<MonetizationUsagePayload>("/monetization/usage", auth);
+}
+
+export function generateMonetizationReport(
+  reportKey: MonetizationReportProductKey,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<MonetizationReportGenerationPayload>(
+    `/monetization/reports/${encodeURIComponent(reportKey)}/generate`,
+    auth,
+    { method: "POST" },
+  );
+}
+
+export function exportMonetizationReport(
+  reportKey: MonetizationReportProductKey,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<MonetizationReportExportPayload>(
+    `/monetization/reports/${encodeURIComponent(reportKey)}/export`,
+    auth,
+    { method: "POST" },
+  );
+}
+
+export function createBillingCheckoutSession(
+  planKey: MonetizationPlanKey,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<BillingCheckoutSessionPayload>("/billing/checkout-session", auth, {
+    method: "POST",
+    body: JSON.stringify({ plan_key: planKey }),
+  });
+}
+
+export function createBillingPortalSession(auth: ProtectedRequestOptions) {
+  return protectedRequest<BillingPortalSessionPayload>("/billing/portal-session", auth, {
+    method: "POST",
   });
 }
 

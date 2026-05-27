@@ -30,6 +30,12 @@ REQUIRED_TABLES = {
     "audit_finding_reviews",
     "admin_overrides",
     "admin_repair_actions",
+    "monetization_accounts",
+    "monetization_plan_assignments",
+    "monetization_usage_counters",
+    "billing_customer_refs",
+    "billing_subscription_refs",
+    "billing_webhook_events",
 }
 
 # Every canonical truth/output object must carry these metadata columns
@@ -56,10 +62,22 @@ USER_IDENTITY_TABLES = {
 }
 SYSTEM_EVENT_TABLES = {"alert_events"}
 OPERATOR_WORKFLOW_TABLES = {"region_expansion_workflows"}
+MONETIZATION_TABLES = {
+    "monetization_accounts",
+    "monetization_plan_assignments",
+    "monetization_usage_counters",
+}
+BILLING_TABLES = {
+    "billing_customer_refs",
+    "billing_subscription_refs",
+    "billing_webhook_events",
+}
 MARKET_CANONICAL_METADATA_TABLES = CANONICAL_METADATA_TABLES - USER_IDENTITY_TABLES
 MARKET_CANONICAL_METADATA_TABLES = (
     MARKET_CANONICAL_METADATA_TABLES - SYSTEM_EVENT_TABLES - OPERATOR_WORKFLOW_TABLES
 )
+MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - MONETIZATION_TABLES
+MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - BILLING_TABLES
 
 
 def test_all_required_tables_registered() -> None:
@@ -90,6 +108,113 @@ def test_user_identity_tables_have_timestamps() -> None:
     for table_name in USER_IDENTITY_TABLES:
         cols = {c["name"] for c in inspector.get_columns(table_name)}
         assert {"created_at", "updated_at"}.issubset(cols)
+
+
+def test_monetization_tables_have_safe_account_state_columns() -> None:
+    engine = make_engine("sqlite:///:memory:")
+    create_all(engine)
+    inspector = inspect(engine)
+
+    account_cols = {c["name"] for c in inspector.get_columns("monetization_accounts")}
+    assert {
+        "monetization_account_id",
+        "user_id",
+        "account_type",
+        "assigned_seats_count",
+        "safe_metadata",
+        "created_at",
+        "updated_at",
+    }.issubset(account_cols)
+    assert {"stripe_customer_id", "payment_provider", "recommendation_inputs"}.isdisjoint(
+        account_cols
+    )
+
+    assignment_cols = {
+        c["name"] for c in inspector.get_columns("monetization_plan_assignments")
+    }
+    assert {
+        "plan_assignment_id",
+        "monetization_account_id",
+        "plan_key",
+        "plan_status",
+        "assignment_source",
+        "effective_at",
+        "expires_at",
+        "seat_limit",
+        "safe_metadata",
+        "created_at",
+        "updated_at",
+    }.issubset(assignment_cols)
+    assert {"stripe_subscription_id", "provider_subscription_id"}.isdisjoint(
+        assignment_cols
+    )
+
+    usage_cols = {
+        c["name"] for c in inspector.get_columns("monetization_usage_counters")
+    }
+    assert {
+        "usage_counter_id",
+        "monetization_account_id",
+        "feature_key",
+        "period_start",
+        "period_end",
+        "used_count",
+        "limit_count",
+        "reset_policy",
+        "last_incremented_at",
+        "created_at",
+        "updated_at",
+    }.issubset(usage_cols)
+
+
+def test_billing_tables_isolate_provider_references_from_entitlements() -> None:
+    engine = make_engine("sqlite:///:memory:")
+    create_all(engine)
+    inspector = inspect(engine)
+
+    customer_cols = {c["name"] for c in inspector.get_columns("billing_customer_refs")}
+    assert {
+        "billing_customer_ref_id",
+        "monetization_account_id",
+        "provider",
+        "provider_customer_id",
+        "safe_metadata",
+        "created_at",
+        "updated_at",
+    }.issubset(customer_cols)
+
+    subscription_cols = {
+        c["name"] for c in inspector.get_columns("billing_subscription_refs")
+    }
+    assert {
+        "billing_subscription_ref_id",
+        "monetization_account_id",
+        "provider",
+        "provider_subscription_id",
+        "provider_customer_id",
+        "provider_price_id",
+        "plan_key",
+        "provider_status",
+        "current_period_end",
+        "canceled_at",
+        "active_plan_assignment_id",
+        "safe_metadata",
+        "created_at",
+        "updated_at",
+    }.issubset(subscription_cols)
+
+    webhook_cols = {c["name"] for c in inspector.get_columns("billing_webhook_events")}
+    assert {
+        "billing_webhook_event_id",
+        "provider",
+        "provider_event_id",
+        "event_type",
+        "processing_status",
+        "received_at",
+        "processed_at",
+        "error_code",
+        "safe_metadata",
+    }.issubset(webhook_cols)
 
 
 def test_jobs_table_has_envelope_columns() -> None:
@@ -333,6 +458,11 @@ def test_pair_uniqueness_indexes_exist() -> None:
     )
     assert has_unique_pair("user_alerts", ("user_id", "alert_event_id"))
     assert has_unique_pair("region_expansion_workflows", ("region_key",))
+    assert has_unique_pair("monetization_accounts", ("user_id",))
+    assert has_unique_pair(
+        "monetization_usage_counters",
+        ("monetization_account_id", "feature_key", "period_start", "period_end"),
+    )
 
 
 def test_metadata_registry_has_no_extra_tables() -> None:

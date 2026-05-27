@@ -17,6 +17,242 @@ export type ApiEnvelope<T> = {
 
 export type FreshnessStatus = "fresh" | "stale" | "partial" | "unknown" | "seeded_demo";
 
+export type AudienceSegmentKey =
+  | "students"
+  | "early_career_job_seekers"
+  | "relocation_candidates"
+  | "parents_advisors";
+
+export type BuyerSegmentKey =
+  | "career_centers"
+  | "bootcamps"
+  | "universities"
+  | "workforce_boards";
+
+export type MonetizationFeatureBoundary = "free" | "paid";
+
+export type MonetizationFeatureKey =
+  | "basic_region_exploration"
+  | "public_demo_markets"
+  | "limited_comparisons"
+  | "limited_personalized_discovery"
+  | "basic_recommendation_preview"
+  | "saved_watchlists"
+  | "alerts"
+  | "advanced_recommendation_reports"
+  | "full_market_coverage"
+  | "exportable_strategy_plans"
+  | "deeper_company_geography"
+  | "saved_comparison_history"
+  | "full_report_generation"
+  | "institutional_license_management"
+  | "cohort_guidance_templates"
+  | "privacy_preserving_program_insights";
+
+export type MonetizationFeature = {
+  feature_key: MonetizationFeatureKey;
+  boundary: MonetizationFeatureBoundary;
+  display_name: string;
+  description: string;
+  boundary_rationale: string;
+  trust_constraint: string;
+  exposes_core_recommendation_conclusion: boolean;
+  recommendation_influence: string;
+};
+
+export type MonetizationFeaturesPayload = {
+  features: MonetizationFeature[];
+};
+
+export type MonetizationPlanKey =
+  | "free"
+  | "individual_monthly"
+  | "individual_annual"
+  | "student_annual"
+  | "career_center_license"
+  | "bootcamp_license"
+  | "university_license"
+  | "workforce_board_license";
+
+export type MonetizationBuyerKind = "individual" | "institutional";
+export type MonetizationBillingInterval = "free" | "monthly" | "annual" | "license_term";
+export type MonetizationUsageLimitUnit = "per_month" | "active_items" | "seats";
+
+export type MonetizationUsageLimit = {
+  feature_key: MonetizationFeatureKey;
+  limit: number;
+  unit: MonetizationUsageLimitUnit;
+  description: string;
+};
+
+export type MonetizationPriceConfiguration = {
+  price_config_key: string | null;
+  placeholder_amount_cents: number | null;
+  currency: string;
+  final_price: boolean;
+  note: string;
+};
+
+export type MonetizationPlan = {
+  plan_key: MonetizationPlanKey;
+  display_name: string;
+  buyer_kind: MonetizationBuyerKind;
+  buyer_segment: BuyerSegmentKey | null;
+  billing_interval: MonetizationBillingInterval;
+  intended_audience: AudienceSegmentKey[];
+  included_feature_keys: MonetizationFeatureKey[];
+  usage_limits: MonetizationUsageLimit[];
+  upgrade_plan_keys: MonetizationPlanKey[];
+  price: MonetizationPriceConfiguration;
+};
+
+export type MonetizationPlansPayload = {
+  plans: MonetizationPlan[];
+};
+
+export type MonetizationReportProductKey =
+  | "personalized_market_strategy_report"
+  | "region_comparison_report"
+  | "company_geography_report"
+  | "early_career_opportunity_report";
+
+export type MonetizationReportProduct = {
+  report_key: MonetizationReportProductKey;
+  display_name: string;
+  intended_segments: AudienceSegmentKey[];
+  free_preview_available: boolean;
+  preview_feature_key: MonetizationFeatureKey | null;
+  paid_full_report_required: boolean;
+  paid_full_report_feature_keys: MonetizationFeatureKey[];
+  included_sections: string[];
+  exportable: boolean;
+  export_feature_key: MonetizationFeatureKey | null;
+};
+
+export type MonetizationReportsPayload = {
+  reports: MonetizationReportProduct[];
+};
+
+export type MonetizationAccessDecision = {
+  allowed: boolean;
+  plan_key: MonetizationPlanKey;
+  feature_key: MonetizationFeatureKey;
+  reason: string;
+  upgrade_plan_keys: MonetizationPlanKey[];
+  usage_limit: MonetizationUsageLimit | null;
+  remaining_usage: number | null;
+  account_status?: string | null;
+};
+
+export type MonetizationAccessPreviewPayload = {
+  decision: MonetizationAccessDecision;
+};
+
+export type MonetizationAccountType =
+  | "individual"
+  | "student"
+  | "institutional"
+  | "public_demo"
+  | "internal_test";
+
+export type MonetizationEntitlementSnapshot = {
+  user_id: string | null;
+  monetization_account_id: string | null;
+  account_type: MonetizationAccountType;
+  account_status: string;
+  plan_key: MonetizationPlanKey;
+  included_feature_keys: MonetizationFeatureKey[];
+  usage_limits: MonetizationUsageLimit[];
+  assignment_source: string | null;
+  effective_at: string | null;
+  expires_at: string | null;
+  seat_limit: number | null;
+  assigned_seats_count: number | null;
+  safe_metadata: Record<string, unknown>;
+};
+
+export type MonetizationAccountSummary = {
+  monetization_account_id: string | null;
+  user_id: string | null;
+  account_type: MonetizationAccountType;
+  account_status: string;
+  assigned_seats_count: number | null;
+  seat_limit: number | null;
+  safe_metadata: Record<string, unknown>;
+};
+
+export type MonetizationMePayload = {
+  account: MonetizationAccountSummary;
+  entitlements: MonetizationEntitlementSnapshot;
+};
+
+export type MonetizationEntitlementsPayload = {
+  entitlements: MonetizationEntitlementSnapshot;
+};
+
+export type MonetizationUsageCounter = {
+  usage_counter_id: string | null;
+  monetization_account_id: string | null;
+  feature_key: MonetizationFeatureKey;
+  period_start: string;
+  period_end: string;
+  used_count: number;
+  limit_count: number;
+  reset_policy: "monthly" | "static" | string;
+  last_incremented_at: string | null;
+};
+
+export type MonetizationUsagePayload = {
+  plan_key: MonetizationPlanKey;
+  account_status: string;
+  usage: MonetizationUsageCounter[];
+};
+
+export type MonetizationReportWorkflowPayload = {
+  report_key: MonetizationReportProductKey;
+  workflow: string;
+  generated_at: string;
+  access_decision: MonetizationAccessDecision;
+  sections: Array<{
+    section_key: string;
+    title: string;
+    body: string;
+  }>;
+  note: string;
+};
+
+export type MonetizationReportGenerationPayload = {
+  report: MonetizationReportWorkflowPayload;
+};
+
+export type MonetizationReportExportPayload = {
+  export: MonetizationReportWorkflowPayload;
+};
+
+export type BillingProvider = "stripe";
+
+export type BillingStatusPayload = {
+  provider: BillingProvider | null;
+  checkout_available: boolean;
+  portal_available: boolean;
+  checkout_plan_keys: MonetizationPlanKey[];
+  disabled_reason: string | null;
+};
+
+export type BillingCheckoutSessionPayload = {
+  provider: BillingProvider;
+  checkout_session_id: string;
+  checkout_url: string;
+  plan_key: MonetizationPlanKey;
+  access_granted: false;
+};
+
+export type BillingPortalSessionPayload = {
+  provider: BillingProvider;
+  portal_session_id: string;
+  portal_url: string;
+};
+
 export type DataBasis = "seeded_demo" | "real_imported" | "mixed" | "unknown";
 
 export type FreshnessSourceSummary = {

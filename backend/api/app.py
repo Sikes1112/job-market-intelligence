@@ -8,7 +8,9 @@ from sqlalchemy import Engine, text
 
 from backend.api.admin import router as admin_router
 from backend.api.auth0_middleware import Auth0JWTMiddleware
+from backend.api.billing import router as billing_router
 from backend.api.errors import register_exception_handlers
+from backend.api.monetization import router as monetization_router
 from backend.api.observability import RequestObservabilityMiddleware
 from backend.api.personalized import router as personalized_router
 from backend.api.protection import APIProtectionMiddleware
@@ -63,6 +65,7 @@ def create_app(
     app.state.engine = engine
     app.state.owns_engine = owns_engine
     app.state.session_factory = make_session_factory(engine)
+    app.state.billing_provider = None
 
     @app.get("/health")
     def health() -> dict:
@@ -94,6 +97,8 @@ def create_app(
     app.include_router(read_router)
     app.include_router(personalized_router)
     app.include_router(recommendations_router)
+    app.include_router(monetization_router)
+    app.include_router(billing_router)
     app.include_router(user_router)
     app.include_router(admin_router)
 

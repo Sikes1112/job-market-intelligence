@@ -534,6 +534,313 @@ function recommendationStrategyPayload(goalMode = "maximize_entry_level_access")
   };
 }
 
+function monetizationFeatures() {
+  const freeRationale = "Free users receive useful basic guidance and a visible basic recommendation result.";
+  const paidRationale = "Paid plans add durable workflow value, maintained coverage depth, reports, and exports.";
+  return {
+    features: [
+      {
+        feature_key: "basic_region_exploration",
+        boundary: "free",
+        display_name: "Basic region exploration",
+        description: "Browse core region context.",
+        boundary_rationale: freeRationale,
+        trust_constraint: "Free exploration must remain useful.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "limited_comparisons",
+        boundary: "free",
+        display_name: "Limited comparisons",
+        description: "Compare a small number of regions.",
+        boundary_rationale: freeRationale,
+        trust_constraint: "Comparison limits must not hide the basic recommendation conclusion.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "basic_recommendation_preview",
+        boundary: "free",
+        display_name: "Basic recommendation preview",
+        description: "Show the basic recommendation result.",
+        boundary_rationale: "The core recommendation conclusion is free and visible.",
+        trust_constraint: "The core recommendation conclusion must not become paid-only.",
+        exposes_core_recommendation_conclusion: true,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "saved_watchlists",
+        boundary: "paid",
+        display_name: "Saved watchlists",
+        description: "Persist markets and targets.",
+        boundary_rationale: paidRationale,
+        trust_constraint: "Saving a watchlist must not feed back into ranking.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "alerts",
+        boundary: "paid",
+        display_name: "Alerts",
+        description: "Monitor saved targets.",
+        boundary_rationale: paidRationale,
+        trust_constraint: "Alerts must report data changes without changing ranking.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "full_market_coverage",
+        boundary: "paid",
+        display_name: "Full market coverage",
+        description: "Access the full maintained market catalog.",
+        boundary_rationale: paidRationale,
+        trust_constraint: "Coverage access must not change rankings.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "deeper_company_geography",
+        boundary: "paid",
+        display_name: "Deeper company geography",
+        description: "Explore deeper company-region context.",
+        boundary_rationale: paidRationale,
+        trust_constraint: "Company geography access must not bias recommendations.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "saved_comparison_history",
+        boundary: "paid",
+        display_name: "Saved comparison history",
+        description: "Persist comparison runs.",
+        boundary_rationale: paidRationale,
+        trust_constraint: "Saved history must not become a ranking input.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "full_report_generation",
+        boundary: "paid",
+        display_name: "Full report generation",
+        description: "Generate complete report products.",
+        boundary_rationale: paidRationale,
+        trust_constraint: "Reports must preserve free previews.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "exportable_strategy_plans",
+        boundary: "paid",
+        display_name: "Exportable strategy plans",
+        description: "Export structured market strategy plans.",
+        boundary_rationale: paidRationale,
+        trust_constraint: "Exports must preserve evidence and caveats.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "advanced_recommendation_reports",
+        boundary: "paid",
+        display_name: "Advanced recommendation reports",
+        description: "Package deeper explanations and action planning.",
+        boundary_rationale: paidRationale,
+        trust_constraint: "Reports explain recommendations but do not own ranking.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "institutional_license_management",
+        boundary: "paid",
+        display_name: "Institutional license management",
+        description: "Manage seats and organization access.",
+        boundary_rationale: paidRationale,
+        trust_constraint: "License metadata must not access private recommendation internals.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "cohort_guidance_templates",
+        boundary: "paid",
+        display_name: "Cohort guidance templates",
+        description: "Reusable advisor templates.",
+        boundary_rationale: paidRationale,
+        trust_constraint: "Templates must remain guidance surfaces.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+      {
+        feature_key: "privacy_preserving_program_insights",
+        boundary: "paid",
+        display_name: "Privacy-preserving program insights",
+        description: "Aggregate licensed-program views.",
+        boundary_rationale: paidRationale,
+        trust_constraint: "Program insights must be aggregate.",
+        exposes_core_recommendation_conclusion: false,
+        recommendation_influence: "none",
+      },
+    ],
+  };
+}
+
+function monetizationPlans() {
+  const baseFeatures = [
+    "basic_region_exploration",
+    "limited_comparisons",
+    "basic_recommendation_preview",
+  ];
+  const paidFeatures = [
+    "saved_watchlists",
+    "alerts",
+    "advanced_recommendation_reports",
+    "full_market_coverage",
+    "exportable_strategy_plans",
+    "deeper_company_geography",
+    "saved_comparison_history",
+    "full_report_generation",
+  ];
+  const institutionalFeatures = [
+    "institutional_license_management",
+    "cohort_guidance_templates",
+    "privacy_preserving_program_insights",
+  ];
+  const plan = (
+    plan_key: string,
+    display_name: string,
+    buyer_kind: string,
+    billing_interval: string,
+    intended_audience: string[],
+    included_feature_keys: string[],
+    buyer_segment: string | null = null,
+    placeholder_amount_cents: number | null = null,
+  ) => ({
+    plan_key,
+    display_name,
+    buyer_kind,
+    buyer_segment,
+    billing_interval,
+    intended_audience,
+    included_feature_keys,
+    usage_limits: plan_key === "free"
+      ? [{
+          feature_key: "limited_comparisons",
+          limit: 3,
+          unit: "per_month",
+          description: "Free users can run a small number of comparisons each month.",
+        }]
+      : [{
+          feature_key: "full_report_generation",
+          limit: buyer_kind === "institutional" ? 100 : 3,
+          unit: "per_month",
+          description: "Report generation placeholder limit.",
+        }],
+    upgrade_plan_keys: plan_key === "free" ? ["individual_monthly", "individual_annual", "student_annual"] : [],
+    price: {
+      price_config_key: placeholder_amount_cents === null ? null : `TEST_${plan_key.toUpperCase()}`,
+      placeholder_amount_cents,
+      currency: "USD",
+      final_price: false,
+      note: placeholder_amount_cents === null ? "Configurable quote metadata." : "Placeholder test value.",
+    },
+  });
+  return {
+    plans: [
+      plan("free", "Free", "individual", "free", ["students", "early_career_job_seekers"], baseFeatures, null, 0),
+      plan("individual_monthly", "Individual Monthly", "individual", "monthly", ["early_career_job_seekers"], [...baseFeatures, ...paidFeatures], null, 1900),
+      plan("individual_annual", "Individual Annual", "individual", "annual", ["early_career_job_seekers"], [...baseFeatures, ...paidFeatures], null, 14900),
+      plan("student_annual", "Student Annual", "individual", "annual", ["students"], [...baseFeatures, ...paidFeatures], null, 7900),
+      plan("career_center_license", "Career Center License", "institutional", "license_term", ["students"], [...baseFeatures, ...paidFeatures, ...institutionalFeatures], "career_centers"),
+      plan("bootcamp_license", "Bootcamp License", "institutional", "license_term", ["students", "early_career_job_seekers"], [...baseFeatures, ...paidFeatures, ...institutionalFeatures], "bootcamps"),
+      plan("university_license", "University License", "institutional", "license_term", ["students"], [...baseFeatures, ...paidFeatures, ...institutionalFeatures], "universities"),
+      plan("workforce_board_license", "Workforce Board License", "institutional", "license_term", ["early_career_job_seekers"], [...baseFeatures, ...paidFeatures, ...institutionalFeatures], "workforce_boards"),
+    ],
+  };
+}
+
+function monetizationReports() {
+  return {
+    reports: [
+      {
+        report_key: "personalized_market_strategy_report",
+        display_name: "Personalized Market Strategy Report",
+        intended_segments: ["students", "early_career_job_seekers"],
+        free_preview_available: true,
+        preview_feature_key: "basic_recommendation_preview",
+        paid_full_report_required: true,
+        paid_full_report_feature_keys: ["advanced_recommendation_reports", "full_report_generation"],
+        included_sections: ["recommendation conclusion", "primary market targets"],
+        exportable: true,
+        export_feature_key: "exportable_strategy_plans",
+      },
+      {
+        report_key: "region_comparison_report",
+        display_name: "Region Comparison Report",
+        intended_segments: ["relocation_candidates"],
+        free_preview_available: true,
+        preview_feature_key: "limited_comparisons",
+        paid_full_report_required: true,
+        paid_full_report_feature_keys: ["saved_comparison_history", "full_report_generation"],
+        included_sections: ["comparison summary", "decision checklist"],
+        exportable: true,
+        export_feature_key: "exportable_strategy_plans",
+      },
+      {
+        report_key: "company_geography_report",
+        display_name: "Company Geography Report",
+        intended_segments: ["early_career_job_seekers"],
+        free_preview_available: true,
+        preview_feature_key: "basic_region_exploration",
+        paid_full_report_required: true,
+        paid_full_report_feature_keys: ["deeper_company_geography", "full_report_generation"],
+        included_sections: ["company-region footprint", "presence evidence summary"],
+        exportable: true,
+        export_feature_key: "exportable_strategy_plans",
+      },
+      {
+        report_key: "early_career_opportunity_report",
+        display_name: "Early-Career Opportunity Report",
+        intended_segments: ["students", "parents_advisors"],
+        free_preview_available: true,
+        preview_feature_key: "basic_recommendation_preview",
+        paid_full_report_required: true,
+        paid_full_report_feature_keys: ["advanced_recommendation_reports", "full_report_generation"],
+        included_sections: ["early-career fit summary", "next-step plan"],
+        exportable: true,
+        export_feature_key: "exportable_strategy_plans",
+      },
+    ],
+  };
+}
+
+function monetizationAccessPreview(value: string) {
+  const [, query = ""] = value.split("?");
+  const params = new URLSearchParams(query);
+  const featureKey = params.get("feature_key") ?? "basic_recommendation_preview";
+  const used = params.has("used") ? Number(params.get("used")) : null;
+  const allowed = featureKey === "basic_recommendation_preview"
+    || featureKey === "limited_comparisons" && (used ?? 0) < 3;
+  return {
+    decision: {
+      allowed,
+      plan_key: "free",
+      feature_key: featureKey,
+      reason: allowed
+        ? `${featureKey} is included in free.`
+        : `${featureKey} is not included in free.`,
+      upgrade_plan_keys: allowed ? [] : ["individual_monthly", "individual_annual"],
+      usage_limit: featureKey === "limited_comparisons"
+        ? {
+            feature_key: "limited_comparisons",
+            limit: 3,
+            unit: "per_month",
+            description: "Free users can run a small number of comparisons each month.",
+          }
+        : null,
+      remaining_usage: featureKey === "limited_comparisons" ? Math.max(3 - (used ?? 0), 0) : null,
+    },
+  };
+}
+
 function responsePayloadFor(input: RequestInfo | URL): MockPayload {
   const value = typeof input === "string" ? input : input.toString();
 
@@ -817,6 +1124,23 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
   if (value === "/recommendations/strategy") {
     return { data: recommendationStrategyPayload() };
   }
+  if (value === "/monetization/plans") return { data: monetizationPlans() };
+  if (value === "/monetization/features") return { data: monetizationFeatures() };
+  if (value === "/monetization/reports") return { data: monetizationReports() };
+  if (value === "/billing/status") {
+    return {
+      data: {
+        provider: null,
+        checkout_available: false,
+        portal_available: false,
+        checkout_plan_keys: [],
+        disabled_reason: "Stripe secret key is not configured.",
+      },
+    };
+  }
+  if (value.startsWith("/monetization/access-preview")) {
+    return { data: monetizationAccessPreview(value) };
+  }
   return { data: null };
 }
 
@@ -948,6 +1272,42 @@ describe("public demo routes", () => {
     ).toBeGreaterThan(0);
     expect(screen.queryByRole("textbox", { name: /prompt/i })).toBeNull();
     expect(screen.queryByText(/AI summary/i)).toBeNull();
+    expect(screen.getByText("Generate a full strategy report with Individual.")).toBeTruthy();
+    expect(screen.getByText(/The ranked recommendation stays visible here/i)).toBeTruthy();
+  });
+
+  test("plans page renders plan catalog reports and trust-safe access previews", async () => {
+    stubPublicFetch();
+    renderAt("/markets/plans");
+
+    expect(await screen.findByRole("heading", { name: "Plans and access model" })).toBeTruthy();
+    for (const planName of [
+      "Free",
+      "Individual Monthly",
+      "Individual Annual",
+      "Student Annual",
+      "Career Center License",
+      "Bootcamp License",
+      "University License",
+      "Workforce Board License",
+    ]) {
+      expect(screen.getByRole("heading", { name: planName })).toBeTruthy();
+    }
+
+    expect(screen.getByText(/Free users still receive useful market exploration/i)).toBeTruthy();
+    expect(screen.getAllByText("Basic recommendation result remains visible").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Personalized Market Strategy Report" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Region Comparison Report" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Company Geography Report" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Early-Career Opportunity Report" })).toBeTruthy();
+    expect(await screen.findAllByText(/View plans for Individual Monthly/i)).toBeTruthy();
+
+    const pageText = document.body.textContent ?? "";
+    expect(pageText).not.toMatch(/Buy now/i);
+    expect(pageText).not.toMatch(/payment success/i);
+    expect(pageText).not.toMatch(/Unlock the truth/i);
+    expect(pageText).not.toMatch(/Pay to see your best market/i);
+    expect(pageText).not.toMatch(/recommendation is hidden/i);
   });
 
   test("recommendations selector reloads strategy for selected goal mode", async () => {

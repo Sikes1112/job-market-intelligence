@@ -104,6 +104,23 @@ Protected-route Auth0 settings:
   `${AUTH0_ISSUER}.well-known/jwks.json`
 - `AUTH0_JWKS_CACHE_SECONDS`, default `300`
 
+Stripe billing adapter settings:
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_SUCCESS_URL`
+- `STRIPE_CANCEL_URL`
+- `STRIPE_BILLING_PORTAL_RETURN_URL`
+- `STRIPE_PRICE_INDIVIDUAL_MONTHLY`
+- `STRIPE_PRICE_INDIVIDUAL_ANNUAL`
+- `STRIPE_PRICE_STUDENT_ANNUAL`
+- optional institutional `STRIPE_PRICE_*` values, currently not used for
+  self-serve checkout
+
+Missing Stripe settings disable checkout and portal behavior without failing
+app startup. These values are backend-only secrets/references and must not be
+exposed to the frontend.
+
 Frontend Auth0 SPA settings:
 
 - `VITE_AUTH0_DOMAIN`
@@ -114,9 +131,74 @@ Frontend Auth0 SPA settings:
 
 When frontend Auth0 settings are absent, the Vite app runs in local/demo mode:
 public market exploration remains available and account controls are disabled.
-The frontend attaches Bearer tokens only to protected `/me` requests.
+The frontend attaches Bearer tokens only to protected `/me`, `/monetization`,
+and `/billing` account/workflow requests.
 
 Public market exploration routes remain unauthenticated.
+
+## Monetization Endpoints
+
+Layer 15 exposes the internal monetization model and a narrow billing adapter.
+Public catalog endpoints are read-only:
+
+- `GET /monetization/plans`
+- `GET /monetization/features`
+- `GET /monetization/reports`
+- `GET /monetization/access-preview`
+
+`/monetization/access-preview` accepts a `feature_key`, optional explicit
+`plan_key`, and optional `used` count for static plan previews. If no
+`plan_key` is supplied and a current user can be resolved, it uses the
+account-aware entitlement resolver. The endpoint does not create checkout
+sessions or mutate recommendation ranking.
+
+Protected account entitlement endpoints:
+
+- `GET /monetization/me`
+- `GET /monetization/entitlements`
+- `GET /monetization/usage`
+- `POST /monetization/reports/{report_key}/generate`
+- `POST /monetization/reports/{report_key}/export`
+
+These routes return internal account type, effective plan key, account status,
+included feature keys, usage limits, safe license context, and usage counters.
+They do not expose payment-provider identifiers, billing-provider state,
+private recommendation inputs, or recommendation internals.
+
+Report generate/export routes return structured JSON placeholders only. They
+do not generate PDFs, start downloads, create checkout sessions, or call a
+billing provider. Blocked monetization responses use HTTP 403 and include
+`data.decision` with `allowed`, `feature_key`, `plan_key`, `reason`,
+`upgrade_plan_keys`, and usage fields when relevant.
+
+Batch 4 workflow enforcement points:
+
+- `POST /me/saved-market-artifacts` requires `saved_watchlists`
+- `GET /me/alerts` and alert read/dismiss routes require `alerts`
+- authenticated `GET /compare` increments `limited_comparisons` only after a
+  successful comparison response
+- authenticated `POST /discover/personalized` increments
+  `limited_personalized_discovery` only after a successful discovery response
+- report generation increments `full_report_generation` only after a
+  successful JSON report-stub response
+- report export increments `exportable_strategy_plans` only after a successful
+  JSON export-stub response
+
+Billing adapter endpoints:
+
+- `GET /billing/status`
+- `POST /billing/checkout-session`
+- `POST /billing/portal-session`
+- `POST /billing/stripe/webhook`
+
+`GET /billing/status` is public and exposes only availability plus
+checkout-eligible internal plan keys. It never returns Stripe secrets or price
+IDs. Checkout and portal routes require the current-user auth dependency.
+Checkout validates the internal `plan_key`, rejects `free`, rejects unknown or
+unmapped plans, and returns a backend-created provider URL. It does not update
+entitlements. The Stripe webhook verifies the raw request body and
+`Stripe-Signature` header before mapping provider lifecycle events into
+internal monetization plan assignments.
 
 ## Public Demo Runtime Posture
 

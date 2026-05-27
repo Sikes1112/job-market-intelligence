@@ -28,6 +28,11 @@ PUBLIC_DEMO_EXACT_ALLOWLIST = frozenset(
         ("POST", "/discover/personalized"),
         ("GET", "/recommendations/goal-modes"),
         ("POST", "/recommendations/strategy"),
+        ("GET", "/monetization/plans"),
+        ("GET", "/monetization/features"),
+        ("GET", "/monetization/reports"),
+        ("GET", "/monetization/access-preview"),
+        ("GET", "/billing/status"),
     }
 )
 

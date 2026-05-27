@@ -9,7 +9,7 @@ mutates, or personalizes anything.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,10 @@ from backend.api.envelope import (
     success_envelope,
 )
 from backend.api.metadata import ApiFreshnessStatus
+from backend.api.monetization_access import (
+    blocked_entitlement_response,
+    optional_current_user,
+)
 from backend.api.search import (
     company_geography,
     explain_company_sources,
@@ -36,6 +40,12 @@ from backend.api.search import (
 )
 from backend.geography.market_coverage import priority_market_by_id
 from backend.geography.repository import RegionRepository
+from backend.monetization.enforcement import (
+    evaluate_account_access,
+    increment_feature_usage,
+)
+from backend.monetization.features import MonetizationFeatureKey
+from backend.monetization.repository import MonetizationRepository
 from backend.outputs.exceptions import (
     InvalidComparisonInput,
     MissingCompanyForOutput,
@@ -242,9 +252,11 @@ def explain_company_sources_route(
 
 @router.get("/compare")
 def get_comparison(
+    request: Request,
     region_a: str = Query(..., min_length=1),
     region_b: str = Query(..., min_length=1),
     service: OutputAssemblyService = Depends(get_output_service),
+    session: Session = Depends(get_session),
 ):
     if region_a == region_b:
         return JSONResponse(
@@ -256,6 +268,19 @@ def get_comparison(
                 ),
             ),
         )
+
+    current = optional_current_user(request, session)
+    repo = MonetizationRepository(session)
+    if current is not None:
+        repo.ensure_account_for_user(user_id=current.user.user_id)
+        access = evaluate_account_access(
+            repo,
+            user_id=current.user.user_id,
+            feature_key=MonetizationFeatureKey.LIMITED_COMPARISONS,
+            create_usage_counter=True,
+        )
+        if not access.allowed:
+            return blocked_entitlement_response(access)
 
     try:
         result = service.read_comparison(region_a, region_b)
@@ -272,8 +297,18 @@ def get_comparison(
             ),
         )
     payload = result.payload
-    return success_envelope(
+    envelope = success_envelope(
         data=payload.comparison.model_dump(mode="json"),
         output_metadata_row=result.metadata,
         payload_metadata=payload.metadata,
     )
+    if current is not None:
+        usage_decision = increment_feature_usage(
+            repo,
+            user_id=current.user.user_id,
+            feature_key=MonetizationFeatureKey.LIMITED_COMPARISONS,
+        )
+        envelope["metadata"]["monetization_access"] = usage_decision.model_dump(
+            mode="json"
+        )
+    return envelope

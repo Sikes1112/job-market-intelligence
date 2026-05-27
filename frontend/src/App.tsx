@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import {
   API_TARGET_LABEL,
+  createBillingCheckoutSession,
+  createBillingPortalSession,
   createRecommendationSnapshot,
   createSavedMarketArtifact,
   deactivateAccount,
@@ -18,7 +20,15 @@ import {
   getCompanySources,
   getComparison,
   getCurrentUser,
+  getBillingStatus,
   getHealth,
+  getMonetizationAccessPreview,
+  getMonetizationFeatures,
+  getMonetizationPlans,
+  getMonetizationReports,
+  getMyMonetization,
+  getMyMonetizationEntitlements,
+  getMyMonetizationUsage,
   getPreferences,
   getRegion,
   getRecommendationGoalModes,
@@ -56,6 +66,7 @@ import {
 import type {
   ApiEnvelope,
   AccountDeactivationResult,
+  BillingStatusPayload,
   CompanyGeographyResponse,
   CompanyDetail,
   CompanySearchResponse,
@@ -67,6 +78,18 @@ import type {
   ExplanationResult,
   FreshnessSourceSummary,
   FreshnessStatus,
+  MonetizationAccessPreviewPayload,
+  MonetizationFeature,
+  MonetizationFeatureKey,
+  MonetizationFeaturesPayload,
+  MonetizationEntitlementsPayload,
+  MonetizationMePayload,
+  MonetizationPlan,
+  MonetizationPlanKey,
+  MonetizationPlansPayload,
+  MonetizationReportProduct,
+  MonetizationReportsPayload,
+  MonetizationUsagePayload,
   PersonalizedRecommendationSnapshot,
   PersonalizedRecommendationSnapshotInput,
   PersonalizedResult,
@@ -125,6 +148,7 @@ import {
   landingUrl,
   parseRoute,
   personalizedDiscoveryUrl,
+  plansUrl,
   publicPageUrl,
   recommendationsUrl,
   regionDetailUrl,
@@ -220,6 +244,12 @@ type AccountActionState = {
   message: string | null;
   error: string | null;
 };
+type BillingActionState = {
+  loadingPlanKey: MonetizationPlanKey | null;
+  loadingPortal: boolean;
+  message: string | null;
+  error: string | null;
+};
 
 const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
   { id: "explore", label: "Explore Markets", kicker: "Market map" },
@@ -228,10 +258,54 @@ const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
   { id: "compare", label: "Compare Markets", kicker: "Score comparison" },
   { id: "discovery", label: "Personalized Discovery", kicker: "Personal overlay" },
   { id: "recommendations", label: "Recommendations", kicker: "Decision support" },
+  { id: "plans", label: "Plans", kicker: "Access model" },
   { id: "account", label: "Account", kicker: "Saved overlays" },
 ];
 
 const REMOTE_HYBRID_OPTIONS: RemoteHybridPreference[] = ["remote", "hybrid", "onsite", "flexible"];
+const ACCESS_PREVIEW_REQUESTS: Array<{
+  plan_key?: MonetizationPlanKey;
+  feature_key: MonetizationFeatureKey;
+  used?: number;
+}> = [
+  { feature_key: "basic_recommendation_preview" },
+  { feature_key: "limited_comparisons", used: 2 },
+  { feature_key: "saved_watchlists" },
+  { feature_key: "alerts" },
+  { feature_key: "full_report_generation" },
+  { feature_key: "exportable_strategy_plans" },
+  { feature_key: "full_market_coverage" },
+];
+
+const PLAN_DISPLAY_ORDER: MonetizationPlanKey[] = [
+  "free",
+  "individual_monthly",
+  "individual_annual",
+  "student_annual",
+  "career_center_license",
+  "bootcamp_license",
+  "university_license",
+  "workforce_board_license",
+];
+
+const FEATURE_DISPLAY_ORDER: MonetizationFeatureKey[] = [
+  "basic_region_exploration",
+  "public_demo_markets",
+  "limited_comparisons",
+  "limited_personalized_discovery",
+  "basic_recommendation_preview",
+  "saved_watchlists",
+  "alerts",
+  "advanced_recommendation_reports",
+  "full_market_coverage",
+  "exportable_strategy_plans",
+  "deeper_company_geography",
+  "saved_comparison_history",
+  "full_report_generation",
+  "institutional_license_management",
+  "cohort_guidance_templates",
+  "privacy_preserving_program_insights",
+];
 
 function emptyLoadState<T>(): LoadState<T> {
   return { loading: false, envelope: null, error: null };
@@ -243,6 +317,13 @@ function readCurrentRoute(): RouteState {
 
 function currentUrl(): string {
   return `${window.location.pathname}${window.location.search}`;
+}
+
+function redirectToBillingProvider(url: string): void {
+  window.dispatchEvent(new CustomEvent("jmi:billing-provider-redirect", { detail: { url } }));
+  if (import.meta.env.MODE !== "test") {
+    window.location.assign(url);
+  }
 }
 
 function isPlainLeftClick(event: MouseEvent<HTMLAnchorElement>): boolean {
@@ -279,12 +360,59 @@ function getNavigationUrl(
   if (page === "compare") return compareMarketsUrl(comparisonA, comparisonB);
   if (page === "discovery") return personalizedDiscoveryUrl(discoveryFilters);
   if (page === "recommendations") return recommendationsUrl();
+  if (page === "plans") return plansUrl();
   if (page === "account") return accountUrl();
   return exploreUrl();
 }
 
 function prettyKey(value: string) {
   return value.replaceAll("_", " ");
+}
+
+function segmentLabel(value: string): string {
+  return prettyKey(value).replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function featureByKey(features: MonetizationFeature[]): Map<MonetizationFeatureKey, MonetizationFeature> {
+  return new Map(features.map((feature) => [feature.feature_key, feature]));
+}
+
+function orderedFeatures(features: MonetizationFeature[]): MonetizationFeature[] {
+  const order = new Map(FEATURE_DISPLAY_ORDER.map((featureKey, index) => [featureKey, index]));
+  return [...features].sort((left, right) =>
+    (order.get(left.feature_key) ?? 999) - (order.get(right.feature_key) ?? 999)
+    || left.display_name.localeCompare(right.display_name),
+  );
+}
+
+function orderedPlans(plans: MonetizationPlan[]): MonetizationPlan[] {
+  const order = new Map(PLAN_DISPLAY_ORDER.map((planKey, index) => [planKey, index]));
+  return [...plans].sort((left, right) =>
+    (order.get(left.plan_key) ?? 999) - (order.get(right.plan_key) ?? 999)
+    || left.display_name.localeCompare(right.display_name),
+  );
+}
+
+function usageLimitLabel(limit: { limit: number; unit: string; description: string }): string {
+  return `${limit.limit} ${prettyKey(limit.unit)} · ${limit.description}`;
+}
+
+function priceLabel(plan: MonetizationPlan): string {
+  if (plan.price.placeholder_amount_cents === 0) return "Free";
+  if (plan.price.placeholder_amount_cents === null) return "Configurable quote";
+  const amount = (plan.price.placeholder_amount_cents / 100).toLocaleString(undefined, {
+    currency: plan.price.currency,
+    style: "currency",
+  });
+  return plan.price.final_price ? amount : `Placeholder test price: ${amount}`;
+}
+
+function accessPreviewKey(request: {
+  plan_key?: MonetizationPlanKey;
+  feature_key: MonetizationFeatureKey;
+  used?: number;
+}): string {
+  return `${request.plan_key ?? "account"}:${request.feature_key}:${request.used ?? "none"}`;
 }
 
 function isRecommendationGoalMode(value: string): value is RecommendationGoalMode {
@@ -2476,6 +2604,11 @@ function ExploreMarkets({
             Compare markets
           </button>
         </div>
+        <UpgradePrompt
+          feature="full_market_coverage"
+          title="Broader market coverage is an added-value plan feature."
+          body="The demo still shows useful basic exploration; paid coverage expands the maintained market catalog without changing recommendation ranking."
+        />
       </ShellCard>
 
       <ShellCard title="Market filters" eyebrow="Search and narrow">
@@ -2764,6 +2897,11 @@ function RegionExplorer({
         {!regionState.loading && !regionState.error && !region ? (
           <EmptyState title="No region selected" body="Choose a region from the dropdown." />
         ) : null}
+        <UpgradePrompt
+          feature="saved_watchlists"
+          title="Save this market to a watchlist with Individual."
+          body="Watchlists add persistence and follow-up workflow value while keeping the region facts and basic guidance available in the free experience."
+        />
       </ShellCard>
 
       {region ? (
@@ -3016,6 +3154,11 @@ function CompanyExplorer({
         {companyState.error ? <ErrorState message={companyState.error} /> : null}
         {sourceState.error ? <ErrorState message={`Source explanation unavailable: ${sourceState.error}`} /> : null}
         {geographyState.error ? <ErrorState message={`Company geography summary unavailable: ${geographyState.error}`} /> : null}
+        <UpgradePrompt
+          feature="deeper_company_geography"
+          title="Use deeper company geography with Individual."
+          body="Paid company geography adds maintained depth around company-region coverage; it does not bias market recommendations."
+        />
       </ShellCard>
 
       {company ? (
@@ -3319,6 +3462,11 @@ function ComparisonView({
           unavailable and are not treated as zero. Coverage warnings identify markets
           that should not be treated as confident recommendations.
         </p>
+        <UpgradePrompt
+          feature="saved_comparison_history"
+          title="Save comparison history with Individual."
+          body="Paid plans add durable comparison history so previous tradeoff analysis can be revisited; the current comparison result remains visible here."
+        />
         <CoverageWarningList warnings={pickEnvelopeWarnings(comparisonState.envelope)} />
       </ShellCard>
 
@@ -4395,20 +4543,541 @@ function MarketStrategyView({ strategy }: { strategy: RecommendationStrategyPayl
   );
 }
 
+function UpgradePrompt({
+  title,
+  body,
+  feature,
+  decision,
+  plans,
+}: {
+  title: string;
+  body: string;
+  feature: MonetizationFeatureKey;
+  decision?: MonetizationAccessPreviewPayload["decision"] | null;
+  plans?: Map<MonetizationPlanKey, MonetizationPlan>;
+}) {
+  const availableWith = decision && !decision.allowed && decision.upgrade_plan_keys.length
+    ? decision.upgrade_plan_keys.map((planKey) => plans?.get(planKey)?.display_name ?? prettyKey(planKey)).join(", ")
+    : null;
+  return (
+    <aside className="upgrade-prompt" data-feature={feature}>
+      <div>
+        <span className={decision?.allowed ? "badge badge-success" : "badge badge-real"}>
+          {decision?.allowed ? "Available in your plan" : "Added workflow value"}
+        </span>
+        <strong>{title}</strong>
+        <p>{body}</p>
+        {decision ? <p className="meta-copy">{decision.reason}</p> : null}
+        {availableWith ? <p className="meta-copy">View plans for {availableWith}.</p> : null}
+      </div>
+      <a className="secondary-button" href={plansUrl()}>
+        Upgrade options
+      </a>
+    </aside>
+  );
+}
+
+function PlanCard({
+  plan,
+  features,
+  plansByKey,
+  billingStatus,
+  billingAction,
+  authenticated,
+  currentPlanKey,
+  onStartCheckout,
+}: {
+  plan: MonetizationPlan;
+  features: Map<MonetizationFeatureKey, MonetizationFeature>;
+  plansByKey: Map<MonetizationPlanKey, MonetizationPlan>;
+  billingStatus: BillingStatusPayload | null;
+  billingAction: BillingActionState;
+  authenticated: boolean;
+  currentPlanKey: MonetizationPlanKey | null;
+  onStartCheckout: (planKey: MonetizationPlanKey) => void;
+}) {
+  const visibleFeatureKeys = plan.included_feature_keys.slice(0, 7);
+  const checkoutEligible = Boolean(
+    billingStatus?.checkout_available
+    && billingStatus.checkout_plan_keys.includes(plan.plan_key)
+    && plan.plan_key !== "free",
+  );
+  const isCurrentPlan = currentPlanKey === plan.plan_key;
+  return (
+    <article className="plan-card">
+      <div className="plan-card-topline">
+        <span className={plan.plan_key === "free" ? "badge badge-success" : "badge"}>
+          {prettyKey(plan.billing_interval)}
+        </span>
+        <span className="badge badge-unknown">{prettyKey(plan.buyer_kind)}</span>
+      </div>
+      <h3>{plan.display_name}</h3>
+      <strong className="plan-price">{priceLabel(plan)}</strong>
+      <p className="meta-copy">{plan.price.note}</p>
+      <div className="chip-row">
+        {plan.buyer_segment ? (
+          <span className="badge badge-real">{segmentLabel(plan.buyer_segment)}</span>
+        ) : null}
+        {plan.intended_audience.map((segment) => (
+          <span className="badge" key={segment}>{segmentLabel(segment)}</span>
+        ))}
+      </div>
+      <div className="plan-section">
+        <strong>Included features</strong>
+        <ul>
+          {visibleFeatureKeys.map((featureKey) => (
+            <li key={featureKey}>{features.get(featureKey)?.display_name ?? prettyKey(featureKey)}</li>
+          ))}
+        </ul>
+        {plan.included_feature_keys.length > visibleFeatureKeys.length ? (
+          <small>{plan.included_feature_keys.length - visibleFeatureKeys.length} more feature(s)</small>
+        ) : null}
+      </div>
+      {plan.usage_limits.length ? (
+        <div className="plan-section">
+          <strong>Usage limits</strong>
+          <ul>
+            {plan.usage_limits.map((limit) => (
+              <li key={`${limit.feature_key}-${limit.unit}`}>{usageLimitLabel(limit)}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {plan.upgrade_plan_keys.length ? (
+        <div className="plan-section">
+          <strong>Upgrade path</strong>
+          <p className="meta-copy">
+            {plan.upgrade_plan_keys
+              .map((planKey) => plansByKey.get(planKey)?.display_name ?? prettyKey(planKey))
+              .join(", ")}
+          </p>
+        </div>
+      ) : null}
+      <div className="plan-action-row">
+        {isCurrentPlan ? <span className="badge badge-success">Current plan</span> : null}
+        {checkoutEligible ? (
+          <button
+            className="primary-button compact-button"
+            disabled={!authenticated || billingAction.loadingPlanKey === plan.plan_key}
+            onClick={() => onStartCheckout(plan.plan_key)}
+            type="button"
+          >
+            {billingAction.loadingPlanKey === plan.plan_key ? "Creating session" : "Start checkout"}
+          </button>
+        ) : plan.plan_key !== "free" ? (
+          <p className="meta-copy">
+            {plan.buyer_kind === "institutional"
+              ? "Institutional licenses remain sales-assisted."
+              : billingStatus?.disabled_reason ?? "Checkout is not available for this plan."}
+          </p>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function FeatureBoundaryPanel({ features }: { features: MonetizationFeature[] }) {
+  const grouped = {
+    free: orderedFeatures(features.filter((feature) => feature.boundary === "free")),
+    paid: orderedFeatures(features.filter((feature) => feature.boundary === "paid")),
+  };
+  return (
+    <div className="split-grid">
+      <div className="feature-boundary-panel">
+        <div className="metadata-row">
+          <span className="badge badge-success">Free</span>
+          <span className="badge badge-real">Basic guidance remains useful</span>
+        </div>
+        {grouped.free.map((feature) => (
+          <div className="feature-row" key={feature.feature_key}>
+            <strong>{feature.display_name}</strong>
+            <p className="meta-copy">{feature.boundary_rationale}</p>
+            {feature.exposes_core_recommendation_conclusion ? (
+              <span className="badge badge-success">Basic recommendation result remains visible</span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <div className="feature-boundary-panel">
+        <div className="metadata-row">
+          <span className="badge badge-warning">Paid</span>
+          <span className="badge badge-real">Workflow, coverage, reports</span>
+        </div>
+        {grouped.paid.map((feature) => (
+          <div className="feature-row" key={feature.feature_key}>
+            <strong>{feature.display_name}</strong>
+            <p className="meta-copy">{feature.boundary_rationale}</p>
+            <small>{feature.trust_constraint}</small>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReportProductCard({
+  report,
+  features,
+}: {
+  report: MonetizationReportProduct;
+  features: Map<MonetizationFeatureKey, MonetizationFeature>;
+}) {
+  return (
+    <article className="report-product-card">
+      <div className="metadata-row">
+        {report.free_preview_available ? (
+          <span className="badge badge-success">Free preview</span>
+        ) : null}
+        {report.paid_full_report_required ? (
+          <span className="badge badge-warning">Full report requires paid feature</span>
+        ) : null}
+        {report.exportable ? <span className="badge badge-real">Exportable</span> : null}
+      </div>
+      <h3>{report.display_name}</h3>
+      <div className="chip-row">
+        {report.intended_segments.map((segment) => (
+          <span className="badge" key={segment}>{segmentLabel(segment)}</span>
+        ))}
+      </div>
+      <div className="plan-section">
+        <strong>Included sections</strong>
+        <ul>
+          {report.included_sections.map((section) => (
+            <li key={section}>{section}</li>
+          ))}
+        </ul>
+      </div>
+      <p className="meta-copy">
+        Full report access maps to{" "}
+        {report.paid_full_report_feature_keys
+          .map((featureKey) => features.get(featureKey)?.display_name ?? prettyKey(featureKey))
+          .join(", ")}
+        .
+      </p>
+    </article>
+  );
+}
+
+function MonetizationAccountPanel({
+  meState,
+  entitlementsState,
+  usageState,
+  plans,
+  features,
+  authenticated,
+  billingStatus,
+  billingAction,
+  onManageBilling,
+}: {
+  meState: LoadState<MonetizationMePayload>;
+  entitlementsState: LoadState<MonetizationEntitlementsPayload>;
+  usageState: LoadState<MonetizationUsagePayload>;
+  plans: Map<MonetizationPlanKey, MonetizationPlan>;
+  features: Map<MonetizationFeatureKey, MonetizationFeature>;
+  authenticated: boolean;
+  billingStatus: BillingStatusPayload | null;
+  billingAction: BillingActionState;
+  onManageBilling: () => void;
+}) {
+  if (!authenticated) {
+    return (
+      <div className="account-entitlement-panel">
+        <div className="metadata-row">
+          <span className="badge badge-success">Free preview</span>
+          <span className="badge badge-unknown">Account state not loaded</span>
+        </div>
+        <p className="meta-copy">
+          Sign in to view account-specific plan status, usage limits, and available paid workflow features.
+          Your free plan still includes basic recommendations and exploration.
+        </p>
+      </div>
+    );
+  }
+
+  const entitlements = entitlementsState.envelope?.data?.entitlements ?? meState.envelope?.data?.entitlements ?? null;
+  const usage = usageState.envelope?.data?.usage ?? [];
+  const plan = entitlements ? plans.get(entitlements.plan_key) : null;
+
+  return (
+    <div className="account-entitlement-panel">
+      <div className="metadata-row">
+        <span className="badge badge-real">Current effective plan</span>
+        <span className="badge">{plan?.display_name ?? (entitlements ? prettyKey(entitlements.plan_key) : "Loading")}</span>
+        {entitlements?.account_status ? (
+          <span className="badge badge-unknown">Status: {prettyKey(entitlements.account_status)}</span>
+        ) : null}
+      </div>
+      {meState.loading || entitlementsState.loading || usageState.loading ? <LoadingBlock label="Loading account entitlements" /> : null}
+      {meState.error ? <ErrorState message={meState.error} /> : null}
+      {entitlementsState.error ? <ErrorState message={entitlementsState.error} /> : null}
+      {usageState.error ? <ErrorState message={usageState.error} /> : null}
+      {entitlements ? (
+        <>
+          <p className="meta-copy">
+            {prettyKey(entitlements.account_type)} account. Free guidance remains available; paid workflow features are checked against this plan.
+          </p>
+          <div className="chip-row">
+            {entitlements.included_feature_keys.slice(0, 10).map((featureKey) => (
+              <span className="badge" key={featureKey}>{features.get(featureKey)?.display_name ?? prettyKey(featureKey)}</span>
+            ))}
+          </div>
+          {entitlements.usage_limits.length ? (
+            <div className="plan-section">
+              <strong>Usage limits and counters</strong>
+              <ul>
+                {entitlements.usage_limits.map((limit) => {
+                  const counter = usage.find((row) => row.feature_key === limit.feature_key);
+                  const remaining = counter ? Math.max(counter.limit_count - counter.used_count, 0) : limit.limit;
+                  return (
+                    <li key={`${limit.feature_key}-${limit.unit}`}>
+                      {features.get(limit.feature_key)?.display_name ?? prettyKey(limit.feature_key)}: {remaining} remaining of {limit.limit} {prettyKey(limit.unit)}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+          {billingStatus?.portal_available ? (
+            <div className="plan-action-row">
+              <button
+                className="secondary-button"
+                disabled={billingAction.loadingPortal}
+                onClick={onManageBilling}
+                type="button"
+              >
+                {billingAction.loadingPortal ? "Opening billing" : "Manage billing"}
+              </button>
+              <p className="meta-copy">
+                Billing management opens through the provider portal only when a billing customer exists.
+              </p>
+            </div>
+          ) : null}
+        </>
+      ) : !meState.loading && !entitlementsState.loading ? (
+        <p className="meta-copy">Account entitlement state has not loaded yet.</p>
+      ) : null}
+    </div>
+  );
+}
+
+function AccessPreviewPanel({
+  previews,
+  features,
+  plans,
+}: {
+  previews: Record<string, LoadState<MonetizationAccessPreviewPayload>>;
+  features: Map<MonetizationFeatureKey, MonetizationFeature>;
+  plans: Map<MonetizationPlanKey, MonetizationPlan>;
+}) {
+  return (
+    <div className="access-preview-grid">
+      {ACCESS_PREVIEW_REQUESTS.map((request) => {
+        const state = previews[accessPreviewKey(request)] ?? emptyLoadState<MonetizationAccessPreviewPayload>();
+        const decision = state.envelope?.data?.decision;
+        return (
+          <div className="access-preview-card" key={accessPreviewKey(request)}>
+            <div className="metadata-row">
+              <span className={decision?.allowed ? "badge badge-success" : "badge badge-warning"}>
+                {state.loading ? "Checking" : decision?.allowed ? "Available" : "View plans option"}
+              </span>
+              <span className="badge badge-unknown">
+                {features.get(request.feature_key)?.display_name ?? prettyKey(request.feature_key)}
+              </span>
+            </div>
+            {state.error ? <ErrorState message={state.error} /> : null}
+            {decision ? (
+              <>
+                <p className="meta-copy">{decision.reason}</p>
+                {decision.usage_limit ? (
+                  <p className="meta-copy">
+                    Usage limit: {usageLimitLabel(decision.usage_limit)}
+                    {decision.remaining_usage !== null
+                      ? ` · remaining in this preview: ${decision.remaining_usage}`
+                      : ""}
+                  </p>
+                ) : null}
+                {!decision.allowed && decision.upgrade_plan_keys.length ? (
+                  <p className="meta-copy">
+                    View plans for{" "}
+                    {decision.upgrade_plan_keys
+                      .map((planKey) => plans.get(planKey)?.display_name ?? prettyKey(planKey))
+                      .join(", ")}
+                    .
+                  </p>
+                ) : null}
+              </>
+            ) : !state.loading ? (
+              <p className="meta-copy">Access preview has not loaded yet.</p>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MonetizationView({
+  plansState,
+  featuresState,
+  reportsState,
+  accessPreviewStates,
+  monetizationMeState,
+  monetizationEntitlementsState,
+  monetizationUsageState,
+  billingStatusState,
+  billingAction,
+  authenticated,
+  onStartCheckout,
+  onManageBilling,
+}: {
+  plansState: LoadState<MonetizationPlansPayload>;
+  featuresState: LoadState<MonetizationFeaturesPayload>;
+  reportsState: LoadState<MonetizationReportsPayload>;
+  accessPreviewStates: Record<string, LoadState<MonetizationAccessPreviewPayload>>;
+  monetizationMeState: LoadState<MonetizationMePayload>;
+  monetizationEntitlementsState: LoadState<MonetizationEntitlementsPayload>;
+  monetizationUsageState: LoadState<MonetizationUsagePayload>;
+  billingStatusState: LoadState<BillingStatusPayload>;
+  billingAction: BillingActionState;
+  authenticated: boolean;
+  onStartCheckout: (planKey: MonetizationPlanKey) => void;
+  onManageBilling: () => void;
+}) {
+  const plans = orderedPlans(plansState.envelope?.data?.plans ?? []);
+  const features = orderedFeatures(featuresState.envelope?.data?.features ?? []);
+  const reports = reportsState.envelope?.data?.reports ?? [];
+  const featuresByKey = featureByKey(features);
+  const plansByKey = new Map(plans.map((plan) => [plan.plan_key, plan]));
+  const billingStatus = billingStatusState.envelope?.data ?? null;
+  const currentPlanKey =
+    monetizationEntitlementsState.envelope?.data?.entitlements.plan_key
+    ?? monetizationMeState.envelope?.data?.entitlements.plan_key
+    ?? null;
+
+  return (
+    <div className="view-grid">
+      <ShellCard
+        title="Plans and access model"
+        eyebrow="Layer 15 monetization surface"
+        action={<StateBadge envelope={plansState.envelope} loading={plansState.loading} error={plansState.error} />}
+      >
+        <p className="lead-copy">
+          Plans describe workflow access around the same recommendation engine. Free users
+          still receive useful market exploration and the basic recommendation preview;
+          paid plans add saving, alerts, reports, exports, broader coverage, and
+          institutional workflows.
+        </p>
+        <div className="metadata-row">
+          <span className="badge badge-success">Checkout requires backend configuration</span>
+          <span className="badge badge-real">Stripe adapter only</span>
+          <span className="badge badge-unknown">Recommendations unchanged</span>
+        </div>
+        {plansState.error ? <ErrorState message={plansState.error} /> : null}
+        {featuresState.error ? <ErrorState message={featuresState.error} /> : null}
+        {reportsState.error ? <ErrorState message={reportsState.error} /> : null}
+        {billingStatusState.error ? <ErrorState message={billingStatusState.error} /> : null}
+        {billingAction.error ? <ErrorState message={billingAction.error} /> : null}
+        {billingAction.message ? <p className="meta-copy">{billingAction.message}</p> : null}
+        {billingStatus ? (
+          <p className="meta-copy">
+            {billingStatus.checkout_available
+              ? "Self-serve checkout is available for mapped individual plans. Access changes only after verified billing events update the internal plan assignment."
+              : billingStatus.disabled_reason ?? "Self-serve checkout is currently unavailable."}
+          </p>
+        ) : null}
+      </ShellCard>
+
+      <ShellCard title="Current account access" eyebrow="Account-aware entitlement state">
+        <MonetizationAccountPanel
+          authenticated={authenticated}
+          billingAction={billingAction}
+          billingStatus={billingStatus}
+          entitlementsState={monetizationEntitlementsState}
+          features={featuresByKey}
+          meState={monetizationMeState}
+          onManageBilling={onManageBilling}
+          plans={plansByKey}
+          usageState={monetizationUsageState}
+        />
+      </ShellCard>
+
+      <ShellCard title="Plan catalog" eyebrow="Backend-owned metadata">
+        {plansState.loading ? <LoadingBlock label="Loading plans" /> : null}
+        {plans.length ? (
+          <div className="plan-grid">
+            {plans.map((plan) => (
+              <PlanCard
+                authenticated={authenticated}
+                billingAction={billingAction}
+                billingStatus={billingStatus}
+                currentPlanKey={currentPlanKey}
+                features={featuresByKey}
+                key={plan.plan_key}
+                onStartCheckout={onStartCheckout}
+                plan={plan}
+                plansByKey={plansByKey}
+              />
+            ))}
+          </div>
+        ) : !plansState.loading ? (
+          <EmptyState title="No plans returned" body="The monetization plan endpoint returned no plan metadata." />
+        ) : null}
+      </ShellCard>
+
+      <ShellCard title="Free and paid feature boundary" eyebrow="Trust-safe monetization">
+        {featuresState.loading ? <LoadingBlock label="Loading feature boundary" /> : null}
+        {features.length ? (
+          <FeatureBoundaryPanel features={features} />
+        ) : !featuresState.loading ? (
+          <EmptyState title="No features returned" body="The monetization feature endpoint returned no metadata." />
+        ) : null}
+      </ShellCard>
+
+      <ShellCard title="Report product catalog" eyebrow="Preview now, full report later">
+        {reportsState.loading ? <LoadingBlock label="Loading report catalog" /> : null}
+        {reports.length ? (
+          <div className="report-product-grid">
+            {reports.map((report) => (
+              <ReportProductCard features={featuresByKey} key={report.report_key} report={report} />
+            ))}
+          </div>
+        ) : !reportsState.loading ? (
+          <EmptyState title="No reports returned" body="The report product endpoint returned no catalog entries." />
+        ) : null}
+      </ShellCard>
+
+      <ShellCard title="Access preview" eyebrow="Central entitlement decision">
+        <p className="meta-copy">
+          These previews call the backend entitlement endpoint with the current account when available. The copy is
+          explanatory: paid features add durable workflow and report value; they do not hide
+          the basic recommendation result.
+        </p>
+        <AccessPreviewPanel features={featuresByKey} plans={plansByKey} previews={accessPreviewStates} />
+      </ShellCard>
+    </div>
+  );
+}
+
 function RecommendationsView({
   goalModesState,
   strategyState,
   selectedGoalMode,
   onSelectGoalMode,
+  accessPreviewStates,
+  monetizationPlansState,
 }: {
   goalModesState: LoadState<RecommendationGoalModesPayload>;
   strategyState: LoadState<RecommendationStrategyPayload>;
   selectedGoalMode: RecommendationGoalMode;
   onSelectGoalMode: (goalMode: RecommendationGoalMode) => void;
+  accessPreviewStates: Record<string, LoadState<MonetizationAccessPreviewPayload>>;
+  monetizationPlansState: LoadState<MonetizationPlansPayload>;
 }) {
   const strategy = strategyState.envelope?.data;
   const goalModes = goalModesState.envelope?.data?.goal_modes ?? strategy?.available_goal_modes ?? [];
   const companyWarnings = strategy?.warnings.filter((warning) => warning.toLocaleLowerCase().includes("company")) ?? [];
+  const plansByKey = new Map((monetizationPlansState.envelope?.data?.plans ?? []).map((plan) => [plan.plan_key, plan]));
+  const reportDecision = accessPreviewStates[accessPreviewKey({ feature_key: "full_report_generation" })]?.envelope?.data?.decision;
 
   return (
     <div className="view-grid">
@@ -4445,6 +5114,13 @@ function RecommendationsView({
           </div>
         ) : null}
         <MetadataPanel envelope={strategyState.envelope} />
+        <UpgradePrompt
+          decision={reportDecision}
+          feature="full_report_generation"
+          plans={plansByKey}
+          title="Generate a full strategy report with Individual."
+          body="The ranked recommendation stays visible here. Paid reports package sections, exports, and verification steps for sharing or advising."
+        />
       </ShellCard>
 
       {strategy ? (
@@ -4494,6 +5170,22 @@ function App() {
     useState<LoadState<RecommendationGoalModesPayload>>(emptyLoadState);
   const [recommendationStrategyState, setRecommendationStrategyState] =
     useState<LoadState<RecommendationStrategyPayload>>(emptyLoadState);
+  const [monetizationPlansState, setMonetizationPlansState] =
+    useState<LoadState<MonetizationPlansPayload>>(emptyLoadState);
+  const [monetizationFeaturesState, setMonetizationFeaturesState] =
+    useState<LoadState<MonetizationFeaturesPayload>>(emptyLoadState);
+  const [monetizationReportsState, setMonetizationReportsState] =
+    useState<LoadState<MonetizationReportsPayload>>(emptyLoadState);
+  const [monetizationAccessPreviewStates, setMonetizationAccessPreviewStates] =
+    useState<Record<string, LoadState<MonetizationAccessPreviewPayload>>>({});
+  const [monetizationMeState, setMonetizationMeState] =
+    useState<LoadState<MonetizationMePayload>>(emptyLoadState);
+  const [monetizationEntitlementsState, setMonetizationEntitlementsState] =
+    useState<LoadState<MonetizationEntitlementsPayload>>(emptyLoadState);
+  const [monetizationUsageState, setMonetizationUsageState] =
+    useState<LoadState<MonetizationUsagePayload>>(emptyLoadState);
+  const [billingStatusState, setBillingStatusState] =
+    useState<LoadState<BillingStatusPayload>>(emptyLoadState);
   const [currentUserState, setCurrentUserState] = useState<LoadState<CurrentUserProfile>>(emptyLoadState);
   const [preferenceState, setPreferenceState] = useState<LoadState<UserPreferenceProfile>>(emptyLoadState);
   const [preferenceDraft, setPreferenceDraft] = useState<PreferenceDraft>(() => emptyPreferenceDraft());
@@ -4505,6 +5197,12 @@ function App() {
   const [exportState, setExportState] = useState<LoadState<UserDataExport>>(emptyLoadState);
   const [deactivationResult, setDeactivationResult] = useState<AccountDeactivationResult | null>(null);
   const [accountAction, setAccountAction] = useState<AccountActionState>({ loading: false, message: null, error: null });
+  const [billingAction, setBillingAction] = useState<BillingActionState>({
+    loadingPlanKey: null,
+    loadingPortal: false,
+    message: null,
+    error: null,
+  });
   const [deactivateConfirmed, setDeactivateConfirmed] = useState(false);
   const [accountDeactivated, setAccountDeactivated] = useState(false);
   const discoveryRequestKey = useRef(0);
@@ -4623,6 +5321,10 @@ function App() {
     setScoringPreviewState(emptyLoadState());
     setExplanationStates({});
     setExportState(emptyLoadState());
+    setMonetizationMeState(emptyLoadState());
+    setMonetizationEntitlementsState(emptyLoadState());
+    setMonetizationUsageState(emptyLoadState());
+    setBillingAction({ loadingPlanKey: null, loadingPortal: false, message: null, error: null });
     setDeactivationResult(null);
     setDeactivateConfirmed(false);
   }, []);
@@ -4635,13 +5337,28 @@ function App() {
     setArtifactsState((current) => ({ ...current, loading: true, error: null }));
     setAlertsState((current) => ({ ...current, loading: true, error: null }));
     setSnapshotsState((current) => ({ ...current, loading: true, error: null }));
+    setMonetizationMeState((current) => ({ ...current, loading: true, error: null }));
+    setMonetizationEntitlementsState((current) => ({ ...current, loading: true, error: null }));
+    setMonetizationUsageState((current) => ({ ...current, loading: true, error: null }));
 
-    const [userResult, preferenceResult, artifactResult, alertResult, snapshotResult] = await Promise.allSettled([
+    const [
+      userResult,
+      preferenceResult,
+      artifactResult,
+      alertResult,
+      snapshotResult,
+      monetizationMeResult,
+      monetizationEntitlementsResult,
+      monetizationUsageResult,
+    ] = await Promise.allSettled([
       getCurrentUser(protectedOptions),
       getPreferences(protectedOptions),
       listSavedMarketArtifacts(protectedOptions),
       listAlerts(protectedOptions),
       listRecommendationSnapshots(protectedOptions),
+      getMyMonetization(protectedOptions),
+      getMyMonetizationEntitlements(protectedOptions),
+      getMyMonetizationUsage(protectedOptions),
     ]);
 
     if (userResult.status === "fulfilled") {
@@ -4694,6 +5411,116 @@ function App() {
         error: snapshotResult.reason instanceof Error ? snapshotResult.reason.message : "Failed to load snapshots",
       });
     }
+
+    if (monetizationMeResult.status === "fulfilled") {
+      setMonetizationMeState({ loading: false, envelope: monetizationMeResult.value, error: null });
+    } else {
+      setMonetizationMeState({
+        loading: false,
+        envelope: null,
+        error: monetizationMeResult.reason instanceof Error ? monetizationMeResult.reason.message : "Failed to load monetization account",
+      });
+    }
+
+    if (monetizationEntitlementsResult.status === "fulfilled") {
+      setMonetizationEntitlementsState({ loading: false, envelope: monetizationEntitlementsResult.value, error: null });
+    } else {
+      setMonetizationEntitlementsState({
+        loading: false,
+        envelope: null,
+        error: monetizationEntitlementsResult.reason instanceof Error ? monetizationEntitlementsResult.reason.message : "Failed to load entitlements",
+      });
+    }
+
+    if (monetizationUsageResult.status === "fulfilled") {
+      setMonetizationUsageState({ loading: false, envelope: monetizationUsageResult.value, error: null });
+    } else {
+      setMonetizationUsageState({
+        loading: false,
+        envelope: null,
+        error: monetizationUsageResult.reason instanceof Error ? monetizationUsageResult.reason.message : "Failed to load monetization usage",
+      });
+    }
+  }, [accountDeactivated, auth.isAuthenticated, protectedOptions]);
+
+  const handleStartCheckout = useCallback(async (planKey: MonetizationPlanKey) => {
+    if (!auth.isAuthenticated || accountDeactivated) {
+      setBillingAction({
+        loadingPlanKey: null,
+        loadingPortal: false,
+        message: null,
+        error: "Sign in to start checkout for paid workflow plans.",
+      });
+      return;
+    }
+    const billingStatus = billingStatusState.envelope?.data;
+    if (!billingStatus?.checkout_available || !billingStatus.checkout_plan_keys.includes(planKey)) {
+      setBillingAction({
+        loadingPlanKey: null,
+        loadingPortal: false,
+        message: null,
+        error: billingStatus?.disabled_reason ?? "Checkout is not available for this plan.",
+      });
+      return;
+    }
+
+    setBillingAction({ loadingPlanKey: planKey, loadingPortal: false, message: null, error: null });
+    try {
+      const envelope = await createBillingCheckoutSession(planKey, protectedOptions);
+      const checkoutUrl = envelope.data?.checkout_url;
+      if (!checkoutUrl) throw new Error("Checkout session did not include a redirect URL.");
+      setBillingAction({
+        loadingPlanKey: null,
+        loadingPortal: false,
+        message: "Checkout session created. Redirecting to the billing provider; access updates after verified confirmation.",
+        error: null,
+      });
+      redirectToBillingProvider(checkoutUrl);
+    } catch (error) {
+      setBillingAction({
+        loadingPlanKey: null,
+        loadingPortal: false,
+        message: null,
+        error: error instanceof Error ? error.message : "Failed to create checkout session",
+      });
+    }
+  }, [
+    accountDeactivated,
+    auth.isAuthenticated,
+    billingStatusState.envelope,
+    protectedOptions,
+  ]);
+
+  const handleManageBilling = useCallback(async () => {
+    if (!auth.isAuthenticated || accountDeactivated) {
+      setBillingAction({
+        loadingPlanKey: null,
+        loadingPortal: false,
+        message: null,
+        error: "Sign in to manage billing.",
+      });
+      return;
+    }
+    setBillingAction({ loadingPlanKey: null, loadingPortal: true, message: null, error: null });
+    try {
+      const envelope = await createBillingPortalSession(protectedOptions);
+      const portalUrl = envelope.data?.portal_url;
+      if (!portalUrl) throw new Error("Billing portal session did not include a redirect URL.");
+      setBillingAction({
+        loadingPlanKey: null,
+        loadingPortal: false,
+        message: "Opening billing management.",
+        error: null,
+      });
+      redirectToBillingProvider(portalUrl);
+    } catch (error) {
+      setBillingAction({
+        loadingPlanKey: null,
+        loadingPortal: false,
+        message: null,
+        error: error instanceof Error ? error.message : "Failed to open billing portal",
+      });
+    }
   }, [accountDeactivated, auth.isAuthenticated, protectedOptions]);
 
   const loadRegion = useCallback(async (regionId: string) => {
@@ -4727,6 +5554,10 @@ function App() {
     }
     void loadAccountData();
   }, [auth.isAuthenticated, loadAccountData, resetAccountState]);
+
+  useEffect(() => {
+    setMonetizationAccessPreviewStates({});
+  }, [auth.isAuthenticated]);
 
   useEffect(() => {
     if (!isProductRoute) return;
@@ -4840,6 +5671,131 @@ function App() {
 
     void loadRecommendationStrategy();
   }, [route.page, selectedRecommendationGoalMode]);
+
+  useEffect(() => {
+    if (route.page !== "plans" && route.page !== "recommendations") return;
+    if (
+      monetizationPlansState.loading
+      || monetizationFeaturesState.loading
+      || monetizationReportsState.loading
+      || billingStatusState.loading
+      || (
+        monetizationPlansState.envelope
+        && monetizationFeaturesState.envelope
+        && monetizationReportsState.envelope
+        && billingStatusState.envelope
+      )
+    ) {
+      return;
+    }
+
+    async function loadMonetizationCatalog() {
+      setMonetizationPlansState((current) => ({ ...current, loading: true, error: null }));
+      setMonetizationFeaturesState((current) => ({ ...current, loading: true, error: null }));
+      setMonetizationReportsState((current) => ({ ...current, loading: true, error: null }));
+      setBillingStatusState((current) => ({ ...current, loading: true, error: null }));
+
+      const [plansResult, featuresResult, reportsResult, billingResult] = await Promise.allSettled([
+        getMonetizationPlans(),
+        getMonetizationFeatures(),
+        getMonetizationReports(),
+        getBillingStatus(),
+      ]);
+
+      if (plansResult.status === "fulfilled") {
+        setMonetizationPlansState({ loading: false, envelope: plansResult.value, error: null });
+      } else {
+        setMonetizationPlansState({
+          loading: false,
+          envelope: null,
+          error: plansResult.reason instanceof Error ? plansResult.reason.message : "Failed to load plans",
+        });
+      }
+
+      if (featuresResult.status === "fulfilled") {
+        setMonetizationFeaturesState({ loading: false, envelope: featuresResult.value, error: null });
+      } else {
+        setMonetizationFeaturesState({
+          loading: false,
+          envelope: null,
+          error: featuresResult.reason instanceof Error ? featuresResult.reason.message : "Failed to load features",
+        });
+      }
+
+      if (reportsResult.status === "fulfilled") {
+        setMonetizationReportsState({ loading: false, envelope: reportsResult.value, error: null });
+      } else {
+        setMonetizationReportsState({
+          loading: false,
+          envelope: null,
+          error: reportsResult.reason instanceof Error ? reportsResult.reason.message : "Failed to load reports",
+        });
+      }
+
+      if (billingResult.status === "fulfilled") {
+        setBillingStatusState({ loading: false, envelope: billingResult.value, error: null });
+      } else {
+        setBillingStatusState({
+          loading: false,
+          envelope: null,
+          error: billingResult.reason instanceof Error ? billingResult.reason.message : "Failed to load billing status",
+        });
+      }
+    }
+
+    void loadMonetizationCatalog();
+  }, [
+    billingStatusState.envelope,
+    billingStatusState.loading,
+    monetizationFeaturesState.envelope,
+    monetizationFeaturesState.loading,
+    monetizationPlansState.envelope,
+    monetizationPlansState.loading,
+    monetizationReportsState.envelope,
+    monetizationReportsState.loading,
+    route.page,
+  ]);
+
+  useEffect(() => {
+    if (!isProductRoute) return;
+
+    ACCESS_PREVIEW_REQUESTS.forEach((request) => {
+      const key = accessPreviewKey(request);
+      const current = monetizationAccessPreviewStates[key];
+      if (current?.loading || current?.envelope || current?.error) return;
+
+      setMonetizationAccessPreviewStates((states) => ({
+        ...states,
+        [key]: { loading: true, envelope: null, error: null },
+      }));
+      getMonetizationAccessPreview(
+        request,
+        auth.isAuthenticated && !accountDeactivated ? protectedOptions : undefined,
+      )
+        .then((envelope) => {
+          setMonetizationAccessPreviewStates((states) => ({
+            ...states,
+            [key]: { loading: false, envelope, error: null },
+          }));
+        })
+        .catch((error) => {
+          setMonetizationAccessPreviewStates((states) => ({
+            ...states,
+            [key]: {
+              loading: false,
+              envelope: null,
+              error: error instanceof Error ? error.message : "Failed to load access preview",
+            },
+          }));
+        });
+    });
+  }, [
+    accountDeactivated,
+    auth.isAuthenticated,
+    isProductRoute,
+    monetizationAccessPreviewStates,
+    protectedOptions,
+  ]);
 
   useEffect(() => {
     if (!isProductRoute) return;
@@ -5540,6 +6496,9 @@ function App() {
         setScoringPreviewState(emptyLoadState());
         setExplanationStates({});
         setExportState(emptyLoadState());
+        setMonetizationMeState(emptyLoadState());
+        setMonetizationEntitlementsState(emptyLoadState());
+        setMonetizationUsageState(emptyLoadState());
         setDeactivateConfirmed(false);
         setAccountAction({
           loading: false,
@@ -5743,10 +6702,29 @@ function App() {
 
         {route.page === "recommendations" ? (
           <RecommendationsView
+            accessPreviewStates={monetizationAccessPreviewStates}
             goalModesState={recommendationGoalModesState}
+            monetizationPlansState={monetizationPlansState}
             onSelectGoalMode={updateRecommendationGoalMode}
             selectedGoalMode={selectedRecommendationGoalMode}
             strategyState={recommendationStrategyState}
+          />
+        ) : null}
+
+        {route.page === "plans" ? (
+          <MonetizationView
+            accessPreviewStates={monetizationAccessPreviewStates}
+            authenticated={auth.isAuthenticated && !accountDeactivated}
+            billingAction={billingAction}
+            billingStatusState={billingStatusState}
+            featuresState={monetizationFeaturesState}
+            monetizationEntitlementsState={monetizationEntitlementsState}
+            monetizationMeState={monetizationMeState}
+            monetizationUsageState={monetizationUsageState}
+            onManageBilling={handleManageBilling}
+            onStartCheckout={handleStartCheckout}
+            plansState={monetizationPlansState}
+            reportsState={monetizationReportsState}
           />
         ) : null}
 

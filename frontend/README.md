@@ -39,6 +39,18 @@ When `VITE_API_BASE_URL` is not set, local development uses Vite's dev proxy for
 - `POST /discover/personalized`
 - `GET /recommendations/goal-modes`
 - `POST /recommendations/strategy`
+- `GET /monetization/plans`
+- `GET /monetization/features`
+- `GET /monetization/reports`
+- `GET /monetization/access-preview`
+- `GET /billing/status`
+- protected `GET /monetization/me`
+- protected `GET /monetization/entitlements`
+- protected `GET /monetization/usage`
+- protected `POST /monetization/reports/{report_key}/generate`
+- protected `POST /monetization/reports/{report_key}/export`
+- protected `POST /billing/checkout-session`
+- protected `POST /billing/portal-session`
 - protected `/me` account routes
 - protected `POST /me/scoring-preview`
 - protected `/me/alerts` in-app alert feed routes
@@ -57,7 +69,7 @@ VITE_AUTH0_AUDIENCE="https://api.job-market-intelligence.local"
 VITE_AUTH0_REDIRECT_URI="http://127.0.0.1:5173/markets"
 ```
 
-Tokens are requested through Auth0 SDK memory cache and attached only to protected `/me` requests. Public market exploration works with the Auth0 variables unset.
+Tokens are requested through Auth0 SDK memory cache and attached only to protected `/me`, `/monetization`, and `/billing` requests. Public market exploration works with the Auth0 variables unset.
 
 The account screen exposes app-owned Layer 7/11A/11B data only: current user/profile, saved preferences, scoring weights, watchlists, in-app alerts, recommendation snapshots, export, and app-level account deactivation. Watchlists store references; scoring previews label canonical/default scores separately from personalized overlay scores. Deactivation does not delete the Auth0 provider account.
 
@@ -86,6 +98,46 @@ Role-family guidance is labeled heuristic/inferred when the API marks it that
 way. Empty company recommendations show backend warnings instead of invented
 company targets. There is no prompt box, chat UI, AI summary, live scraping, or
 saved strategy state in this layer.
+
+## Monetization Surface
+
+Layer 15 adds a plans page at `/markets/plans`. It loads backend-owned
+monetization metadata and account entitlement state from the `/monetization/*`
+endpoints and renders:
+
+- free, individual, student, and institutional plan metadata
+- free vs paid feature boundaries
+- report product catalog entries
+- current effective plan and account status when signed in
+- included features, usage limits, remaining usage, and account usage counters
+- central entitlement access previews for selected workflow features
+- trust-safe prompts near recommendations, comparisons, market coverage, and company geography
+- backend billing status and configured checkout eligibility
+
+Layer 15 Batch 5 adds real checkout/portal wiring through backend endpoints.
+The frontend never exposes Stripe secrets, price IDs, webhook secrets, or fake
+payment success state. It shows checkout only when `GET /billing/status`
+reports availability for a mapped paid plan, calls
+`POST /billing/checkout-session`, and redirects only to the backend-returned
+provider URL. Checkout creation does not grant access; access changes after
+verified webhook events update internal entitlements.
+
+Report/export actions are JSON stubs only; they do not generate PDFs or
+downloads. Placeholder prices are rendered only as backend-provided test
+metadata.
+
+Upgrade prompts must describe added workflow value: watchlists, alerts,
+exports, deeper reports, broader maintained coverage, and institutional
+advisor/cohort workflows. They must not claim that payment reveals hidden truth
+or hide the basic recommendation result.
+
+Frontend access-preview messaging mirrors the backend entitlement response:
+`allowed`, `reason`, `upgrade_plan_keys`, `usage_limit`, and `remaining_usage`.
+The frontend does not make entitlement decisions locally and does not let
+monetization influence recommendation ranking.
+
+Blocked paid workflow copy directs users to "Upgrade options" or "View plans".
+Checkout actions must not claim payment reveals hidden recommendation truth.
 
 ## Market Coverage Disclosure
 

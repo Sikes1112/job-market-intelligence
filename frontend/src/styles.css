@@ -390,6 +390,17 @@ legend {
   color: var(--green);
 }
 
+.compact-button {
+  min-height: 2.25rem;
+  padding: 0.55rem 0.85rem;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .demo-disclosure {
   background: rgb(255 253 247 / 82%);
   border: 1px solid rgb(183 101 35 / 22%);
@@ -1576,6 +1587,10 @@ legend {
 .recommendation-profile-card,
 .recommendation-card,
 .strategy-section,
+.plan-card,
+.report-product-card,
+.feature-boundary-panel,
+.access-preview-card,
 .claim-row,
 .component-row {
   background: var(--field);
@@ -1593,14 +1608,119 @@ legend {
 .recommendation-card-list,
 .component-list,
 .claim-list,
-.strategy-grid {
+.strategy-grid,
+.plan-grid,
+.report-product-grid,
+.access-preview-grid {
   display: grid;
   gap: 0.75rem;
 }
 
-.strategy-grid {
+.strategy-grid,
+.plan-grid,
+.report-product-grid,
+.access-preview-grid {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   margin-top: 1rem;
+}
+
+.plan-grid {
+  align-items: start;
+}
+
+.plan-card,
+.report-product-card,
+.feature-boundary-panel,
+.access-preview-card {
+  align-content: start;
+}
+
+.plan-card h3,
+.report-product-card h3 {
+  color: var(--green);
+  font-size: 1rem;
+  margin: 0;
+  text-transform: none;
+}
+
+.plan-card-topline {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: space-between;
+}
+
+.plan-price {
+  color: var(--ink);
+  font-size: 1.05rem;
+}
+
+.plan-section,
+.feature-row {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.plan-section ul,
+.feature-boundary-panel ul,
+.report-product-card ul {
+  color: var(--muted);
+  display: grid;
+  gap: 0.28rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.plan-section small,
+.feature-row small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.plan-action-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.plan-action-row .meta-copy {
+  margin: 0;
+}
+
+.feature-boundary-panel {
+  gap: 0.8rem;
+}
+
+.feature-row {
+  background: rgb(255 253 247 / 70%);
+  border: 1px solid rgb(29 40 34 / 8%);
+  border-radius: 0.85rem;
+  padding: 0.75rem;
+}
+
+.upgrade-prompt {
+  align-items: center;
+  background: rgb(215 239 233 / 54%);
+  border: 1px solid rgb(20 84 69 / 16%);
+  border-radius: 0.85rem;
+  display: flex;
+  gap: 0.85rem;
+  justify-content: space-between;
+  margin-top: 1rem;
+  padding: 0.85rem;
+}
+
+.upgrade-prompt strong,
+.upgrade-prompt p {
+  display: block;
+  margin: 0.35rem 0 0;
+}
+
+.upgrade-prompt p {
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
 .recommendation-card-header {
@@ -1717,7 +1837,8 @@ legend {
   .card-header,
   .health-card,
   .detail-hero,
-  .classification-layout {
+  .classification-layout,
+  .upgrade-prompt {
     align-items: start;
     display: grid;
   }

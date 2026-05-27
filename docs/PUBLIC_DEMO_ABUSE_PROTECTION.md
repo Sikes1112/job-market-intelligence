@@ -109,6 +109,9 @@ The public demo allowlist remains:
 - `GET /health`
 - `GET /ready`
 - public market/search/source GET routes used by `/markets`
+- `GET /monetization/plans`, `GET /monetization/features`,
+  `GET /monetization/reports`, and `GET /monetization/access-preview`
+- `GET /billing/status`
 - `POST /discover/personalized`, explicitly allowed because it is
   request-scoped and non-persistent
 - `GET /recommendations/goal-modes`
@@ -116,8 +119,9 @@ The public demo allowlist remains:
   request-scoped, non-persistent, and uses existing app-owned outputs
 - `OPTIONS *` for CORS preflight
 
-Admin routes, user persistence, overrides, repairs, canonical writes, refresh
-execution, ingestion execution, and unknown future routes remain denied.
+Admin routes, user persistence, billing writes, overrides, repairs, canonical
+writes, refresh execution, ingestion execution, and unknown future routes
+remain denied.
 
 ## External Setup Still Required
 

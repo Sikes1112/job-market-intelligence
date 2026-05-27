@@ -12,6 +12,13 @@ from backend.companies.models import Company
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
 from backend.ingestion.models import RawIngestionRecord
+from backend.monetization.accounts import (
+    MonetizationAccountType,
+    PlanAssignmentSource,
+    PlanStatus,
+)
+from backend.monetization.plans import PlanKey
+from backend.monetization.repository import MonetizationRepository
 from backend.outputs.models import OutputMetadata
 from backend.presence.models import CompanyRegionPresence
 from backend.provenance.models import FactSourceLink, SourceObservation, SourceRef
@@ -46,6 +53,28 @@ def _current_user_id(api_client, subject: str = "auth0|user_a") -> str:
     response = api_client.get("/me", headers=_auth_headers(subject))
     assert response.status_code == 200
     return response.json()["data"]["user"]["user_id"]
+
+
+def _assign_paid_plan(
+    api_client,
+    session: Session,
+    subject: str = "auth0|user_a",
+    plan_key: PlanKey = PlanKey.INDIVIDUAL_MONTHLY,
+) -> str:
+    user_id = _current_user_id(api_client, subject)
+    repo = MonetizationRepository(session)
+    account = repo.ensure_account_for_user(
+        user_id=user_id,
+        account_type=MonetizationAccountType.INDIVIDUAL,
+    )
+    repo.assign_plan(
+        monetization_account_id=account.monetization_account_id,
+        plan_key=plan_key.value,
+        plan_status=PlanStatus.ACTIVE,
+        assignment_source=PlanAssignmentSource.TEST_FIXTURE,
+        effective_at=_NOW,
+    )
+    return user_id
 
 
 def _alert_service(session: Session) -> AlertService:
@@ -231,8 +260,10 @@ def test_preferences_get_update_delete_for_current_user(api_client) -> None:
 
 def test_saved_market_artifacts_create_list_get_delete_for_current_user(
     api_client,
+    session: Session,
 ) -> None:
     headers = _auth_headers()
+    _assign_paid_plan(api_client, session)
 
     created = api_client.post(
         "/me/saved-market-artifacts",
@@ -275,8 +306,10 @@ def test_saved_market_artifacts_create_list_get_delete_for_current_user(
 
 def test_saved_market_artifact_rejects_unsafe_snapshot_payload(
     api_client,
+    session: Session,
 ) -> None:
     headers = _auth_headers()
+    _assign_paid_plan(api_client, session)
 
     response = api_client.post(
         "/me/saved-market-artifacts",
@@ -303,7 +336,7 @@ def test_alert_feed_list_read_and_dismiss_for_current_user(
     session: Session,
 ) -> None:
     headers = _auth_headers()
-    user_id = _current_user_id(api_client)
+    user_id = _assign_paid_plan(api_client, session)
     session.add_all(
         [
             Region(
@@ -558,7 +591,7 @@ def test_malformed_stored_scoring_weights_fall_back_to_defaults_in_api(
 
 def test_export_and_deactivate_current_user_data(api_client, session) -> None:
     headers = _auth_headers()
-    user_id = _current_user_id(api_client)
+    user_id = _assign_paid_plan(api_client, session)
     api_client.put(
         "/me/preferences",
         headers=headers,
@@ -583,10 +616,10 @@ def test_export_and_deactivate_current_user_data(api_client, session) -> None:
     assert UserRepository(session).list_external_identities(user_id) == []
 
 
-def test_cross_user_route_access_is_blocked_or_excluded(api_client) -> None:
+def test_cross_user_route_access_is_blocked_or_excluded(api_client, session: Session) -> None:
     user_a_headers = _auth_headers("auth0|user_a")
     user_b_headers = _auth_headers("auth0|user_b")
-    user_b_id = _current_user_id(api_client, "auth0|user_b")
+    user_b_id = _assign_paid_plan(api_client, session, "auth0|user_b")
     api_client.put(
         "/me/preferences",
         headers=user_b_headers,
@@ -654,7 +687,7 @@ def test_protected_user_routes_do_not_mutate_canonical_market_rows(
     _seed_market_rows(session)
     before = _market_state(session)
     headers = _auth_headers()
-    user_id = _current_user_id(api_client)
+    user_id = _assign_paid_plan(api_client, session)
 
     api_client.put(
         "/me/preferences",

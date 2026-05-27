@@ -6,7 +6,15 @@ export const INDUSTRY_OPTIONS = ["software", "ai", "cloud", "data", "cybersecuri
 export const PREFERENCE_LEVELS = ["low", "medium", "high"];
 export const CAREER_STAGE_OPTIONS = ["entry_level"];
 
-export type ProductPage = "explore" | "region" | "company" | "compare" | "discovery" | "recommendations" | "account";
+export type ProductPage =
+  | "explore"
+  | "region"
+  | "company"
+  | "compare"
+  | "discovery"
+  | "recommendations"
+  | "plans"
+  | "account";
 export type PublicPage = "landing" | "data-limitations" | "privacy" | "terms" | "sources";
 export type AppPage = ProductPage | PublicPage;
 
@@ -54,7 +62,16 @@ export const PUBLIC_PAGE_PATHS: Record<Exclude<PublicPage, "landing">, string> =
   sources: "/sources",
 };
 
-const PRODUCT_PAGES: ProductPage[] = ["explore", "region", "company", "compare", "discovery", "recommendations", "account"];
+const PRODUCT_PAGES: ProductPage[] = [
+  "explore",
+  "region",
+  "company",
+  "compare",
+  "discovery",
+  "recommendations",
+  "plans",
+  "account",
+];
 const DEFAULT_RECOMMENDATION_GOAL_MODE = "maximize_entry_level_access";
 
 export function isProductPage(page: AppPage): page is ProductPage {
@@ -207,6 +224,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
   if (section === "compare") return baseRoute("compare", params);
   if (section === "discovery") return baseRoute("discovery", params);
   if (section === "recommendations") return baseRoute("recommendations", params);
+  if (section === "plans" || section === "pricing") return baseRoute("plans", params);
   if (section === "account") return baseRoute("account", params);
 
   return baseRoute("explore", params, { unknownPath: pathname });
@@ -260,6 +278,10 @@ export function personalizedDiscoveryUrl(filters: DiscoveryFilters): string {
 export function recommendationsUrl(goalMode = DEFAULT_RECOMMENDATION_GOAL_MODE): string {
   const params = new URLSearchParams({ goal: goalMode });
   return `${PRODUCT_ROOT}/recommendations?${params.toString()}`;
+}
+
+export function plansUrl(): string {
+  return `${PRODUCT_ROOT}/plans`;
 }
 
 export function accountUrl(): string {
