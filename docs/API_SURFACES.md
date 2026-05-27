@@ -132,9 +132,156 @@ Frontend Auth0 SPA settings:
 When frontend Auth0 settings are absent, the Vite app runs in local/demo mode:
 public market exploration remains available and account controls are disabled.
 The frontend attaches Bearer tokens only to protected `/me`, `/monetization`,
-and `/billing` account/workflow requests.
+`/billing`, and future institutional account/workflow requests.
 
 Public market exploration routes remain unauthenticated.
+
+## Institutional Endpoints
+
+Layer 16 adds institutional APIs under `/api/institutions`. These routes are
+protected by the existing backend auth boundary and authorize against persisted
+organization memberships. Frontend role state is not trusted for security
+decisions.
+
+Implemented routes:
+
+- `GET /api/institutions/organizations/current`
+- `GET /api/institutions/organizations/{organization_id}`
+- `GET /api/institutions/organizations/{organization_id}/dashboard`
+- `GET /api/institutions/organizations/{organization_id}/members`
+- `POST /api/institutions/organizations/{organization_id}/members`
+- `PATCH /api/institutions/organizations/{organization_id}/members/{membership_id}`
+- `POST /api/institutions/organizations/{organization_id}/advisor/compare-regions`
+- `POST /api/institutions/organizations/{organization_id}/advisor/compare-industries`
+- `POST /api/institutions/organizations/{organization_id}/advisor/compare-companies`
+- `POST /api/institutions/organizations/{organization_id}/advisor/compare-career-stages`
+- `POST /api/institutions/organizations/{organization_id}/advisor/application-timing`
+- `POST /api/institutions/organizations/{organization_id}/reports`
+- `GET /api/institutions/organizations/{organization_id}/reports`
+- `GET /api/institutions/organizations/{organization_id}/reports/{report_id}`
+- `POST /api/institutions/organizations/{organization_id}/data-requests`
+- `GET /api/institutions/organizations/{organization_id}/data-requests`
+
+`/organizations/current` returns the caller's own active organization
+memberships. Organization detail requires an active `ORG_ADMIN`, `ADVISOR`, or
+`REPORT_VIEWER` membership. The dashboard route requires an active `ORG_ADMIN`,
+`ADVISOR`, or `REPORT_VIEWER` membership in the requested organization. Member
+list and member mutation routes require an active `ORG_ADMIN` membership in the
+requested organization.
+
+Advisor comparison routes require an active `ORG_ADMIN` or `ADVISOR`
+membership in the requested organization. `REPORT_VIEWER` can view aggregate
+dashboard/report-oriented surfaces but cannot use advisor tools in this batch.
+`STUDENT` and inactive memberships are denied. Cross-organization requests are
+denied by persisted backend membership checks.
+
+Institutional report routes require an active `ORG_ADMIN`, `ADVISOR`, or
+`REPORT_VIEWER` membership in the requested organization. `STUDENT` members do
+not access institutional reports by default. Reports are persisted
+aggregate-first payloads with low-sample suppression, coverage warnings,
+limitations, recommended actions, privacy notes, data freshness, and deferred
+export options.
+
+Data request routes create/list auditable request records only. `ORG_ADMIN`
+can create/list organization-level export/deletion request records for its own
+organization. `STUDENT` can create/list their own student export/deletion
+request records. `ADVISOR` and `REPORT_VIEWER` cannot create student
+export/deletion requests by default. Cross-organization requests are denied.
+The API does not execute destructive deletion or generate full export packages
+in this batch.
+
+The dashboard response is aggregate-first:
+
+- `organization_id`, `organization_name`, `generated_at`
+- `minimum_group_size`, default `5`, with request overrides bounded to `5` through `50`
+- `cohort_size` and safe visible cohort summary counts
+- `popular_target_markets`
+- `role_interest_summary`
+- `saved_company_summary`
+- `market_demand_trends`
+- `coverage_gaps`
+- `suppressed_categories`
+- `privacy_notes`, `coverage_warnings`, and `data_freshness`
+
+Low-sample aggregate categories are suppressed before response serialization.
+Suppressed labels and exact hidden low-sample counts are not returned. Market
+demand and coverage-gap sections are derived only from target-market categories
+that already met the configured minimum group threshold. The dashboard payload
+does not include student ids, raw saved-market rows, search rows, recommendation
+snapshots, or student-level activity.
+
+Membership responses contain organization/member ids, user ids, roles, statuses,
+and timestamps only. They do not expose profile email, saved companies,
+recommendation snapshots, searches, alerts, personal activity, or student-level
+private data.
+
+Institutional audit rows are recorded for organization detail access,
+dashboard access, member list access, member additions, and member updates.
+Advisor tool usage records action names for region, industry, company,
+career-stage, and application-timing comparisons. Audit metadata stores
+organization scope, actor, actor role, comparison type, report/request type,
+and non-sensitive request summaries only. There is no audit dashboard, PDF/CSV
+export execution, destructive deletion execution, SSO, invite flow, or
+student-specific advising endpoint in this batch.
+
+Advisor tool responses are guidance-oriented:
+
+- `organization_id`, `generated_at`, and `comparison_type`
+- `compared_items` with market demand signals, explanation summaries, coverage
+  metadata, item warnings, and non-sensitive metadata
+- `guidance`
+- `tradeoffs`
+- `coverage_warnings`
+- `data_freshness`
+- `limitations`
+- `privacy_notes`
+
+Advisor routes reuse existing market/search/coverage systems and do not create
+a separate recommendation engine. They do not include student ids, raw
+per-student saved/search rows, recommendation snapshots, personal activity, or
+individual student histories.
+
+Report generation responses use:
+
+- `report.report_id`, `organization_id`, `report_type`, `title`, `generated_at`
+- `generated_by_user_id`
+- `minimum_group_size` and `cohort_size`
+- structured `sections`
+- `privacy_suppressions`
+- `coverage_warnings`
+- `data_freshness`
+- `limitations`
+- `recommended_actions`
+- `export_status` and deferred `export_options`
+
+Report payloads do not include student ids, raw per-student saved/search rows,
+recommendation snapshots, personal activity, or individual student histories.
+PDF, CSV, PowerPoint, email delivery, and scheduled reports are not
+implemented.
+
+Report generation rejects `minimum_group_size` values below `5`; report
+payloads are assembled only after the privacy-aware dashboard aggregation has
+already applied suppression.
+
+Data request create responses use:
+
+- `data_request_id`
+- `organization_id`
+- `requester_user_id`
+- `request_type`
+- `subject_type`
+- `subject_user_id`, only for the requester-owned student request case
+- `status`
+- `reason`
+- timestamps and an execution note
+
+Data request records are auditable workflow records only. They do not imply
+approval, completion, deletion execution, or export package creation.
+
+The Layer 16 foundation is education-privacy-aware and FERPA-conscious in
+design, but this implementation does not claim legal FERPA compliance. It
+minimizes unnecessary student-level exposure through role checks, organization
+scoping, and aggregate-only dashboard design.
 
 ## Monetization Endpoints
 

@@ -36,13 +36,18 @@ REQUIRED_TABLES = {
     "billing_customer_refs",
     "billing_subscription_refs",
     "billing_webhook_events",
+    "organizations",
+    "organization_memberships",
+    "institutional_audit_logs",
+    "institutional_reports",
+    "institutional_data_requests",
 }
 
 # Every canonical truth/output object must carry these metadata columns
 # (DATA_MODEL.md §2 + §10 + Layer 3 provenance records).
 CANONICAL_METADATA_COLUMNS = {"state", "version", "created_at", "updated_at"}
 
-APPEND_ONLY_LOG_TABLES = {"admin_event_logs"}
+APPEND_ONLY_LOG_TABLES = {"admin_event_logs", "institutional_audit_logs"}
 ADMIN_REVIEW_TABLES = {
     "audit_finding_reviews",
     "admin_overrides",
@@ -72,12 +77,21 @@ BILLING_TABLES = {
     "billing_subscription_refs",
     "billing_webhook_events",
 }
+INSTITUTIONAL_TABLES = {
+    "organizations",
+    "organization_memberships",
+    "institutional_reports",
+    "institutional_data_requests",
+}
 MARKET_CANONICAL_METADATA_TABLES = CANONICAL_METADATA_TABLES - USER_IDENTITY_TABLES
 MARKET_CANONICAL_METADATA_TABLES = (
     MARKET_CANONICAL_METADATA_TABLES - SYSTEM_EVENT_TABLES - OPERATOR_WORKFLOW_TABLES
 )
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - MONETIZATION_TABLES
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - BILLING_TABLES
+MARKET_CANONICAL_METADATA_TABLES = (
+    MARKET_CANONICAL_METADATA_TABLES - INSTITUTIONAL_TABLES
+)
 
 
 def test_all_required_tables_registered() -> None:
@@ -215,6 +229,84 @@ def test_billing_tables_isolate_provider_references_from_entitlements() -> None:
         "error_code",
         "safe_metadata",
     }.issubset(webhook_cols)
+
+
+def test_institutional_tables_have_scoped_permission_columns() -> None:
+    engine = make_engine("sqlite:///:memory:")
+    create_all(engine)
+    inspector = inspect(engine)
+
+    org_cols = {c["name"] for c in inspector.get_columns("organizations")}
+    assert {
+        "organization_id",
+        "name",
+        "organization_type",
+        "status",
+        "created_at",
+        "updated_at",
+    }.issubset(org_cols)
+
+    membership_cols = {
+        c["name"] for c in inspector.get_columns("organization_memberships")
+    }
+    assert {
+        "organization_membership_id",
+        "organization_id",
+        "user_id",
+        "role",
+        "status",
+        "created_at",
+        "updated_at",
+    }.issubset(membership_cols)
+
+    audit_cols = {c["name"] for c in inspector.get_columns("institutional_audit_logs")}
+    assert {
+        "institutional_audit_log_id",
+        "organization_id",
+        "actor_user_id",
+        "actor_role",
+        "action",
+        "target_type",
+        "target_id",
+        "purpose",
+        "metadata",
+        "created_at",
+    }.issubset(audit_cols)
+
+    report_cols = {c["name"] for c in inspector.get_columns("institutional_reports")}
+    assert {
+        "institutional_report_id",
+        "organization_id",
+        "report_type",
+        "title",
+        "generated_by_user_id",
+        "generated_at",
+        "payload_json",
+        "minimum_group_size",
+        "privacy_summary",
+        "coverage_summary",
+        "status",
+        "created_at",
+        "updated_at",
+    }.issubset(report_cols)
+
+    data_request_cols = {
+        c["name"] for c in inspector.get_columns("institutional_data_requests")
+    }
+    assert {
+        "institutional_data_request_id",
+        "organization_id",
+        "requester_user_id",
+        "request_type",
+        "subject_type",
+        "subject_user_id",
+        "status",
+        "reason",
+        "resolved_at",
+        "metadata",
+        "created_at",
+        "updated_at",
+    }.issubset(data_request_cols)
 
 
 def test_jobs_table_has_envelope_columns() -> None:

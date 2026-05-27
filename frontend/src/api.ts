@@ -12,6 +12,17 @@ import type {
   ExplanationRequest,
   ExplanationResult,
   FreshnessStatus,
+  InstitutionAdvisorComparisonType,
+  InstitutionAdvisorRequest,
+  InstitutionAdvisorToolResponse,
+  InstitutionCurrentOrganizationsPayload,
+  InstitutionDataRequestCreatePayload,
+  InstitutionDataRequestCreateRequest,
+  InstitutionDataRequestListPayload,
+  InstitutionDashboardPayload,
+  InstitutionReportCreateRequest,
+  InstitutionReportGeneratePayload,
+  InstitutionReportListPayload,
   MonetizationAccessPreviewPayload,
   MonetizationFeatureKey,
   MonetizationFeaturesPayload,
@@ -230,8 +241,11 @@ async function protectedRequest<T>(
     && !path.startsWith("/me/")
     && !path.startsWith("/monetization/")
     && !path.startsWith("/billing/")
+    && !path.startsWith("/api/institutions/")
   ) {
-    throw new ApiError("Protected requests are restricted to /me, /monetization, and /billing routes");
+    throw new ApiError(
+      "Protected requests are restricted to /me, /monetization, /billing, and /api/institutions routes",
+    );
   }
 
   const token = await auth.getAccessToken();
@@ -370,6 +384,109 @@ export function getMyMonetizationEntitlements(auth: ProtectedRequestOptions) {
 
 export function getMyMonetizationUsage(auth: ProtectedRequestOptions) {
   return protectedRequest<MonetizationUsagePayload>("/monetization/usage", auth);
+}
+
+export function getInstitutionCurrentOrganizations(auth: ProtectedRequestOptions) {
+  return protectedRequest<InstitutionCurrentOrganizationsPayload>(
+    "/api/institutions/organizations/current",
+    auth,
+  );
+}
+
+export function getInstitutionDashboard(
+  organizationId: string,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<InstitutionDashboardPayload>(
+    `/api/institutions/organizations/${encodeURIComponent(organizationId)}/dashboard`,
+    auth,
+  );
+}
+
+const INSTITUTION_ADVISOR_ENDPOINTS: Record<InstitutionAdvisorComparisonType, string> = {
+  regions: "compare-regions",
+  industries: "compare-industries",
+  companies: "compare-companies",
+  career_stages: "compare-career-stages",
+  application_timing: "application-timing",
+};
+
+export function runInstitutionAdvisorComparison(
+  organizationId: string,
+  comparisonType: InstitutionAdvisorComparisonType,
+  body: InstitutionAdvisorRequest,
+  auth: ProtectedRequestOptions,
+) {
+  const endpoint = INSTITUTION_ADVISOR_ENDPOINTS[comparisonType];
+  return protectedRequest<InstitutionAdvisorToolResponse>(
+    `/api/institutions/organizations/${encodeURIComponent(organizationId)}/advisor/${endpoint}`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function generateInstitutionReport(
+  organizationId: string,
+  body: InstitutionReportCreateRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<InstitutionReportGeneratePayload>(
+    `/api/institutions/organizations/${encodeURIComponent(organizationId)}/reports`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function listInstitutionReports(
+  organizationId: string,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<InstitutionReportListPayload>(
+    `/api/institutions/organizations/${encodeURIComponent(organizationId)}/reports`,
+    auth,
+  );
+}
+
+export function getInstitutionReport(
+  organizationId: string,
+  reportId: string,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<InstitutionReportGeneratePayload>(
+    `/api/institutions/organizations/${encodeURIComponent(organizationId)}/reports/${encodeURIComponent(reportId)}`,
+    auth,
+  );
+}
+
+export function createInstitutionDataRequest(
+  organizationId: string,
+  body: InstitutionDataRequestCreateRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<InstitutionDataRequestCreatePayload>(
+    `/api/institutions/organizations/${encodeURIComponent(organizationId)}/data-requests`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function listInstitutionDataRequests(
+  organizationId: string,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<InstitutionDataRequestListPayload>(
+    `/api/institutions/organizations/${encodeURIComponent(organizationId)}/data-requests`,
+    auth,
+  );
 }
 
 export function generateMonetizationReport(

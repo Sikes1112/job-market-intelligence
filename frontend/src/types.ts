@@ -1199,3 +1199,261 @@ export type RecommendationStrategyPayload = {
   market_strategy_plan: MarketStrategyPlan;
   warnings: string[];
 };
+
+export type OrganizationRole = "ORG_ADMIN" | "ADVISOR" | "STUDENT" | "REPORT_VIEWER";
+
+export type InstitutionOrganization = {
+  organization_id: string;
+  name: string;
+  organization_type: string;
+  status: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type InstitutionMembership = {
+  organization_membership_id: string;
+  organization_id: string;
+  user_id: string;
+  role: OrganizationRole;
+  status: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type InstitutionCurrentOrganizationsPayload = {
+  organizations: Array<{
+    organization: InstitutionOrganization;
+    membership: InstitutionMembership;
+  }>;
+};
+
+export type InstitutionAggregateItem = {
+  label: string;
+  count: number | null;
+  percentage: number | null;
+  category: string | null;
+  suppressed: boolean;
+  suppression_reason: string | null;
+  source_count: number | null;
+  coverage: Record<string, unknown> | null;
+  confidence: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type InstitutionSuppressedCategory = {
+  section: string;
+  suppressed_count: number;
+  suppression_reason: string;
+  minimum_group_size: number;
+};
+
+export type InstitutionDashboardPayload = {
+  organization_id: string;
+  organization_name: string;
+  generated_at: string;
+  minimum_group_size: number;
+  cohort_size: number;
+  visible_student_count: number;
+  popular_target_markets: InstitutionAggregateItem[];
+  role_interest_summary: InstitutionAggregateItem[];
+  saved_company_summary: InstitutionAggregateItem[];
+  market_demand_trends: InstitutionAggregateItem[];
+  coverage_gaps: InstitutionAggregateItem[];
+  suppressed_categories: InstitutionSuppressedCategory[];
+  privacy_notes: string[];
+  coverage_warnings: string[];
+  data_freshness: Record<string, unknown>;
+};
+
+export type InstitutionAdvisorComparisonType =
+  | "regions"
+  | "industries"
+  | "companies"
+  | "career_stages"
+  | "application_timing";
+
+export type InstitutionAdvisorRegionRequest = {
+  regions: string[];
+  role_context?: string | null;
+  industry_context?: string | null;
+  career_stage?: string | null;
+};
+
+export type InstitutionAdvisorIndustryRequest = {
+  industries: string[];
+  region_context?: string[];
+  career_stage?: string | null;
+};
+
+export type InstitutionAdvisorCompanyRequest = {
+  companies: string[];
+  region_context?: string[];
+  industry_context?: string | null;
+  career_stage?: string | null;
+};
+
+export type InstitutionAdvisorCareerStageRequest = {
+  career_stages: string[];
+  region_context?: string[];
+  industry_context?: string | null;
+  company_context?: string[];
+};
+
+export type InstitutionAdvisorApplicationTimingRequest = {
+  target_regions?: string[];
+  target_industries?: string[];
+  target_companies?: string[];
+  career_stage?: string | null;
+  application_window?: string | null;
+};
+
+export type InstitutionAdvisorRequest =
+  | InstitutionAdvisorRegionRequest
+  | InstitutionAdvisorIndustryRequest
+  | InstitutionAdvisorCompanyRequest
+  | InstitutionAdvisorCareerStageRequest
+  | InstitutionAdvisorApplicationTimingRequest;
+
+export type InstitutionAdvisorComparedItem = {
+  item_id: string;
+  label: string;
+  item_type: string;
+  demand_signals: Record<string, unknown>;
+  coverage: Record<string, unknown> | null;
+  explanation_summary: string[];
+  warnings: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type InstitutionAdvisorTradeoff = {
+  category: string;
+  summary: string;
+  evidence_level: string;
+};
+
+export type InstitutionAdvisorToolResponse = {
+  organization_id: string;
+  generated_at: string;
+  comparison_type: InstitutionAdvisorComparisonType;
+  compared_items: InstitutionAdvisorComparedItem[];
+  guidance: string[];
+  tradeoffs: InstitutionAdvisorTradeoff[];
+  coverage_warnings: string[];
+  data_freshness: Record<string, unknown>;
+  limitations: string[];
+  privacy_notes: string[];
+};
+
+export type InstitutionReportType =
+  | "career_services"
+  | "program_director"
+  | "workforce_planner"
+  | "economic_development_partner";
+
+export type InstitutionReportCreateRequest = {
+  report_type: InstitutionReportType;
+  minimum_group_size?: number;
+  date_range?: Record<string, string | null> | null;
+};
+
+export type InstitutionReportSection = {
+  section_id: string;
+  title: string;
+  summary: string;
+  findings: string[];
+  metrics: Record<string, unknown>;
+  warnings: string[];
+  suppressions: InstitutionSuppressedCategory[];
+  limitations: string[];
+  recommended_actions: string[];
+};
+
+export type InstitutionReportPayload = {
+  report_id: string;
+  organization_id: string;
+  report_type: InstitutionReportType;
+  title: string;
+  generated_at: string;
+  generated_by_user_id: string;
+  date_range: Record<string, string | null> | null;
+  minimum_group_size: number;
+  cohort_size: number;
+  sections: InstitutionReportSection[];
+  privacy_suppressions: InstitutionSuppressedCategory[];
+  coverage_warnings: string[];
+  data_freshness: Record<string, unknown>;
+  limitations: string[];
+  recommended_actions: string[];
+  export_status: string;
+  export_options: Record<string, string>;
+  privacy_notes: string[];
+};
+
+export type InstitutionReportSummary = {
+  report_id: string;
+  organization_id: string;
+  report_type: InstitutionReportType;
+  title: string;
+  generated_at: string;
+  generated_by_user_id: string;
+  minimum_group_size: number;
+  cohort_size: number;
+  status: string;
+  privacy_summary: Record<string, unknown>;
+  coverage_summary: Record<string, unknown>;
+};
+
+export type InstitutionReportGeneratePayload = {
+  report: InstitutionReportPayload;
+};
+
+export type InstitutionReportListPayload = {
+  reports: InstitutionReportSummary[];
+};
+
+export type InstitutionDataRequestType =
+  | "organization_export"
+  | "organization_deletion"
+  | "student_export"
+  | "student_deletion";
+
+export type InstitutionDataRequestSubjectType = "organization" | "student";
+export type InstitutionDataRequestStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "completed"
+  | "canceled";
+
+export type InstitutionDataRequestCreateRequest = {
+  request_type: InstitutionDataRequestType;
+  subject_type?: InstitutionDataRequestSubjectType | null;
+  subject_user_id?: string | null;
+  reason?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+export type InstitutionDataRequestPayload = {
+  data_request_id: string;
+  organization_id: string;
+  requester_user_id: string;
+  request_type: InstitutionDataRequestType;
+  subject_type: InstitutionDataRequestSubjectType;
+  subject_user_id: string | null;
+  status: InstitutionDataRequestStatus;
+  reason: string | null;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  metadata: Record<string, unknown> | null;
+  execution_note: string;
+};
+
+export type InstitutionDataRequestCreatePayload = {
+  data_request: InstitutionDataRequestPayload;
+};
+
+export type InstitutionDataRequestListPayload = {
+  data_requests: InstitutionDataRequestPayload[];
+};

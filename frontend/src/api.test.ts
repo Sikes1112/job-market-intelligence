@@ -3,6 +3,7 @@ import {
   ApiError,
   createBillingCheckoutSession,
   createBillingPortalSession,
+  createInstitutionDataRequest,
   createSavedMarketArtifact,
   deleteSavedMarketArtifact,
   dismissAlert,
@@ -12,6 +13,9 @@ import {
   explainRegion,
   getCurrentUser,
   getBillingStatus,
+  getInstitutionCurrentOrganizations,
+  getInstitutionDashboard,
+  generateInstitutionReport,
   getMonetizationAccessPreview,
   getMonetizationFeatures,
   getMonetizationPlans,
@@ -22,10 +26,13 @@ import {
   getRecommendationGoalModes,
   getRecommendationStrategy,
   getRegions,
+  listInstitutionDataRequests,
+  listInstitutionReports,
   listAlerts,
   listSavedMarketArtifacts,
   markAlertRead,
   previewScoringOverlay,
+  runInstitutionAdvisorComparison,
 } from "./api";
 import { configureFrontendErrorReporter } from "./errorMonitoring";
 
@@ -192,6 +199,69 @@ describe("frontend API client auth boundary", () => {
     for (const [, init] of fetchMock.mock.calls) {
       expect((init as RequestInit).headers).toMatchObject({
         "Authorization": "Bearer billing-token",
+        "Content-Type": "application/json",
+      });
+    }
+  });
+
+  test("protected institutional requests attach bearer tokens", async () => {
+    const fetchMock = mockFetch({
+      organizations: [],
+      organization_id: "org_demo",
+      cohort_size: 0,
+    });
+    const auth = { getAccessToken: async () => "institution-token" };
+
+    await getInstitutionCurrentOrganizations(auth);
+    await getInstitutionDashboard("org_demo", auth);
+    await runInstitutionAdvisorComparison(
+      "org_demo",
+      "regions",
+      {
+        regions: ["greater_boston", "greater_sf"],
+        role_context: "software engineering",
+        career_stage: "entry_level",
+      },
+      auth,
+    );
+    await generateInstitutionReport(
+      "org_demo",
+      { report_type: "career_services", minimum_group_size: 5 },
+      auth,
+    );
+    await listInstitutionReports("org_demo", auth);
+    await createInstitutionDataRequest(
+      "org_demo",
+      { request_type: "organization_export", reason: "test" },
+      auth,
+    );
+    await listInstitutionDataRequests("org_demo", auth);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/institutions/organizations/current",
+      "/api/institutions/organizations/org_demo/dashboard",
+      "/api/institutions/organizations/org_demo/advisor/compare-regions",
+      "/api/institutions/organizations/org_demo/reports",
+      "/api/institutions/organizations/org_demo/reports",
+      "/api/institutions/organizations/org_demo/data-requests",
+      "/api/institutions/organizations/org_demo/data-requests",
+    ]);
+    expect(JSON.parse(String((fetchMock.mock.calls[2][1] as RequestInit).body))).toEqual({
+      regions: ["greater_boston", "greater_sf"],
+      role_context: "software engineering",
+      career_stage: "entry_level",
+    });
+    expect(JSON.parse(String((fetchMock.mock.calls[3][1] as RequestInit).body))).toEqual({
+      report_type: "career_services",
+      minimum_group_size: 5,
+    });
+    expect(JSON.parse(String((fetchMock.mock.calls[5][1] as RequestInit).body))).toEqual({
+      request_type: "organization_export",
+      reason: "test",
+    });
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toMatchObject({
+        "Authorization": "Bearer institution-token",
         "Content-Type": "application/json",
       });
     }

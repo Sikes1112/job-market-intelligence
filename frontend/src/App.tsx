@@ -3,6 +3,7 @@ import {
   API_TARGET_LABEL,
   createBillingCheckoutSession,
   createBillingPortalSession,
+  createInstitutionDataRequest,
   createRecommendationSnapshot,
   createSavedMarketArtifact,
   deactivateAccount,
@@ -22,6 +23,9 @@ import {
   getCurrentUser,
   getBillingStatus,
   getHealth,
+  getInstitutionCurrentOrganizations,
+  getInstitutionDashboard,
+  generateInstitutionReport,
   getMonetizationAccessPreview,
   getMonetizationFeatures,
   getMonetizationPlans,
@@ -35,11 +39,14 @@ import {
   getRecommendationStrategy,
   getRegionSources,
   getRegions,
+  listInstitutionDataRequests,
+  listInstitutionReports,
   listAlerts,
   listRecommendationSnapshots,
   listSavedMarketArtifacts,
   markAlertRead,
   previewScoringOverlay,
+  runInstitutionAdvisorComparison,
   searchCompanies,
   searchRegions,
   updatePreferences,
@@ -78,6 +85,31 @@ import type {
   ExplanationResult,
   FreshnessSourceSummary,
   FreshnessStatus,
+  InstitutionAggregateItem,
+  InstitutionAdvisorApplicationTimingRequest,
+  InstitutionAdvisorCareerStageRequest,
+  InstitutionAdvisorCompanyRequest,
+  InstitutionAdvisorComparisonType,
+  InstitutionAdvisorComparedItem,
+  InstitutionAdvisorIndustryRequest,
+  InstitutionAdvisorRegionRequest,
+  InstitutionAdvisorRequest,
+  InstitutionAdvisorToolResponse,
+  InstitutionAdvisorTradeoff,
+  InstitutionCurrentOrganizationsPayload,
+  InstitutionDataRequestCreatePayload,
+  InstitutionDataRequestCreateRequest,
+  InstitutionDataRequestListPayload,
+  InstitutionDataRequestPayload,
+  InstitutionDataRequestType,
+  InstitutionDashboardPayload,
+  InstitutionReportCreateRequest,
+  InstitutionReportGeneratePayload,
+  InstitutionReportListPayload,
+  InstitutionReportPayload,
+  InstitutionReportSection,
+  InstitutionReportSummary,
+  InstitutionReportType,
   MonetizationAccessPreviewPayload,
   MonetizationFeature,
   MonetizationFeatureKey,
@@ -144,6 +176,10 @@ import {
   companyGeographyUrl,
   compareMarketsUrl,
   exploreUrl,
+  institutionAdvisorUrl,
+  institutionDataRequestsUrl,
+  institutionDashboardUrl,
+  institutionReportsUrl,
   isProductPage,
   landingUrl,
   parseRoute,
@@ -250,6 +286,82 @@ type BillingActionState = {
   message: string | null;
   error: string | null;
 };
+type AdvisorFormState = {
+  regions: string;
+  roleContext: string;
+  industryContext: string;
+  careerStage: string;
+  industries: string;
+  regionContext: string;
+  companies: string;
+  companyContext: string;
+  careerStages: string;
+  applicationWindow: string;
+};
+type InstitutionReportFormState = {
+  reportType: InstitutionReportType;
+  minimumGroupSize: number;
+};
+type InstitutionDataRequestFormState = {
+  requestType: InstitutionDataRequestType;
+  subjectUserId: string;
+  reason: string;
+};
+
+const ADVISOR_COMPARISON_OPTIONS: Array<{
+  id: InstitutionAdvisorComparisonType;
+  label: string;
+}> = [
+  { id: "regions", label: "Regions" },
+  { id: "industries", label: "Industries" },
+  { id: "companies", label: "Companies" },
+  { id: "career_stages", label: "Career stages" },
+  { id: "application_timing", label: "Application timing" },
+];
+
+const DEFAULT_ADVISOR_FORM_STATE: AdvisorFormState = {
+  regions: "greater_boston, greater_sf",
+  roleContext: "software engineering",
+  industryContext: "software",
+  careerStage: "entry_level",
+  industries: "software, cloud",
+  regionContext: "greater_boston",
+  companies: "comp_alpha, comp_beta",
+  companyContext: "",
+  careerStages: "entry_level, internship, career_changer",
+  applicationWindow: "fall recruiting",
+};
+
+const INSTITUTION_REPORT_OPTIONS: Array<{
+  id: InstitutionReportType;
+  label: string;
+}> = [
+  { id: "career_services", label: "Career services" },
+  { id: "program_director", label: "Program director" },
+  { id: "workforce_planner", label: "Workforce planner" },
+  { id: "economic_development_partner", label: "Economic development partner" },
+];
+
+const INSTITUTION_DATA_REQUEST_OPTIONS: Array<{
+  id: InstitutionDataRequestType;
+  label: string;
+}> = [
+  { id: "organization_export", label: "Organization export" },
+  { id: "organization_deletion", label: "Organization deletion" },
+  { id: "student_export", label: "Student export" },
+  { id: "student_deletion", label: "Student deletion" },
+];
+
+const DEFAULT_REPORT_FORM_STATE: InstitutionReportFormState = {
+  reportType: "career_services",
+  minimumGroupSize: 5,
+};
+
+const DEFAULT_DATA_REQUEST_FORM_STATE: InstitutionDataRequestFormState = {
+  requestType: "organization_export",
+  subjectUserId: "",
+  reason: "",
+};
 
 const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
   { id: "explore", label: "Explore Markets", kicker: "Market map" },
@@ -259,6 +371,7 @@ const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
   { id: "discovery", label: "Personalized Discovery", kicker: "Personal overlay" },
   { id: "recommendations", label: "Recommendations", kicker: "Decision support" },
   { id: "plans", label: "Plans", kicker: "Access model" },
+  { id: "institution", label: "Institution", kicker: "Cohort dashboard" },
   { id: "account", label: "Account", kicker: "Saved overlays" },
 ];
 
@@ -361,6 +474,7 @@ function getNavigationUrl(
   if (page === "discovery") return personalizedDiscoveryUrl(discoveryFilters);
   if (page === "recommendations") return recommendationsUrl();
   if (page === "plans") return plansUrl();
+  if (page === "institution") return institutionDashboardUrl();
   if (page === "account") return accountUrl();
   return exploreUrl();
 }
@@ -447,6 +561,108 @@ function splitDraftList(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function optionalDraftValue(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function advisorRequestFromForm(
+  comparisonType: InstitutionAdvisorComparisonType,
+  form: AdvisorFormState,
+): { request: InstitutionAdvisorRequest | null; error: string | null } {
+  if (comparisonType === "regions") {
+    const regions = splitDraftList(form.regions);
+    if (!regions.length) return { request: null, error: "Add at least one region to compare." };
+    const request: InstitutionAdvisorRegionRequest = {
+      regions,
+      role_context: optionalDraftValue(form.roleContext),
+      industry_context: optionalDraftValue(form.industryContext),
+      career_stage: optionalDraftValue(form.careerStage),
+    };
+    return { request, error: null };
+  }
+
+  if (comparisonType === "industries") {
+    const industries = splitDraftList(form.industries);
+    if (!industries.length) return { request: null, error: "Add at least one industry to compare." };
+    const request: InstitutionAdvisorIndustryRequest = {
+      industries,
+      region_context: splitDraftList(form.regionContext),
+      career_stage: optionalDraftValue(form.careerStage),
+    };
+    return { request, error: null };
+  }
+
+  if (comparisonType === "companies") {
+    const companies = splitDraftList(form.companies);
+    if (!companies.length) return { request: null, error: "Add at least one company to compare." };
+    const request: InstitutionAdvisorCompanyRequest = {
+      companies,
+      region_context: splitDraftList(form.regionContext),
+      industry_context: optionalDraftValue(form.industryContext),
+      career_stage: optionalDraftValue(form.careerStage),
+    };
+    return { request, error: null };
+  }
+
+  if (comparisonType === "career_stages") {
+    const careerStages = splitDraftList(form.careerStages);
+    if (!careerStages.length) return { request: null, error: "Add at least one career stage to compare." };
+    const request: InstitutionAdvisorCareerStageRequest = {
+      career_stages: careerStages,
+      region_context: splitDraftList(form.regionContext),
+      industry_context: optionalDraftValue(form.industryContext),
+      company_context: splitDraftList(form.companyContext),
+    };
+    return { request, error: null };
+  }
+
+  const request: InstitutionAdvisorApplicationTimingRequest = {
+    target_regions: splitDraftList(form.regions),
+    target_industries: splitDraftList(form.industries),
+    target_companies: splitDraftList(form.companies),
+    career_stage: optionalDraftValue(form.careerStage),
+    application_window: optionalDraftValue(form.applicationWindow),
+  };
+  if (
+    !request.target_regions?.length
+    && !request.target_industries?.length
+    && !request.target_companies?.length
+    && !request.career_stage
+    && !request.application_window
+  ) {
+    return { request: null, error: "Add at least one timing context." };
+  }
+  return { request, error: null };
+}
+
+function reportRequestFromForm(form: InstitutionReportFormState): InstitutionReportCreateRequest {
+  return {
+    report_type: form.reportType,
+    minimum_group_size: Math.max(5, Math.min(50, Math.trunc(form.minimumGroupSize || 5))),
+  };
+}
+
+function dataRequestFromForm(
+  form: InstitutionDataRequestFormState,
+): InstitutionDataRequestCreateRequest {
+  const isOrganizationRequest = form.requestType.startsWith("organization_");
+  const subjectUserId = optionalDraftValue(form.subjectUserId);
+  return {
+    request_type: form.requestType,
+    subject_type: isOrganizationRequest ? "organization" : "student",
+    subject_user_id: isOrganizationRequest ? null : subjectUserId,
+    reason: optionalDraftValue(form.reason),
+  };
+}
+
+function formatAdvisorSignalValue(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+  return formatValue(value);
 }
 
 function joinDraftList(values?: string[]): string {
@@ -4916,6 +5132,1299 @@ function AccessPreviewPanel({
   );
 }
 
+function InstitutionDashboardView({
+  auth,
+  dashboardState,
+  organizationsState,
+  selectedOrganizationId,
+  onLogin,
+  onOpenAdvisor,
+  onOpenReports,
+  onSelectOrganization,
+}: {
+  auth: FrontendAuthContextValue;
+  dashboardState: LoadState<InstitutionDashboardPayload>;
+  organizationsState: LoadState<InstitutionCurrentOrganizationsPayload>;
+  selectedOrganizationId: string;
+  onLogin: () => void;
+  onOpenAdvisor: () => void;
+  onOpenReports: () => void;
+  onSelectOrganization: (organizationId: string) => void;
+}) {
+  if (!auth.isConfigured) {
+    return (
+      <div className="view-grid">
+        <ShellCard title="Institution Dashboard" eyebrow="Authentication required">
+          <EmptyState
+            title="Institutional access is unavailable"
+            body="Auth0 frontend configuration is required for organization-scoped dashboards."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <div className="view-grid">
+        <ShellCard
+          title="Institution Dashboard"
+          eyebrow="Signed out"
+          action={<button type="button" onClick={onLogin}>Sign in</button>}
+        >
+          <EmptyState
+            title="Sign in required"
+            body="Institutional cohort dashboards are organization-scoped and require backend authorization."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  const organizationRows = organizationsState.envelope?.data?.organizations ?? [];
+  const selectedRow =
+    organizationRows.find((row) => row.organization.organization_id === selectedOrganizationId)
+    ?? organizationRows[0]
+    ?? null;
+  const dashboard = dashboardState.envelope?.data ?? null;
+
+  return (
+    <div className="view-grid">
+      <ShellCard
+        title="Institution Dashboard"
+        eyebrow={selectedRow?.organization.name ?? "Organization context"}
+        action={
+          selectedRow ? (
+            <div className="badge-stack">
+              <button className="secondary-button compact-button" onClick={onOpenAdvisor} type="button">
+                Advisor tools
+              </button>
+              <button className="secondary-button compact-button" onClick={onOpenReports} type="button">
+                Reports
+              </button>
+              <span className="badge badge-success">{selectedRow.membership.role}</span>
+              <span className="badge">{selectedRow.organization.organization_type}</span>
+            </div>
+          ) : null
+        }
+      >
+        {organizationsState.loading ? <LoadingBlock label="Loading organizations" /> : null}
+        {organizationsState.error ? <ErrorState message={organizationsState.error} /> : null}
+        {organizationRows.length > 1 ? (
+          <div className="metadata-row">
+            {organizationRows.map((row) => (
+              <button
+                className={
+                  row.organization.organization_id === selectedOrganizationId
+                    ? "primary-button compact-button"
+                    : "secondary-button compact-button"
+                }
+                key={row.organization.organization_id}
+                onClick={() => onSelectOrganization(row.organization.organization_id)}
+                type="button"
+              >
+                {row.organization.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {!organizationsState.loading && !organizationsState.error && !organizationRows.length ? (
+          <EmptyState
+            title="No institutional organization"
+            body="Your account does not currently have an active institutional membership."
+          />
+        ) : null}
+        {dashboardState.loading ? <LoadingBlock label="Loading cohort dashboard" /> : null}
+        {dashboardState.error ? <ErrorState message={dashboardState.error} /> : null}
+        {dashboard ? (
+          <div className="stat-grid">
+            <div className="stat-card">
+              <span>Cohort size</span>
+              <strong>{dashboard.cohort_size}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Visible safe summary</span>
+              <strong>{dashboard.visible_student_count}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Suppression threshold</span>
+              <strong>{dashboard.minimum_group_size}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Generated</span>
+              <strong>{formatDateTime(dashboard.generated_at)}</strong>
+            </div>
+          </div>
+        ) : null}
+      </ShellCard>
+
+      {dashboard ? (
+        <>
+          <div className="split-grid">
+            <InstitutionAggregateSection
+              emptyBody="No target-market category met the minimum group threshold."
+              items={dashboard.popular_target_markets}
+              title="Popular Target Markets"
+            />
+            <InstitutionAggregateSection
+              emptyBody="No role-interest category met the minimum group threshold."
+              items={dashboard.role_interest_summary}
+              title="Role Interest Distribution"
+            />
+          </div>
+
+          <div className="split-grid">
+            <InstitutionAggregateSection
+              emptyBody="No saved-company category met the minimum group threshold."
+              items={dashboard.saved_company_summary}
+              title="Saved Company Trends"
+            />
+            <InstitutionAggregateSection
+              emptyBody="No visible target market has enough demand context yet."
+              items={dashboard.market_demand_trends}
+              title="Market Demand Trends"
+            />
+          </div>
+
+          <div className="split-grid">
+            <InstitutionAggregateSection
+              emptyBody="No visible target market currently carries a coverage-gap warning."
+              items={dashboard.coverage_gaps}
+              title="Coverage Gaps"
+            />
+            <ShellCard title="Privacy And Coverage Notes" eyebrow="Aggregate-first">
+              <ul className="notes-list">
+                {dashboard.privacy_notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+              {dashboard.suppressed_categories.length ? (
+                <div className="warning-list" aria-label="Suppressed categories">
+                  {dashboard.suppressed_categories.map((category) => (
+                    <div className="warning-item" key={`${category.section}-${category.minimum_group_size}`}>
+                      <div className="warning-header">
+                        <span className="warning-code">{prettyKey(category.section)}</span>
+                        <span className="badge badge-warning">Suppressed</span>
+                      </div>
+                      <p>
+                        {category.suppressed_count} category bucket(s) withheld at
+                        minimum group size {category.minimum_group_size}.
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="meta-copy">No low-sample categories were reported.</p>
+              )}
+              {dashboard.coverage_warnings.length ? (
+                <div className="warning-list" aria-label="Coverage warnings">
+                  {dashboard.coverage_warnings.map((warning) => (
+                    <div className="warning-item" key={warning}>
+                      <div className="warning-header">
+                        <span className="warning-code">Coverage warning</span>
+                      </div>
+                      <p>{warning}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <p className="meta-copy">
+                Data freshness: {formatValue(dashboard.data_freshness.freshness_status)} ·{" "}
+                generated {formatDateTime(String(dashboard.data_freshness.generated_at ?? ""))}
+              </p>
+            </ShellCard>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function InstitutionAdvisorWorkspace({
+  auth,
+  advisorState,
+  organizationsState,
+  selectedOrganizationId,
+  onLogin,
+  onOpenDashboard,
+  onOpenReports,
+  onSelectOrganization,
+  onSubmit,
+}: {
+  auth: FrontendAuthContextValue;
+  advisorState: LoadState<InstitutionAdvisorToolResponse>;
+  organizationsState: LoadState<InstitutionCurrentOrganizationsPayload>;
+  selectedOrganizationId: string;
+  onLogin: () => void;
+  onOpenDashboard: () => void;
+  onOpenReports: () => void;
+  onSelectOrganization: (organizationId: string) => void;
+  onSubmit: (
+    comparisonType: InstitutionAdvisorComparisonType,
+    request: InstitutionAdvisorRequest,
+  ) => void;
+}) {
+  const [comparisonType, setComparisonType] =
+    useState<InstitutionAdvisorComparisonType>("regions");
+  const [formState, setFormState] = useState<AdvisorFormState>({
+    ...DEFAULT_ADVISOR_FORM_STATE,
+  });
+  const [formError, setFormError] = useState<string | null>(null);
+
+  if (!auth.isConfigured) {
+    return (
+      <div className="view-grid">
+        <ShellCard title="Advisor Tools" eyebrow="Authentication required">
+          <EmptyState
+            title="Advisor workspace is unavailable"
+            body="Auth0 frontend configuration is required for organization-scoped advisor tools."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <div className="view-grid">
+        <ShellCard
+          title="Advisor Tools"
+          eyebrow="Signed out"
+          action={<button type="button" onClick={onLogin}>Sign in</button>}
+        >
+          <EmptyState
+            title="Sign in required"
+            body="Advisor tools are organization-scoped and require backend authorization."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  const organizationRows = organizationsState.envelope?.data?.organizations ?? [];
+  const selectedRow =
+    organizationRows.find((row) => row.organization.organization_id === selectedOrganizationId)
+    ?? organizationRows[0]
+    ?? null;
+  const result = advisorState.envelope?.data ?? null;
+
+  function updateField(field: keyof AdvisorFormState, value: string) {
+    setFormState((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const { request, error } = advisorRequestFromForm(comparisonType, formState);
+    if (!request || error) {
+      setFormError(error ?? "Advisor request is incomplete.");
+      return;
+    }
+    setFormError(null);
+    onSubmit(comparisonType, request);
+  }
+
+  return (
+    <div className="view-grid">
+      <ShellCard
+        title="Advisor Tools"
+        eyebrow={selectedRow?.organization.name ?? "Organization context"}
+        action={
+          selectedRow ? (
+            <div className="badge-stack">
+              <button className="secondary-button compact-button" onClick={onOpenDashboard} type="button">
+                Cohort dashboard
+              </button>
+              <button className="secondary-button compact-button" onClick={onOpenReports} type="button">
+                Reports
+              </button>
+              <span className="badge badge-success">{selectedRow.membership.role}</span>
+              <span className="badge">{selectedRow.organization.organization_type}</span>
+            </div>
+          ) : null
+        }
+      >
+        {organizationsState.loading ? <LoadingBlock label="Loading organizations" /> : null}
+        {organizationsState.error ? <ErrorState message={organizationsState.error} /> : null}
+        {organizationRows.length > 1 ? (
+          <div className="metadata-row">
+            {organizationRows.map((row) => (
+              <button
+                className={
+                  row.organization.organization_id === selectedOrganizationId
+                    ? "primary-button compact-button"
+                    : "secondary-button compact-button"
+                }
+                key={row.organization.organization_id}
+                onClick={() => onSelectOrganization(row.organization.organization_id)}
+                type="button"
+              >
+                {row.organization.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {!organizationsState.loading && !organizationsState.error && !organizationRows.length ? (
+          <EmptyState
+            title="No institutional organization"
+            body="Your account does not currently have an active institutional membership."
+          />
+        ) : null}
+        <p className="meta-copy">
+          Advisor tools compare existing market intelligence, coverage, and explanation
+          signals. They do not expose raw student searches, saved companies,
+          recommendations, or personal activity.
+        </p>
+      </ShellCard>
+
+      <div className="split-grid">
+        <ShellCard title="Comparison Workspace" eyebrow="Guidance tool">
+          <form className="account-form-grid" onSubmit={handleSubmit}>
+            <label>
+              Comparison type
+              <select
+                aria-label="Comparison type"
+                onChange={(event) =>
+                  setComparisonType(event.target.value as InstitutionAdvisorComparisonType)
+                }
+                value={comparisonType}
+              >
+                {ADVISOR_COMPARISON_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+
+            {comparisonType === "regions" ? (
+              <>
+                <AdvisorTextField
+                  label="Regions"
+                  onChange={(value) => updateField("regions", value)}
+                  value={formState.regions}
+                />
+                <AdvisorTextField
+                  label="Role context"
+                  onChange={(value) => updateField("roleContext", value)}
+                  value={formState.roleContext}
+                />
+                <AdvisorTextField
+                  label="Industry context"
+                  onChange={(value) => updateField("industryContext", value)}
+                  value={formState.industryContext}
+                />
+                <AdvisorTextField
+                  label="Career stage"
+                  onChange={(value) => updateField("careerStage", value)}
+                  value={formState.careerStage}
+                />
+              </>
+            ) : null}
+
+            {comparisonType === "industries" ? (
+              <>
+                <AdvisorTextField
+                  label="Industries"
+                  onChange={(value) => updateField("industries", value)}
+                  value={formState.industries}
+                />
+                <AdvisorTextField
+                  label="Region context"
+                  onChange={(value) => updateField("regionContext", value)}
+                  value={formState.regionContext}
+                />
+                <AdvisorTextField
+                  label="Career stage"
+                  onChange={(value) => updateField("careerStage", value)}
+                  value={formState.careerStage}
+                />
+              </>
+            ) : null}
+
+            {comparisonType === "companies" ? (
+              <>
+                <AdvisorTextField
+                  label="Companies"
+                  onChange={(value) => updateField("companies", value)}
+                  value={formState.companies}
+                />
+                <AdvisorTextField
+                  label="Region context"
+                  onChange={(value) => updateField("regionContext", value)}
+                  value={formState.regionContext}
+                />
+                <AdvisorTextField
+                  label="Industry context"
+                  onChange={(value) => updateField("industryContext", value)}
+                  value={formState.industryContext}
+                />
+                <AdvisorTextField
+                  label="Career stage"
+                  onChange={(value) => updateField("careerStage", value)}
+                  value={formState.careerStage}
+                />
+              </>
+            ) : null}
+
+            {comparisonType === "career_stages" ? (
+              <>
+                <AdvisorTextField
+                  label="Career stages"
+                  onChange={(value) => updateField("careerStages", value)}
+                  value={formState.careerStages}
+                />
+                <AdvisorTextField
+                  label="Region context"
+                  onChange={(value) => updateField("regionContext", value)}
+                  value={formState.regionContext}
+                />
+                <AdvisorTextField
+                  label="Company context"
+                  onChange={(value) => updateField("companyContext", value)}
+                  value={formState.companyContext}
+                />
+                <AdvisorTextField
+                  label="Industry context"
+                  onChange={(value) => updateField("industryContext", value)}
+                  value={formState.industryContext}
+                />
+              </>
+            ) : null}
+
+            {comparisonType === "application_timing" ? (
+              <>
+                <AdvisorTextField
+                  label="Target regions"
+                  onChange={(value) => updateField("regions", value)}
+                  value={formState.regions}
+                />
+                <AdvisorTextField
+                  label="Target industries"
+                  onChange={(value) => updateField("industries", value)}
+                  value={formState.industries}
+                />
+                <AdvisorTextField
+                  label="Target companies"
+                  onChange={(value) => updateField("companies", value)}
+                  value={formState.companies}
+                />
+                <AdvisorTextField
+                  label="Career stage"
+                  onChange={(value) => updateField("careerStage", value)}
+                  value={formState.careerStage}
+                />
+                <AdvisorTextField
+                  label="Application window"
+                  onChange={(value) => updateField("applicationWindow", value)}
+                  value={formState.applicationWindow}
+                />
+              </>
+            ) : null}
+
+            {formError ? <ErrorState message={formError} /> : null}
+            <div className="metadata-row">
+              <button
+                className="primary-button"
+                disabled={advisorState.loading || !selectedRow}
+                type="submit"
+              >
+                Run advisor comparison
+              </button>
+              {advisorState.loading ? <span className="badge badge-partial">Running</span> : null}
+            </div>
+          </form>
+        </ShellCard>
+
+        <ShellCard title="Privacy Boundary" eyebrow="Education-privacy-aware">
+          <ul className="notes-list">
+            <li>Advisor access is authorized by backend organization membership checks.</li>
+            <li>Student-specific advising remains disabled until explicit scoped consent exists.</li>
+            <li>Outputs are decision-support guidance, not outcome guarantees.</li>
+          </ul>
+        </ShellCard>
+      </div>
+
+      {advisorState.error ? <ErrorState message={advisorState.error} /> : null}
+      {advisorState.loading && !result ? <LoadingBlock label="Running advisor comparison" /> : null}
+      {result ? <InstitutionAdvisorResults result={result} /> : null}
+    </div>
+  );
+}
+
+function AdvisorTextField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label>
+      {label}
+      <input value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function InstitutionAdvisorResults({ result }: { result: InstitutionAdvisorToolResponse }) {
+  return (
+    <>
+      <ShellCard title="Advisor Guidance Results" eyebrow={segmentLabel(result.comparison_type)}>
+        <div className="stat-grid">
+          <div className="stat-card">
+            <span>Comparison</span>
+            <strong>{segmentLabel(result.comparison_type)}</strong>
+          </div>
+          <div className="stat-card">
+            <span>Items compared</span>
+            <strong>{result.compared_items.length}</strong>
+          </div>
+          <div className="stat-card">
+            <span>Generated</span>
+            <strong>{formatDateTime(result.generated_at)}</strong>
+          </div>
+          <div className="stat-card">
+            <span>Freshness</span>
+            <strong>{formatValue(result.data_freshness.freshness_status)}</strong>
+          </div>
+        </div>
+        {result.guidance.length ? (
+          <ul className="notes-list">
+            {result.guidance.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        ) : null}
+      </ShellCard>
+
+      <div className="split-grid">
+        <ShellCard title="Compared Options" eyebrow="Market signals">
+          {result.compared_items.length ? (
+            <div className="stack-list">
+              {result.compared_items.map((item) => (
+                <InstitutionAdvisorComparedItemCard item={item} key={`${item.item_type}-${item.item_id}`} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No compared options" body="The advisor service returned no comparison items." />
+          )}
+        </ShellCard>
+
+        <ShellCard title="Tradeoffs And Warnings" eyebrow="Decision support">
+          {result.tradeoffs.length ? (
+            <div className="stack-list">
+              {result.tradeoffs.map((tradeoff) => (
+                <InstitutionAdvisorTradeoffCard key={`${tradeoff.category}-${tradeoff.summary}`} tradeoff={tradeoff} />
+              ))}
+            </div>
+          ) : (
+            <p className="meta-copy">No tradeoff summary was returned.</p>
+          )}
+          {result.coverage_warnings.length ? (
+            <div className="warning-list" aria-label="Advisor coverage warnings">
+              {result.coverage_warnings.map((warning) => (
+                <div className="warning-item" key={warning}>
+                  <div className="warning-header">
+                    <span className="warning-code">Coverage warning</span>
+                  </div>
+                  <p>{warning}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </ShellCard>
+      </div>
+
+      <ShellCard title="Limitations And Privacy Notes" eyebrow="Boundary">
+        <div className="split-grid">
+          <ul className="notes-list">
+            {result.limitations.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          <ul className="notes-list">
+            {result.privacy_notes.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      </ShellCard>
+    </>
+  );
+}
+
+function InstitutionAdvisorComparedItemCard({ item }: { item: InstitutionAdvisorComparedItem }) {
+  const signalEntries = Object.entries(item.demand_signals);
+  return (
+    <div className="stack-row">
+      <div className="metadata-row">
+        <strong>{item.label}</strong>
+        <span className="badge">{prettyKey(item.item_type)}</span>
+      </div>
+      {item.explanation_summary.length ? (
+        <ul className="notes-list">
+          {item.explanation_summary.map((summary) => (
+            <li key={summary}>{summary}</li>
+          ))}
+        </ul>
+      ) : null}
+      {signalEntries.length ? (
+        <div className="metadata-row">
+          {signalEntries.map(([key, value]) => (
+            <span className="badge badge-unknown" key={key}>
+              {prettyKey(key)}: {formatAdvisorSignalValue(value)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {item.coverage ? (
+        <small>
+          Coverage: {Object.entries(item.coverage)
+            .map(([key, value]) => `${prettyKey(key)} ${formatAdvisorSignalValue(value)}`)
+            .join(" · ")}
+        </small>
+      ) : null}
+      {item.warnings.length ? (
+        <div className="warning-list">
+          {item.warnings.map((warning) => (
+            <div className="warning-item" key={warning}>
+              <div className="warning-header">
+                <span className="warning-code">Item warning</span>
+              </div>
+              <p>{warning}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function InstitutionAdvisorTradeoffCard({ tradeoff }: { tradeoff: InstitutionAdvisorTradeoff }) {
+  return (
+    <div className="stack-row">
+      <div className="metadata-row">
+        <strong>{prettyKey(tradeoff.category)}</strong>
+        <span className="badge">{tradeoff.evidence_level}</span>
+      </div>
+      <span>{tradeoff.summary}</span>
+    </div>
+  );
+}
+
+function InstitutionReportsView({
+  auth,
+  reportState,
+  reportListState,
+  organizationsState,
+  selectedOrganizationId,
+  onLogin,
+  onOpenDashboard,
+  onOpenDataRequests,
+  onSelectOrganization,
+  onGenerate,
+}: {
+  auth: FrontendAuthContextValue;
+  reportState: LoadState<InstitutionReportGeneratePayload>;
+  reportListState: LoadState<InstitutionReportListPayload>;
+  organizationsState: LoadState<InstitutionCurrentOrganizationsPayload>;
+  selectedOrganizationId: string;
+  onLogin: () => void;
+  onOpenDashboard: () => void;
+  onOpenDataRequests: () => void;
+  onSelectOrganization: (organizationId: string) => void;
+  onGenerate: (request: InstitutionReportCreateRequest) => void;
+}) {
+  const [formState, setFormState] = useState<InstitutionReportFormState>({
+    ...DEFAULT_REPORT_FORM_STATE,
+  });
+
+  if (!auth.isConfigured) {
+    return (
+      <div className="view-grid">
+        <ShellCard title="Institutional Reports" eyebrow="Authentication required">
+          <EmptyState
+            title="Reports are unavailable"
+            body="Auth0 frontend configuration is required for organization-scoped reports."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <div className="view-grid">
+        <ShellCard
+          title="Institutional Reports"
+          eyebrow="Signed out"
+          action={<button type="button" onClick={onLogin}>Sign in</button>}
+        >
+          <EmptyState
+            title="Sign in required"
+            body="Institutional reports are organization-scoped and require backend authorization."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  const organizationRows = organizationsState.envelope?.data?.organizations ?? [];
+  const selectedRow =
+    organizationRows.find((row) => row.organization.organization_id === selectedOrganizationId)
+    ?? organizationRows[0]
+    ?? null;
+  const report = reportState.envelope?.data?.report ?? null;
+  const reportList = reportListState.envelope?.data?.reports ?? [];
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onGenerate(reportRequestFromForm(formState));
+  }
+
+  return (
+    <div className="view-grid">
+      <ShellCard
+        title="Institutional Reports"
+        eyebrow={selectedRow?.organization.name ?? "Organization context"}
+        action={
+          selectedRow ? (
+            <div className="badge-stack">
+              <button className="secondary-button compact-button" onClick={onOpenDashboard} type="button">
+                Cohort dashboard
+              </button>
+              <button className="secondary-button compact-button" onClick={onOpenDataRequests} type="button">
+                Data requests
+              </button>
+              <span className="badge badge-success">{selectedRow.membership.role}</span>
+            </div>
+          ) : null
+        }
+      >
+        {organizationsState.loading ? <LoadingBlock label="Loading organizations" /> : null}
+        {organizationsState.error ? <ErrorState message={organizationsState.error} /> : null}
+        {organizationRows.length > 1 ? (
+          <div className="metadata-row">
+            {organizationRows.map((row) => (
+              <button
+                className={
+                  row.organization.organization_id === selectedOrganizationId
+                    ? "primary-button compact-button"
+                    : "secondary-button compact-button"
+                }
+                key={row.organization.organization_id}
+                onClick={() => onSelectOrganization(row.organization.organization_id)}
+                type="button"
+              >
+                {row.organization.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <p className="meta-copy">
+          Reports are aggregate-first and privacy-aware. PDF, CSV, PowerPoint,
+          email delivery, and scheduled report exports are deferred.
+        </p>
+      </ShellCard>
+
+      <div className="split-grid">
+        <ShellCard title="Generate Report" eyebrow="Aggregate report">
+          <form className="account-form-grid" onSubmit={handleSubmit}>
+            <label>
+              Report type
+              <select
+                aria-label="Report type"
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    reportType: event.target.value as InstitutionReportType,
+                  }))
+                }
+                value={formState.reportType}
+              >
+                {INSTITUTION_REPORT_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Minimum group size
+              <input
+                min={5}
+                max={50}
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    minimumGroupSize: Number(event.target.value),
+                  }))
+                }
+                type="number"
+                value={formState.minimumGroupSize}
+              />
+            </label>
+            <div className="metadata-row">
+              <button className="primary-button" disabled={reportState.loading || !selectedRow} type="submit">
+                Generate report
+              </button>
+              {reportState.loading ? <span className="badge badge-partial">Generating</span> : null}
+            </div>
+          </form>
+          {reportState.error ? <ErrorState message={reportState.error} /> : null}
+        </ShellCard>
+
+        <ShellCard title="Generated Reports" eyebrow="Persisted records">
+          {reportListState.loading ? <LoadingBlock label="Loading reports" /> : null}
+          {reportListState.error ? <ErrorState message={reportListState.error} /> : null}
+          {reportList.length ? (
+            <div className="stack-list">
+              {reportList.map((summary) => (
+                <InstitutionReportSummaryRow key={summary.report_id} summary={summary} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No reports yet"
+              body="Generate an aggregate institutional report to create a record."
+            />
+          )}
+        </ShellCard>
+      </div>
+
+      {report ? <InstitutionReportResult report={report} /> : null}
+    </div>
+  );
+}
+
+function InstitutionReportSummaryRow({ summary }: { summary: InstitutionReportSummary }) {
+  return (
+    <div className="stack-row">
+      <div className="metadata-row">
+        <strong>{summary.title}</strong>
+        <span className="badge">{segmentLabel(summary.report_type)}</span>
+      </div>
+      <small>
+        Generated {formatDateTime(summary.generated_at)} · cohort {summary.cohort_size} ·
+        threshold {summary.minimum_group_size}
+      </small>
+      <div className="metadata-row">
+        <span className="badge badge-success">{summary.status}</span>
+        <span className="badge badge-unknown">
+          Suppressions {formatValue(summary.privacy_summary.suppression_count)}
+        </span>
+        <span className="badge badge-partial">
+          Coverage warnings {formatValue(summary.coverage_summary.coverage_warning_count)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function InstitutionReportResult({ report }: { report: InstitutionReportPayload }) {
+  return (
+    <>
+      <ShellCard title={report.title} eyebrow={segmentLabel(report.report_type)}>
+        <div className="stat-grid">
+          <div className="stat-card">
+            <span>Cohort size</span>
+            <strong>{report.cohort_size}</strong>
+          </div>
+          <div className="stat-card">
+            <span>Suppression threshold</span>
+            <strong>{report.minimum_group_size}</strong>
+          </div>
+          <div className="stat-card">
+            <span>Sections</span>
+            <strong>{report.sections.length}</strong>
+          </div>
+          <div className="stat-card">
+            <span>Export status</span>
+            <strong>{segmentLabel(report.export_status)}</strong>
+          </div>
+        </div>
+        <ul className="notes-list">
+          {report.recommended_actions.map((action) => (
+            <li key={action}>{action}</li>
+          ))}
+        </ul>
+      </ShellCard>
+
+      <div className="split-grid">
+        {report.sections.map((section) => (
+          <InstitutionReportSectionCard key={section.section_id} section={section} />
+        ))}
+      </div>
+
+      <ShellCard title="Report Privacy And Limitations" eyebrow="Aggregate-first">
+        <div className="split-grid">
+          <div>
+            <h3>Privacy notes</h3>
+            <ul className="notes-list">
+              {report.privacy_notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+            {report.privacy_suppressions.length ? (
+              <div className="warning-list">
+                {report.privacy_suppressions.map((suppression) => (
+                  <div className="warning-item" key={suppression.section}>
+                    <div className="warning-header">
+                      <span className="warning-code">{prettyKey(suppression.section)}</span>
+                      <span className="badge badge-warning">Suppressed</span>
+                    </div>
+                    <p>
+                      {suppression.suppressed_count} bucket(s) withheld at minimum group
+                      size {suppression.minimum_group_size}.
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div>
+            <h3>Warnings and limitations</h3>
+            <ul className="notes-list">
+              {[...report.coverage_warnings, ...report.limitations].map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <p className="meta-copy">
+              Data freshness: {formatValue(report.data_freshness.freshness_status)}
+            </p>
+            <p className="meta-copy">
+              Export options: {Object.entries(report.export_options)
+                .map(([key, value]) => `${key} ${value}`)
+                .join(", ")}
+            </p>
+          </div>
+        </div>
+      </ShellCard>
+    </>
+  );
+}
+
+function InstitutionReportSectionCard({ section }: { section: InstitutionReportSection }) {
+  return (
+    <ShellCard title={section.title} eyebrow={prettyKey(section.section_id)}>
+      <p className="meta-copy">{section.summary}</p>
+      <ul className="notes-list">
+        {section.findings.map((finding) => (
+          <li key={finding}>{finding}</li>
+        ))}
+      </ul>
+      {section.warnings.length ? (
+        <div className="warning-list">
+          {section.warnings.map((warning) => (
+            <div className="warning-item" key={warning}>
+              <div className="warning-header">
+                <span className="warning-code">Report warning</span>
+              </div>
+              <p>{warning}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {section.recommended_actions.length ? (
+        <div className="metadata-row">
+          {section.recommended_actions.map((action) => (
+            <span className="badge badge-unknown" key={action}>{action}</span>
+          ))}
+        </div>
+      ) : null}
+    </ShellCard>
+  );
+}
+
+function InstitutionDataRequestsView({
+  auth,
+  createState,
+  listState,
+  organizationsState,
+  selectedOrganizationId,
+  onLogin,
+  onOpenDashboard,
+  onOpenReports,
+  onSelectOrganization,
+  onSubmit,
+}: {
+  auth: FrontendAuthContextValue;
+  createState: LoadState<InstitutionDataRequestCreatePayload>;
+  listState: LoadState<InstitutionDataRequestListPayload>;
+  organizationsState: LoadState<InstitutionCurrentOrganizationsPayload>;
+  selectedOrganizationId: string;
+  onLogin: () => void;
+  onOpenDashboard: () => void;
+  onOpenReports: () => void;
+  onSelectOrganization: (organizationId: string) => void;
+  onSubmit: (request: InstitutionDataRequestCreateRequest) => void;
+}) {
+  const [formState, setFormState] = useState<InstitutionDataRequestFormState>({
+    ...DEFAULT_DATA_REQUEST_FORM_STATE,
+  });
+
+  if (!auth.isConfigured) {
+    return (
+      <div className="view-grid">
+        <ShellCard title="Institutional Data Requests" eyebrow="Authentication required">
+          <EmptyState
+            title="Data requests are unavailable"
+            body="Auth0 frontend configuration is required for organization-scoped requests."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <div className="view-grid">
+        <ShellCard
+          title="Institutional Data Requests"
+          eyebrow="Signed out"
+          action={<button type="button" onClick={onLogin}>Sign in</button>}
+        >
+          <EmptyState
+            title="Sign in required"
+            body="Data request records are organization-scoped and require backend authorization."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  const organizationRows = organizationsState.envelope?.data?.organizations ?? [];
+  const selectedRow =
+    organizationRows.find((row) => row.organization.organization_id === selectedOrganizationId)
+    ?? organizationRows[0]
+    ?? null;
+  const createdRequest = createState.envelope?.data?.data_request ?? null;
+  const dataRequests = listState.envelope?.data?.data_requests ?? [];
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onSubmit(dataRequestFromForm(formState));
+  }
+
+  return (
+    <div className="view-grid">
+      <ShellCard
+        title="Institutional Data Requests"
+        eyebrow={selectedRow?.organization.name ?? "Organization context"}
+        action={
+          selectedRow ? (
+            <div className="badge-stack">
+              <button className="secondary-button compact-button" onClick={onOpenDashboard} type="button">
+                Cohort dashboard
+              </button>
+              <button className="secondary-button compact-button" onClick={onOpenReports} type="button">
+                Reports
+              </button>
+              <span className="badge badge-success">{selectedRow.membership.role}</span>
+            </div>
+          ) : null
+        }
+      >
+        {organizationsState.loading ? <LoadingBlock label="Loading organizations" /> : null}
+        {organizationsState.error ? <ErrorState message={organizationsState.error} /> : null}
+        {organizationRows.length > 1 ? (
+          <div className="metadata-row">
+            {organizationRows.map((row) => (
+              <button
+                className={
+                  row.organization.organization_id === selectedOrganizationId
+                    ? "primary-button compact-button"
+                    : "secondary-button compact-button"
+                }
+                key={row.organization.organization_id}
+                onClick={() => onSelectOrganization(row.organization.organization_id)}
+                type="button"
+              >
+                {row.organization.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <p className="meta-copy">
+          Data export/deletion workflows create auditable request records only.
+          They do not automatically execute destructive deletion or generate full
+          export packages in this batch.
+        </p>
+      </ShellCard>
+
+      <div className="split-grid">
+        <ShellCard title="Create Request Record" eyebrow="Auditable request">
+          <form className="account-form-grid" onSubmit={handleSubmit}>
+            <label>
+              Request type
+              <select
+                aria-label="Data request type"
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    requestType: event.target.value as InstitutionDataRequestType,
+                  }))
+                }
+                value={formState.requestType}
+              >
+                {INSTITUTION_DATA_REQUEST_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Subject user id
+              <input
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    subjectUserId: event.target.value,
+                  }))
+                }
+                value={formState.subjectUserId}
+              />
+            </label>
+            <label>
+              Reason
+              <input
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, reason: event.target.value }))
+                }
+                value={formState.reason}
+              />
+            </label>
+            <div className="metadata-row">
+              <button className="primary-button" disabled={createState.loading || !selectedRow} type="submit">
+                Submit request record
+              </button>
+              {createState.loading ? <span className="badge badge-partial">Submitting</span> : null}
+            </div>
+          </form>
+          {createState.error ? <ErrorState message={createState.error} /> : null}
+          {createdRequest ? (
+            <p className="meta-copy">
+              Created {segmentLabel(createdRequest.request_type)} request:
+              {" "}{createdRequest.execution_note}
+            </p>
+          ) : null}
+        </ShellCard>
+
+        <ShellCard title="Current Request Records" eyebrow="No execution">
+          {listState.loading ? <LoadingBlock label="Loading data requests" /> : null}
+          {listState.error ? <ErrorState message={listState.error} /> : null}
+          {dataRequests.length ? (
+            <div className="stack-list">
+              {dataRequests.map((request) => (
+                <InstitutionDataRequestRow key={request.data_request_id} request={request} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No request records"
+              body="Create a data export or deletion request record to track it here."
+            />
+          )}
+        </ShellCard>
+      </div>
+    </div>
+  );
+}
+
+function InstitutionDataRequestRow({ request }: { request: InstitutionDataRequestPayload }) {
+  return (
+    <div className="stack-row">
+      <div className="metadata-row">
+        <strong>{segmentLabel(request.request_type)}</strong>
+        <span className="badge badge-warning">{request.status}</span>
+      </div>
+      <small>
+        Subject {request.subject_type}
+        {request.subject_user_id ? ` · ${request.subject_user_id}` : ""} · created{" "}
+        {formatDateTime(request.created_at)}
+      </small>
+      {request.reason ? <span>{request.reason}</span> : null}
+      <p className="meta-copy">{request.execution_note}</p>
+    </div>
+  );
+}
+
+function InstitutionAggregateSection({
+  title,
+  items,
+  emptyBody,
+}: {
+  title: string;
+  items: InstitutionAggregateItem[];
+  emptyBody: string;
+}) {
+  return (
+    <ShellCard title={title} eyebrow="Cohort aggregate">
+      {items.length ? (
+        <div className="stack-list">
+          {items.map((item, index) => (
+            <div className="stack-row" key={`${title}-${item.label}-${index}`}>
+              <div className="metadata-row">
+                <strong>{item.label}</strong>
+                {item.suppressed ? (
+                  <span className="badge badge-warning">Suppressed</span>
+                ) : (
+                  <span className="badge badge-success">Visible aggregate</span>
+                )}
+              </div>
+              <span>
+                {institutionAggregateCountLabel(item)}
+                {typeof item.percentage === "number" ? ` · ${formatValue(item.percentage)}%` : ""}
+              </span>
+              <div className="metadata-row">
+                {item.confidence ? <span className="badge">{item.confidence}</span> : null}
+                {item.source_count !== null ? (
+                  <span className="badge badge-unknown">
+                    Source count {formatValue(item.source_count)}
+                  </span>
+                ) : null}
+                {institutionAggregateTrendLabel(item) ? (
+                  <span className="badge badge-partial">{institutionAggregateTrendLabel(item)}</span>
+                ) : null}
+              </div>
+              {item.coverage ? (
+                <small>
+                  Coverage: {formatValue(item.coverage.label)} · tier{" "}
+                  {formatValue(item.coverage.tier)} · quality{" "}
+                  {formatValue(item.coverage.quality_score)}
+                </small>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No visible aggregate" body={emptyBody} />
+      )}
+    </ShellCard>
+  );
+}
+
+function institutionAggregateCountLabel(item: InstitutionAggregateItem): string {
+  if (item.suppressed) return "Count withheld";
+  if (item.count === null) return "Count unavailable";
+  if (item.category === "market_demand") {
+    return `${item.count} active posting(s)`;
+  }
+  if (item.category === "coverage_gap") {
+    return `${item.count} student(s) in visible target market`;
+  }
+  return `${item.count} student(s)`;
+}
+
+function institutionAggregateTrendLabel(item: InstitutionAggregateItem): string | null {
+  const trendSignal = item.metadata.trend_signal;
+  if (typeof trendSignal === "string" && trendSignal) {
+    return `Trend ${trendSignal}`;
+  }
+  const hiringCount = item.metadata.currently_hiring_company_count;
+  if (typeof hiringCount === "number") {
+    return `${hiringCount} hiring company(s)`;
+  }
+  return null;
+}
+
 function MonetizationView({
   plansState,
   featuresState,
@@ -5186,6 +6695,20 @@ function App() {
     useState<LoadState<MonetizationUsagePayload>>(emptyLoadState);
   const [billingStatusState, setBillingStatusState] =
     useState<LoadState<BillingStatusPayload>>(emptyLoadState);
+  const [institutionOrganizationsState, setInstitutionOrganizationsState] =
+    useState<LoadState<InstitutionCurrentOrganizationsPayload>>(emptyLoadState);
+  const [institutionDashboardState, setInstitutionDashboardState] =
+    useState<LoadState<InstitutionDashboardPayload>>(emptyLoadState);
+  const [institutionAdvisorState, setInstitutionAdvisorState] =
+    useState<LoadState<InstitutionAdvisorToolResponse>>(emptyLoadState);
+  const [institutionReportState, setInstitutionReportState] =
+    useState<LoadState<InstitutionReportGeneratePayload>>(emptyLoadState);
+  const [institutionReportsListState, setInstitutionReportsListState] =
+    useState<LoadState<InstitutionReportListPayload>>(emptyLoadState);
+  const [institutionDataRequestState, setInstitutionDataRequestState] =
+    useState<LoadState<InstitutionDataRequestCreatePayload>>(emptyLoadState);
+  const [institutionDataRequestsListState, setInstitutionDataRequestsListState] =
+    useState<LoadState<InstitutionDataRequestListPayload>>(emptyLoadState);
   const [currentUserState, setCurrentUserState] = useState<LoadState<CurrentUserProfile>>(emptyLoadState);
   const [preferenceState, setPreferenceState] = useState<LoadState<UserPreferenceProfile>>(emptyLoadState);
   const [preferenceDraft, setPreferenceDraft] = useState<PreferenceDraft>(() => emptyPreferenceDraft());
@@ -5224,6 +6747,9 @@ function App() {
   const selectedRecommendationGoalMode = isRecommendationGoalMode(route.recommendationGoalMode)
     ? route.recommendationGoalMode
     : DEFAULT_RECOMMENDATION_GOAL_MODE;
+  const institutionOrganizations = institutionOrganizationsState.envelope?.data?.organizations ?? [];
+  const selectedInstitutionOrganizationId =
+    route.organizationId ?? institutionOrganizations[0]?.organization.organization_id ?? "";
   const protectedOptions = useMemo<ProtectedRequestOptions>(
     () => ({ getAccessToken: auth.getAccessTokenSilently }),
     [auth.getAccessTokenSilently],
@@ -5324,6 +6850,13 @@ function App() {
     setMonetizationMeState(emptyLoadState());
     setMonetizationEntitlementsState(emptyLoadState());
     setMonetizationUsageState(emptyLoadState());
+    setInstitutionOrganizationsState(emptyLoadState());
+    setInstitutionDashboardState(emptyLoadState());
+    setInstitutionAdvisorState(emptyLoadState());
+    setInstitutionReportState(emptyLoadState());
+    setInstitutionReportsListState(emptyLoadState());
+    setInstitutionDataRequestState(emptyLoadState());
+    setInstitutionDataRequestsListState(emptyLoadState());
     setBillingAction({ loadingPlanKey: null, loadingPortal: false, message: null, error: null });
     setDeactivationResult(null);
     setDeactivateConfirmed(false);
@@ -5554,6 +7087,181 @@ function App() {
     }
     void loadAccountData();
   }, [auth.isAuthenticated, loadAccountData, resetAccountState]);
+
+  useEffect(() => {
+    if (route.page !== "institution") return;
+    if (!auth.isAuthenticated || accountDeactivated) return;
+    if (institutionOrganizationsState.loading || institutionOrganizationsState.envelope) return;
+
+    async function loadInstitutionOrganizations() {
+      setInstitutionOrganizationsState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await getInstitutionCurrentOrganizations(protectedOptions);
+        setInstitutionOrganizationsState({ loading: false, envelope, error: null });
+      } catch (error) {
+        setInstitutionOrganizationsState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to load institutional organizations",
+        });
+      }
+    }
+
+    void loadInstitutionOrganizations();
+  }, [
+    accountDeactivated,
+    auth.isAuthenticated,
+    institutionOrganizationsState.envelope,
+    institutionOrganizationsState.loading,
+    protectedOptions,
+    route.page,
+  ]);
+
+  useEffect(() => {
+    if (route.page !== "institution") return;
+    if (route.institutionView && route.institutionView !== "dashboard") {
+      setInstitutionDashboardState(emptyLoadState());
+      return;
+    }
+    if (!auth.isAuthenticated || accountDeactivated) {
+      setInstitutionDashboardState(emptyLoadState());
+      return;
+    }
+    if (!selectedInstitutionOrganizationId) {
+      setInstitutionDashboardState(emptyLoadState());
+      return;
+    }
+
+    let cancelled = false;
+    async function loadInstitutionDashboard() {
+      setInstitutionDashboardState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await getInstitutionDashboard(
+          selectedInstitutionOrganizationId,
+          protectedOptions,
+        );
+        if (!cancelled) {
+          setInstitutionDashboardState({ loading: false, envelope, error: null });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setInstitutionDashboardState({
+            loading: false,
+            envelope: null,
+            error: error instanceof Error ? error.message : "Failed to load institutional dashboard",
+          });
+        }
+      }
+    }
+
+    void loadInstitutionDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    accountDeactivated,
+    auth.isAuthenticated,
+    protectedOptions,
+    route.institutionView,
+    route.page,
+    selectedInstitutionOrganizationId,
+  ]);
+
+  useEffect(() => {
+    setInstitutionAdvisorState(emptyLoadState());
+  }, [route.page, route.institutionView, selectedInstitutionOrganizationId]);
+
+  useEffect(() => {
+    setInstitutionReportState(emptyLoadState());
+    setInstitutionReportsListState(emptyLoadState());
+    setInstitutionDataRequestState(emptyLoadState());
+    setInstitutionDataRequestsListState(emptyLoadState());
+  }, [route.page, route.institutionView, selectedInstitutionOrganizationId]);
+
+  useEffect(() => {
+    if (route.page !== "institution" || route.institutionView !== "reports") return;
+    if (!auth.isAuthenticated || accountDeactivated || !selectedInstitutionOrganizationId) {
+      setInstitutionReportsListState(emptyLoadState());
+      return;
+    }
+    if (institutionReportsListState.loading || institutionReportsListState.envelope) return;
+
+    async function loadInstitutionReports() {
+      setInstitutionReportsListState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await listInstitutionReports(
+          selectedInstitutionOrganizationId,
+          protectedOptions,
+        );
+        setInstitutionReportsListState({ loading: false, envelope, error: null });
+      } catch (error) {
+        setInstitutionReportsListState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to load institutional reports",
+        });
+      }
+    }
+
+    void loadInstitutionReports();
+  }, [
+    accountDeactivated,
+    auth.isAuthenticated,
+    institutionReportsListState.envelope,
+    institutionReportsListState.loading,
+    protectedOptions,
+    route.institutionView,
+    route.page,
+    selectedInstitutionOrganizationId,
+  ]);
+
+  useEffect(() => {
+    if (route.page !== "institution" || route.institutionView !== "data-requests") return;
+    if (!auth.isAuthenticated || accountDeactivated || !selectedInstitutionOrganizationId) {
+      setInstitutionDataRequestsListState(emptyLoadState());
+      return;
+    }
+    if (
+      institutionDataRequestsListState.loading
+      || institutionDataRequestsListState.envelope
+    ) {
+      return;
+    }
+
+    async function loadInstitutionDataRequests() {
+      setInstitutionDataRequestsListState((current) => ({
+        ...current,
+        loading: true,
+        error: null,
+      }));
+      try {
+        const envelope = await listInstitutionDataRequests(
+          selectedInstitutionOrganizationId,
+          protectedOptions,
+        );
+        setInstitutionDataRequestsListState({ loading: false, envelope, error: null });
+      } catch (error) {
+        setInstitutionDataRequestsListState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error
+            ? error.message
+            : "Failed to load institutional data requests",
+        });
+      }
+    }
+
+    void loadInstitutionDataRequests();
+  }, [
+    accountDeactivated,
+    auth.isAuthenticated,
+    institutionDataRequestsListState.envelope,
+    institutionDataRequestsListState.loading,
+    protectedOptions,
+    route.institutionView,
+    route.page,
+    selectedInstitutionOrganizationId,
+  ]);
 
   useEffect(() => {
     setMonetizationAccessPreviewStates({});
@@ -6059,6 +7767,112 @@ function App() {
     navigateTo(recommendationsUrl(goalMode));
   }
 
+  function handleInstitutionAdvisorSubmit(
+    comparisonType: InstitutionAdvisorComparisonType,
+    request: InstitutionAdvisorRequest,
+  ) {
+    void (async () => {
+      if (!selectedInstitutionOrganizationId) {
+        setInstitutionAdvisorState({
+          loading: false,
+          envelope: null,
+          error: "Select an institutional organization before running advisor tools.",
+        });
+        return;
+      }
+      setInstitutionAdvisorState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await runInstitutionAdvisorComparison(
+          selectedInstitutionOrganizationId,
+          comparisonType,
+          request,
+          protectedOptions,
+        );
+        setInstitutionAdvisorState({ loading: false, envelope, error: null });
+      } catch (error) {
+        setInstitutionAdvisorState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to run advisor tool",
+        });
+      }
+    })();
+  }
+
+  function handleInstitutionReportGenerate(request: InstitutionReportCreateRequest) {
+    void (async () => {
+      if (!selectedInstitutionOrganizationId) {
+        setInstitutionReportState({
+          loading: false,
+          envelope: null,
+          error: "Select an institutional organization before generating a report.",
+        });
+        return;
+      }
+      setInstitutionReportState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await generateInstitutionReport(
+          selectedInstitutionOrganizationId,
+          request,
+          protectedOptions,
+        );
+        setInstitutionReportState({ loading: false, envelope, error: null });
+        const listEnvelope = await listInstitutionReports(
+          selectedInstitutionOrganizationId,
+          protectedOptions,
+        );
+        setInstitutionReportsListState({ loading: false, envelope: listEnvelope, error: null });
+      } catch (error) {
+        setInstitutionReportState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to generate report",
+        });
+      }
+    })();
+  }
+
+  function handleInstitutionDataRequestSubmit(request: InstitutionDataRequestCreateRequest) {
+    void (async () => {
+      if (!selectedInstitutionOrganizationId) {
+        setInstitutionDataRequestState({
+          loading: false,
+          envelope: null,
+          error: "Select an institutional organization before creating a request.",
+        });
+        return;
+      }
+      setInstitutionDataRequestState((current) => ({
+        ...current,
+        loading: true,
+        error: null,
+      }));
+      try {
+        const envelope = await createInstitutionDataRequest(
+          selectedInstitutionOrganizationId,
+          request,
+          protectedOptions,
+        );
+        setInstitutionDataRequestState({ loading: false, envelope, error: null });
+        const listEnvelope = await listInstitutionDataRequests(
+          selectedInstitutionOrganizationId,
+          protectedOptions,
+        );
+        setInstitutionDataRequestsListState({
+          loading: false,
+          envelope: listEnvelope,
+          error: null,
+        });
+      } catch (error) {
+        setInstitutionDataRequestState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to create data request",
+        });
+      }
+    })();
+  }
+
   function toggleFilterValue(value: string, values: string[]): string[] {
     return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
   }
@@ -6499,6 +8313,13 @@ function App() {
         setMonetizationMeState(emptyLoadState());
         setMonetizationEntitlementsState(emptyLoadState());
         setMonetizationUsageState(emptyLoadState());
+        setInstitutionOrganizationsState(emptyLoadState());
+        setInstitutionDashboardState(emptyLoadState());
+        setInstitutionAdvisorState(emptyLoadState());
+        setInstitutionReportState(emptyLoadState());
+        setInstitutionReportsListState(emptyLoadState());
+        setInstitutionDataRequestState(emptyLoadState());
+        setInstitutionDataRequestsListState(emptyLoadState());
         setDeactivateConfirmed(false);
         setAccountAction({
           loading: false,
@@ -6725,6 +8546,87 @@ function App() {
             onStartCheckout={handleStartCheckout}
             plansState={monetizationPlansState}
             reportsState={monetizationReportsState}
+          />
+        ) : null}
+
+        {route.page === "institution" && route.institutionView === "advisor" ? (
+          <InstitutionAdvisorWorkspace
+            advisorState={institutionAdvisorState}
+            auth={auth}
+            organizationsState={institutionOrganizationsState}
+            onLogin={() => void auth.login()}
+            onOpenDashboard={() =>
+              navigateTo(institutionDashboardUrl(selectedInstitutionOrganizationId))
+            }
+            onOpenReports={() =>
+              navigateTo(institutionReportsUrl(selectedInstitutionOrganizationId))
+            }
+            onSelectOrganization={(organizationId) =>
+              navigateTo(institutionAdvisorUrl(organizationId))
+            }
+            onSubmit={handleInstitutionAdvisorSubmit}
+            selectedOrganizationId={selectedInstitutionOrganizationId}
+          />
+        ) : null}
+
+        {route.page === "institution" && route.institutionView === "reports" ? (
+          <InstitutionReportsView
+            auth={auth}
+            organizationsState={institutionOrganizationsState}
+            onGenerate={handleInstitutionReportGenerate}
+            onLogin={() => void auth.login()}
+            onOpenDashboard={() =>
+              navigateTo(institutionDashboardUrl(selectedInstitutionOrganizationId))
+            }
+            onOpenDataRequests={() =>
+              navigateTo(institutionDataRequestsUrl(selectedInstitutionOrganizationId))
+            }
+            onSelectOrganization={(organizationId) =>
+              navigateTo(institutionReportsUrl(organizationId))
+            }
+            reportListState={institutionReportsListState}
+            reportState={institutionReportState}
+            selectedOrganizationId={selectedInstitutionOrganizationId}
+          />
+        ) : null}
+
+        {route.page === "institution" && route.institutionView === "data-requests" ? (
+          <InstitutionDataRequestsView
+            auth={auth}
+            createState={institutionDataRequestState}
+            listState={institutionDataRequestsListState}
+            organizationsState={institutionOrganizationsState}
+            onLogin={() => void auth.login()}
+            onOpenDashboard={() =>
+              navigateTo(institutionDashboardUrl(selectedInstitutionOrganizationId))
+            }
+            onOpenReports={() =>
+              navigateTo(institutionReportsUrl(selectedInstitutionOrganizationId))
+            }
+            onSelectOrganization={(organizationId) =>
+              navigateTo(institutionDataRequestsUrl(organizationId))
+            }
+            onSubmit={handleInstitutionDataRequestSubmit}
+            selectedOrganizationId={selectedInstitutionOrganizationId}
+          />
+        ) : null}
+
+        {route.page === "institution" && (!route.institutionView || route.institutionView === "dashboard") ? (
+          <InstitutionDashboardView
+            auth={auth}
+            dashboardState={institutionDashboardState}
+            organizationsState={institutionOrganizationsState}
+            onLogin={() => void auth.login()}
+            onOpenAdvisor={() =>
+              navigateTo(institutionAdvisorUrl(selectedInstitutionOrganizationId))
+            }
+            onOpenReports={() =>
+              navigateTo(institutionReportsUrl(selectedInstitutionOrganizationId))
+            }
+            onSelectOrganization={(organizationId) =>
+              navigateTo(institutionDashboardUrl(organizationId))
+            }
+            selectedOrganizationId={selectedInstitutionOrganizationId}
           />
         ) : null}
 

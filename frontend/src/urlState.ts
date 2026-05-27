@@ -14,9 +14,11 @@ export type ProductPage =
   | "discovery"
   | "recommendations"
   | "plans"
+  | "institution"
   | "account";
 export type PublicPage = "landing" | "data-limitations" | "privacy" | "terms" | "sources";
 export type AppPage = ProductPage | PublicPage;
+export type InstitutionView = "dashboard" | "advisor" | "reports" | "data-requests";
 
 export type ComparisonUrlState = {
   regionA: string;
@@ -37,6 +39,8 @@ export type RouteState = {
   page: AppPage;
   regionId?: string;
   companyId?: string;
+  organizationId?: string;
+  institutionView?: InstitutionView;
   comparison: ComparisonUrlState;
   discovery: DiscoveryFilters;
   recommendationGoalMode: string;
@@ -70,6 +74,7 @@ const PRODUCT_PAGES: ProductPage[] = [
   "discovery",
   "recommendations",
   "plans",
+  "institution",
   "account",
 ];
 const DEFAULT_RECOMMENDATION_GOAL_MODE = "maximize_entry_level_access";
@@ -180,7 +185,10 @@ function parseDiscovery(params: URLSearchParams): DiscoveryFilters {
 function baseRoute(
   page: AppPage,
   params: URLSearchParams,
-  extra?: Pick<RouteState, "regionId" | "companyId" | "unknownPath">,
+  extra?: Pick<
+    RouteState,
+    "regionId" | "companyId" | "organizationId" | "institutionView" | "unknownPath"
+  >,
 ): RouteState {
   return {
     page,
@@ -225,6 +233,30 @@ export function parseRoute(pathname: string, search: string): RouteState {
   if (section === "discovery") return baseRoute("discovery", params);
   if (section === "recommendations") return baseRoute("recommendations", params);
   if (section === "plans" || section === "pricing") return baseRoute("plans", params);
+  if (section === "institution") {
+    if (segments[2] === "advisor") {
+      return baseRoute("institution", params, {
+        institutionView: "advisor",
+        organizationId: cleanToken(segments[3]),
+      });
+    }
+    if (segments[2] === "reports") {
+      return baseRoute("institution", params, {
+        institutionView: "reports",
+        organizationId: cleanToken(segments[3]),
+      });
+    }
+    if (segments[2] === "data-requests") {
+      return baseRoute("institution", params, {
+        institutionView: "data-requests",
+        organizationId: cleanToken(segments[3]),
+      });
+    }
+    return baseRoute("institution", params, {
+      institutionView: "dashboard",
+      organizationId: cleanToken(segments[2]),
+    });
+  }
   if (section === "account") return baseRoute("account", params);
 
   return baseRoute("explore", params, { unknownPath: pathname });
@@ -282,6 +314,30 @@ export function recommendationsUrl(goalMode = DEFAULT_RECOMMENDATION_GOAL_MODE):
 
 export function plansUrl(): string {
   return `${PRODUCT_ROOT}/plans`;
+}
+
+export function institutionDashboardUrl(organizationId?: string): string {
+  return organizationId
+    ? `${PRODUCT_ROOT}/institution/${encodePathValue(organizationId)}`
+    : `${PRODUCT_ROOT}/institution`;
+}
+
+export function institutionAdvisorUrl(organizationId?: string): string {
+  return organizationId
+    ? `${PRODUCT_ROOT}/institution/advisor/${encodePathValue(organizationId)}`
+    : `${PRODUCT_ROOT}/institution/advisor`;
+}
+
+export function institutionReportsUrl(organizationId?: string): string {
+  return organizationId
+    ? `${PRODUCT_ROOT}/institution/reports/${encodePathValue(organizationId)}`
+    : `${PRODUCT_ROOT}/institution/reports`;
+}
+
+export function institutionDataRequestsUrl(organizationId?: string): string {
+  return organizationId
+    ? `${PRODUCT_ROOT}/institution/data-requests/${encodePathValue(organizationId)}`
+    : `${PRODUCT_ROOT}/institution/data-requests`;
 }
 
 export function accountUrl(): string {

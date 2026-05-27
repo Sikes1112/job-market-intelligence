@@ -10,6 +10,7 @@ from backend.api.admin import router as admin_router
 from backend.api.auth0_middleware import Auth0JWTMiddleware
 from backend.api.billing import router as billing_router
 from backend.api.errors import register_exception_handlers
+from backend.api.institutions import router as institutions_router
 from backend.api.monetization import router as monetization_router
 from backend.api.observability import RequestObservabilityMiddleware
 from backend.api.personalized import router as personalized_router
@@ -100,6 +101,7 @@ def create_app(
     app.include_router(monetization_router)
     app.include_router(billing_router)
     app.include_router(user_router)
+    app.include_router(institutions_router)
     app.include_router(admin_router)
 
     return app

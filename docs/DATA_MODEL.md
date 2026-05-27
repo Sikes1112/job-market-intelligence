@@ -209,6 +209,265 @@ Required constraints:
   `user_preference_profiles.user_id`
 - retrieval must be scoped by internal `users.user_id`
 
+### Layer 16A Addendum: Institutional Foundation
+
+Layer 16A adds organization-scoped institutional account boundaries. These
+tables support institutional surfaces without exposing private individual
+student data by default. Organization membership grants access to
+institutional surfaces only; it must not bypass user-owned scopes for searches,
+saved market artifacts, recommendations, alerts, personalization inputs, or
+personal activity.
+
+The Layer 16 foundation is education-privacy-aware and FERPA-conscious in
+design, but this implementation does not claim legal FERPA compliance. It
+minimizes unnecessary student-level exposure through role checks, organization
+scoping, and deferred aggregate-only dashboard design.
+
+### Entity: `organizations`
+
+Purpose:
+Stores the institutional organization account boundary.
+
+Required fields:
+- `organization_id`
+- `name`
+- `organization_type`
+- `status`
+- `created_at`
+- `updated_at`
+
+Allowed `organization_type` values:
+- `school`
+- `career_center`
+- `bootcamp`
+- `workforce_org`
+- `economic_development_partner`
+- `internal_demo`
+
+Allowed `status` values:
+- `active`
+- `inactive`
+
+### Entity: `organization_memberships`
+
+Purpose:
+Stores a user's role within one organization. Membership is organization-scoped
+and must be active to authorize access.
+
+Required fields:
+- `organization_membership_id`
+- `organization_id`
+- `user_id`
+- `role`
+- `status`
+- `created_at`
+- `updated_at`
+
+Allowed `role` values:
+- `ORG_ADMIN`
+- `ADVISOR`
+- `STUDENT`
+- `REPORT_VIEWER`
+
+Allowed `status` values:
+- `active`
+- `inactive`
+
+Required constraints:
+- foreign key `organization_id` → `organizations.organization_id`
+- foreign key `user_id` → `users.user_id`
+- unique (`organization_id`, `user_id`)
+
+### Entity: `institutional_audit_logs`
+
+Purpose:
+Stores append-only institutional access and member-management audit events.
+
+Required fields:
+- `institutional_audit_log_id`
+- `organization_id`
+- `actor_user_id`
+- `actor_role`
+- `action`
+- `target_type`
+- `target_id`
+- `purpose`
+- `metadata`
+- `created_at`
+
+Required constraints:
+- foreign key `organization_id` → `organizations.organization_id`
+- foreign key `actor_user_id` → `users.user_id`
+- append-only ORM boundary
+
+Implemented action values:
+- `organization_viewed`
+- `organization_members_viewed`
+- `organization_member_added`
+- `organization_member_updated`
+- `institution_dashboard_viewed`
+- `advisor_compare_regions_used`
+- `advisor_compare_industries_used`
+- `advisor_compare_companies_used`
+- `advisor_compare_career_stages_used`
+- `advisor_application_timing_used`
+- `institutional_report_generated`
+- `institutional_report_viewed`
+- `institutional_reports_listed`
+- `institutional_data_request_created`
+- `institutional_data_requests_listed`
+
+### Layer 16B/16C Addendum: Privacy-Aware Cohort Dashboard
+
+Batch 16B/16C adds no new persistence tables. The institutional cohort
+dashboard is a read model built from active `organization_memberships`,
+existing `user_preference_profiles`, existing `saved_market_artifacts`, and
+canonical market coverage/hiring tables.
+
+The dashboard payload is aggregate-first. It includes organization context,
+cohort size, minimum group size, visible aggregate target markets, role
+interests, saved company trends, market demand summaries, coverage gaps,
+suppression metadata, privacy notes, coverage warnings, and data-freshness
+metadata.
+
+The default `minimum_group_size` is `5`, and API-facing overrides are bounded
+to `5` through `50`. Categories below the configured minimum group size are
+suppressed before response serialization. Suppression metadata is section-level
+and does not expose hidden labels, exact hidden student counts, student ids,
+raw saved rows, search activity, recommendation snapshots, or individual
+student activity.
+
+The dashboard remains education-privacy-aware and FERPA-conscious in design,
+but it does not claim legal FERPA compliance. Explicit student consent,
+student-specific advising mode, aggregate suppression policy expansion, and
+export/deletion execution workflows are deferred.
+
+### Layer 16D Addendum: Advisor Tools
+
+Batch 16D adds no new persistence tables. Advisor tools are organization-scoped
+API/read-model surfaces built from existing canonical market, hiring, entry
+level, company search, geography, and coverage data. They do not create a
+second recommendation engine and do not add student-specific activity tables.
+
+Advisor tool audit events use the existing `institutional_audit_logs` table.
+Audit metadata may include comparison type, non-sensitive input counts, and
+context-key names. It must not log private student-level inputs, raw searches,
+saved-company rows, recommendation snapshots, or individual activity history.
+
+Advisor tools are authorized for active `ORG_ADMIN` and `ADVISOR`
+memberships in the requested organization. `REPORT_VIEWER`, `STUDENT`,
+inactive memberships, and cross-organization requests are denied. The payloads
+are guidance-oriented and include compared items, demand signals, tradeoffs,
+coverage warnings, freshness metadata, limitations, and privacy notes.
+
+Student-specific advising remains deferred until an explicit scoped
+relationship and consent workflow exists.
+
+### Layer 16E Addendum: Institutional Reports And Data Request Records
+
+Batch 16E adds persisted aggregate institutional report records and auditable
+institutional data export/deletion request records.
+
+Layer 16 institutional reports are aggregate-first and privacy-aware. They are
+designed to help career services, program directors, workforce planners, and
+economic development partners understand cohort-level career and market
+patterns without exposing unnecessary student-level activity.
+
+Data export/deletion workflows in this layer create auditable institutional
+request records. They do not automatically execute destructive deletion or
+generate full export packages in this batch.
+
+### Entity: `institutional_reports`
+
+Purpose:
+Stores persisted aggregate institutional report payloads generated from
+privacy-aware dashboard aggregation and coverage/data-quality signals.
+
+Required fields:
+- `institutional_report_id`
+- `organization_id`
+- `report_type`
+- `title`
+- `generated_by_user_id`
+- `generated_at`
+- `payload_json`
+- `minimum_group_size`
+- `privacy_summary`
+- `coverage_summary`
+- `status`
+- `created_at`
+- `updated_at`
+
+Allowed `report_type` values:
+- `career_services`
+- `program_director`
+- `workforce_planner`
+- `economic_development_partner`
+
+Allowed `status` values:
+- `generated`
+- `archived`
+
+Required constraints:
+- foreign key `organization_id` → `organizations.organization_id`
+- foreign key `generated_by_user_id` → `users.user_id`
+
+Report payloads must not include student ids, raw per-student saved/search
+rows, recommendation snapshots, personal activity, or individual student
+histories. PDF, CSV, PowerPoint, email delivery, and scheduled reports are
+deferred.
+
+Report generation uses the same `5` through `50` minimum group bound as the
+cohort dashboard API and builds from already-suppressed dashboard aggregates.
+
+### Entity: `institutional_data_requests`
+
+Purpose:
+Stores auditable institutional export/deletion request records. Rows represent
+requested workflows only and must not execute deletion or create export
+packages.
+
+Required fields:
+- `institutional_data_request_id`
+- `organization_id`
+- `requester_user_id`
+- `request_type`
+- `subject_type`
+- `subject_user_id`
+- `status`
+- `reason`
+- `resolved_at`
+- `metadata`
+- `created_at`
+- `updated_at`
+
+Allowed `request_type` values:
+- `organization_export`
+- `organization_deletion`
+- `student_export`
+- `student_deletion`
+
+Allowed `subject_type` values:
+- `organization`
+- `student`
+
+Allowed `status` values:
+- `pending`
+- `approved`
+- `rejected`
+- `completed`
+- `canceled`
+
+Required constraints:
+- foreign key `organization_id` → `organizations.organization_id`
+- foreign key `requester_user_id` → `users.user_id`
+- nullable foreign key `subject_user_id` → `users.user_id`
+
+`ORG_ADMIN` can create/list organization-level request records for its own
+organization. `STUDENT` can create/list only their own student request records.
+Advisors and report viewers cannot create student export/deletion requests by
+default. Cross-organization data requests are denied.
+
 ### Layer 11B Addendum: Change/Expansion Engine
 
 Batch 11B adds in-app alert metadata and a region-expansion workflow contract.
