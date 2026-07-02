@@ -9,12 +9,15 @@ from sqlalchemy import Engine, text
 from backend.api.admin import router as admin_router
 from backend.api.auth0_middleware import Auth0JWTMiddleware
 from backend.api.billing import router as billing_router
+from backend.api.career_agent import router as career_agent_router
+from backend.api.data_standards import router as data_standards_router
 from backend.api.errors import register_exception_handlers
 from backend.api.external import router as external_router
 from backend.api.institutions import router as institutions_router
 from backend.api.integrations import router as integrations_router
 from backend.api.monetization import router as monetization_router
 from backend.api.observability import RequestObservabilityMiddleware
+from backend.api.opportunities import router as opportunities_router
 from backend.api.personalized import router as personalized_router
 from backend.api.platform_intelligence import router as platform_intelligence_router
 from backend.api.platform_public import router as platform_public_router
@@ -104,8 +107,11 @@ def create_app(
     app.include_router(read_router)
     app.include_router(personalized_router)
     app.include_router(recommendations_router)
+    app.include_router(career_agent_router)
+    app.include_router(data_standards_router)
     app.include_router(public_benchmarks_router)
     app.include_router(public_reports_router)
+    app.include_router(opportunities_router)
     app.include_router(platform_intelligence_router)
     app.include_router(platform_public_router)
     app.include_router(monetization_router)

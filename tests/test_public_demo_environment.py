@@ -10,6 +10,10 @@ from backend.api.app import create_app
 from backend.api.dependencies import get_session
 from backend.companies.models import Company
 from backend.config.settings import Settings
+from backend.data_standards.models import (
+    DataStandardCandidateFactRecord,
+    DataStandardPartnerSubmissionRecord,
+)
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
@@ -182,6 +186,20 @@ def test_public_demo_allows_frontend_public_read_and_metadata_routes(
     assert strategy.status_code == 200
     assert strategy.json()["data"]["ranked_region_recommendations"]
 
+    action_plan = client.post(
+        "/career-agent/action-plans",
+        json={
+            "plan_type": "regional_targeting_plan",
+            "career_agent_request": {
+                "question_type": "strongest_market_strategy",
+                "target_region_ids": ["greater_boston", "greater_sf"],
+                "include_forecasts": False,
+            },
+        },
+    )
+    assert action_plan.status_code == 200
+    assert action_plan.json()["data"]["steps"]
+
 
 def test_public_demo_denies_admin_and_override_mutations_before_auth(
     session: Session,
@@ -238,6 +256,59 @@ def test_public_demo_denies_billing_checkout_and_webhook_writes(
     )
 
 
+def test_public_demo_denies_layer_27_28_data_standards_routes(session: Session) -> None:
+    client = _api_client_for_env(session, "public_demo")
+
+    assert client.get("/data-standards/definitions").status_code == 200
+    assert client.get("/data-standards/partner-schema").status_code == 200
+    assert client.get("/data-standards/partners").status_code == 200
+    assert client.get("/data-standards/partners/partner_state_university").status_code == 200
+    assert client.get("/data-standards/quality-labels").status_code == 200
+    assert client.get("/data-standards/governance-framework").status_code == 200
+    _assert_public_demo_denied(
+        client.post(
+            "/data-standards/quality-labels/evaluate",
+            json={"label": "verified_partner_data"},
+        )
+    )
+    _assert_public_demo_denied(
+        client.post(
+            "/data-standards/partner-submissions/validate",
+            json={"submission_id": "demo_sub"},
+        )
+    )
+    _assert_public_demo_denied(
+        client.post(
+            "/data-standards/partner-submissions",
+            json={"submission_id": "demo_sub"},
+        )
+    )
+    _assert_public_demo_denied(
+        client.post("/data-standards/partner-submissions/demo_sub/candidates")
+    )
+    _assert_public_demo_denied(
+        client.post(
+            "/data-standards/candidates/candidate_demo/review",
+            json={
+                "decision": "approve_for_merge",
+                "reviewer_id": "demo_reviewer",
+            },
+        )
+    )
+    _assert_public_demo_denied(
+        client.post("/data-standards/candidates/candidate_demo/merge-preview")
+    )
+    _assert_public_demo_denied(
+        client.post(
+            "/data-standards/candidates/candidate_demo/merge",
+            json={"merged_by": "demo_admin", "reason": "not allowed"},
+        )
+    )
+
+    assert session.query(DataStandardPartnerSubmissionRecord).count() == 0
+    assert session.query(DataStandardCandidateFactRecord).count() == 0
+
+
 def test_public_demo_denies_protected_gets_that_can_create_user_state(
     session: Session,
 ) -> None:
@@ -245,6 +316,8 @@ def test_public_demo_denies_protected_gets_that_can_create_user_state(
 
     _assert_public_demo_denied(client.get("/me", headers=_auth_headers()))
     _assert_public_demo_denied(client.get("/me/alerts", headers=_auth_headers()))
+    _assert_public_demo_denied(client.get("/me/career-memory", headers=_auth_headers()))
+    _assert_public_demo_denied(client.get("/me/career-agent/tools", headers=_auth_headers()))
     _assert_public_demo_denied(client.get("/admin/me", headers=_auth_headers()))
     _assert_public_demo_denied(
         client.post(

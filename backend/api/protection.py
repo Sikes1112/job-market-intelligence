@@ -28,6 +28,13 @@ PUBLIC_DEMO_EXACT_ALLOWLIST = frozenset(
         ("POST", "/discover/personalized"),
         ("GET", "/recommendations/goal-modes"),
         ("POST", "/recommendations/strategy"),
+        ("POST", "/career-agent/answers"),
+        ("POST", "/career-agent/action-plans"),
+        ("GET", "/data-standards/definitions"),
+        ("GET", "/data-standards/partner-schema"),
+        ("GET", "/data-standards/partners"),
+        ("GET", "/data-standards/quality-labels"),
+        ("GET", "/data-standards/governance-framework"),
         ("GET", "/public/benchmarks"),
         ("GET", "/public/reports"),
         ("GET", "/monetization/plans"),
@@ -214,6 +221,13 @@ def _public_demo_route_allowed(method: str, path: str) -> bool:
     parts = path.strip("/").split("/")
     if len(parts) == 2 and parts[0] in {"regions", "companies"} and parts[1]:
         return parts[1] != "search"
+    if (
+        len(parts) == 3
+        and parts[0] == "data-standards"
+        and parts[1] == "partners"
+        and parts[2]
+    ):
+        return True
     if (
         len(parts) == 3
         and parts[0] == "public"

@@ -126,7 +126,9 @@ def import_all_models() -> None:
     from backend.admin import models as _admin  # noqa: F401
     from backend.alerts import models as _alerts  # noqa: F401
     from backend.billing import models as _billing  # noqa: F401
+    from backend.career_agent import models as _career_agent  # noqa: F401
     from backend.companies import models as _companies  # noqa: F401
+    from backend.data_standards import models as _data_standards  # noqa: F401
     from backend.entry_level import models as _entry_level  # noqa: F401
     from backend.geography import models as _geography  # noqa: F401
     from backend.hiring import models as _hiring  # noqa: F401
@@ -134,6 +136,7 @@ def import_all_models() -> None:
     from backend.institutions import models as _institutions  # noqa: F401
     from backend.integrations import models as _integrations  # noqa: F401
     from backend.monetization import models as _monetization  # noqa: F401
+    from backend.opportunities import models as _opportunities  # noqa: F401
     from backend.orchestration.jobs import models as _jobs  # noqa: F401
     from backend.outputs import models as _outputs  # noqa: F401
     from backend.platform import models as _platform  # noqa: F401

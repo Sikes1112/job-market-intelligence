@@ -72,6 +72,22 @@ REQUIRED_TABLES = {
     "platform_api_keys",
     "platform_api_usage_events",
     "platform_api_audit_logs",
+    "employer_programs",
+    "opportunities",
+    "opportunity_sources",
+    "opportunity_region_bindings",
+    "opportunity_role_family_bindings",
+    "employer_influence_metadata",
+    "opportunity_submissions",
+    "opportunity_review_actions",
+    "career_memory_permissions",
+    "career_memory_entries",
+    "career_agent_tool_records",
+    "career_agent_tool_audit_events",
+    "data_standard_partner_submissions",
+    "data_standard_candidate_facts",
+    "data_standard_candidate_reviews",
+    "data_standard_canonical_merges",
 }
 
 # Every canonical truth/output object must carry these metadata columns
@@ -119,6 +135,10 @@ USER_IDENTITY_TABLES = {
     "saved_market_artifacts",
     "personalized_recommendation_snapshots",
     "user_alerts",
+    "career_memory_permissions",
+    "career_memory_entries",
+    "career_agent_tool_records",
+    "career_agent_tool_audit_events",
 }
 SYSTEM_EVENT_TABLES = {"alert_events"}
 OPERATOR_WORKFLOW_TABLES = {"region_expansion_workflows"}
@@ -155,6 +175,22 @@ PLATFORM_API_TABLES = {
     "platform_api_usage_events",
     "platform_api_audit_logs",
 }
+OPPORTUNITY_TABLES = {
+    "employer_programs",
+    "opportunities",
+    "opportunity_sources",
+    "opportunity_region_bindings",
+    "opportunity_role_family_bindings",
+    "employer_influence_metadata",
+    "opportunity_submissions",
+    "opportunity_review_actions",
+}
+DATA_STANDARDS_TABLES = {
+    "data_standard_partner_submissions",
+    "data_standard_candidate_facts",
+    "data_standard_candidate_reviews",
+    "data_standard_canonical_merges",
+}
 MARKET_CANONICAL_METADATA_TABLES = CANONICAL_METADATA_TABLES - USER_IDENTITY_TABLES
 MARKET_CANONICAL_METADATA_TABLES = (
     MARKET_CANONICAL_METADATA_TABLES - SYSTEM_EVENT_TABLES - OPERATOR_WORKFLOW_TABLES
@@ -166,6 +202,8 @@ MARKET_CANONICAL_METADATA_TABLES = (
 )
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - INTEGRATION_TABLES
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - PLATFORM_API_TABLES
+MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - OPPORTUNITY_TABLES
+MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - DATA_STANDARDS_TABLES
 
 
 def test_all_required_tables_registered() -> None:
