@@ -47,6 +47,10 @@ In `APP_ENV=public_demo`, the backend exposes only these HTTP surfaces:
 - `GET /data-standards/partners/{partner_id}`
 - `GET /data-standards/quality-labels`
 - `GET /data-standards/governance-framework`
+- `GET /public/benchmarks`
+- `GET /public/benchmarks/{slug}`
+- `GET /public/reports`
+- `GET /public/reports/{slug}`
 - `GET /monetization/plans`
 - `GET /monetization/features`
 - `GET /monetization/reports`
@@ -59,6 +63,16 @@ In `APP_ENV=public_demo`, the backend exposes only these HTTP surfaces:
 - `GET /platform/indices/{index_key}/scores`
 - `GET /platform/reports`
 - `GET /platform/reports/{report_key}`
+- `GET /platform/predictive/reports`
+- `GET /api/v1/platform/docs/openapi.json`
+- `GET /api/v1/platform/docs/postman.json`
+- `GET /api/v1/platform/embeds/region-comparison`
+- `GET /api/v1/platform/embeds/market-score-card`
+- `GET /api/v1/platform/regions/{region_id}/scores`
+- `GET /api/v1/platform/regions/{region_id}/early-career-access`
+- `GET /api/v1/platform/companies/{company_id}/geography`
+- `GET /api/v1/platform/markets/hiring-concentration`
+- `GET /api/v1/platform/markets/compare`
 - `OPTIONS *` for preflight handling
 
 `POST /discover/personalized` is allowed because it is request-scoped and does
@@ -74,6 +88,11 @@ certification evaluation, and submission creation remain denied.
 Layer 18 platform-intelligence routes are safe GET summaries for history,
 active signals, proprietary indices, and published reports only.
 Billing status is read-only and reports checkout disabled in public demo.
+
+Public-demo frontend deployments should set `VITE_PUBLIC_DEMO=true`. That
+hides product navigation for backend-denied policy and opportunity-routing
+surfaces and renders direct visits as explicit unavailable states instead of
+presenting blocked routes as active public-demo workflows.
 
 ## public_demo Denials
 
@@ -124,6 +143,11 @@ Denied mutation surfaces:
   `POST /data-standards/quality-labels/evaluate`,
   `POST /data-standards/partner-submissions/validate`,
   `POST /data-standards/partner-submissions`
+- Opportunity submission/review surfaces:
+  `POST /opportunities/submissions`,
+  `GET /opportunities/submissions`,
+  `GET /opportunities/submissions/{submission_id}`,
+  `POST /opportunities/submissions/{submission_id}/review`
 - Canonical write-shaped requests such as `POST`, `PUT`, `PATCH`, or `DELETE`
   under public market paths.
 
@@ -151,6 +175,10 @@ before running the backend in public demo mode.
 - Protected reads: denied unless a future route proves it has no durable auth
   side effects.
 - Unknown routes: denied in public demo before FastAPI can resolve them.
+- Product routes that are not allowlisted, including `/policy/*` and
+  `/opportunities/routes`, remain unavailable in public demo unless a future
+  safety review explicitly adds them to the backend allowlist and frontend
+  navigation.
 
 ## Why public_demo Is Not Production
 

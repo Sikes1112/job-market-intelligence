@@ -17,6 +17,7 @@ from backend.data_standards.models import (
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
+from backend.opportunities.models import Opportunity, OpportunitySubmission
 from backend.presence.models import CompanyRegionPresence
 from backend.scoring.models import RegionMarketScore
 from backend.users.models import User, UserPreferenceProfile
@@ -307,6 +308,45 @@ def test_public_demo_denies_layer_27_28_data_standards_routes(session: Session) 
 
     assert session.query(DataStandardPartnerSubmissionRecord).count() == 0
     assert session.query(DataStandardCandidateFactRecord).count() == 0
+
+
+def test_public_demo_denies_opportunity_submission_and_review_routes(
+    session: Session,
+) -> None:
+    client = _api_client_for_env(session, "public_demo")
+
+    _assert_public_demo_denied(
+        client.post(
+            "/opportunities/submissions",
+            headers=_auth_headers(),
+            json={
+                "submission_id": "sub_demo_opportunity",
+                "opportunity_id": "opp_demo_opportunity",
+                "employer_name": "Demo Employer",
+                "program_name": "Demo Internship",
+                "program_type": "internship",
+                "location_mode": "hybrid",
+                "seniority_level": "internship",
+                "eligibility_summary": "Demo eligibility.",
+                "application_url": "https://example.com/apply",
+                "role_family_bindings": [{"role_family": "software_engineering"}],
+                "region_bindings": [{"region_label": "Greater Boston"}],
+            },
+        )
+    )
+    _assert_public_demo_denied(
+        client.post(
+            "/opportunities/submissions/sub_demo_opportunity/review",
+            headers=_auth_headers(),
+            json={
+                "review_action": "approve_as_verified",
+                "reviewer_id": "demo_reviewer",
+            },
+        )
+    )
+
+    assert session.query(Opportunity).count() == 0
+    assert session.query(OpportunitySubmission).count() == 0
 
 
 def test_public_demo_denies_protected_gets_that_can_create_user_state(

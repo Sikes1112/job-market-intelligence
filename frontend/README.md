@@ -29,6 +29,10 @@ The frontend reads `VITE_API_BASE_URL` when provided:
 VITE_API_BASE_URL="http://127.0.0.1:8000" npm run dev
 ```
 
+For externally viewable public-demo deployments, set `VITE_PUBLIC_DEMO=true`.
+This hides product navigation for backend-denied policy and opportunity-routing
+surfaces and renders direct visits as unavailable states.
+
 When `VITE_API_BASE_URL` is not set, local development uses Vite's dev proxy for:
 
 - `GET /health`

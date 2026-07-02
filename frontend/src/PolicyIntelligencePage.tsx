@@ -6,6 +6,7 @@ import {
   getPolicyPeerComparison,
   getPolicyWorkforceDashboard,
 } from "./api";
+import { isPublicDemoMode } from "./demoMode";
 import type {
   ApiEnvelope,
   CompanyAttractionFit,
@@ -70,31 +71,52 @@ export default function PolicyIntelligencePage({
     () => !regions.length || regions.some((region) => region.region_id === regionId),
     [regionId, regions],
   );
+  const publicDemoMode = isPublicDemoMode();
 
   useEffect(() => {
+    if (publicDemoMode) return;
     if (policyView !== "workforce" || !regionId || !regionKnown) return;
     void loadPolicyPayload(getPolicyWorkforceDashboard, regionId, setWorkforceState);
-  }, [policyView, regionId, regionKnown]);
+  }, [policyView, publicDemoMode, regionId, regionKnown]);
 
   useEffect(() => {
+    if (publicDemoMode) return;
     if (policyView !== "economic-development" || !regionId || !regionKnown) return;
     void loadPolicyPayload(getPolicyEconomicDevelopment, regionId, setEconomicState);
-  }, [policyView, regionId, regionKnown]);
+  }, [policyView, publicDemoMode, regionId, regionKnown]);
 
   useEffect(() => {
+    if (publicDemoMode) return;
     if (policyView !== "peer-comparison" || !regionId || !regionKnown) return;
     void loadPolicyPayload(getPolicyPeerComparison, regionId, setPeerState);
-  }, [policyView, regionId, regionKnown]);
+  }, [policyView, publicDemoMode, regionId, regionKnown]);
 
   useEffect(() => {
+    if (publicDemoMode) return;
     if (policyView !== "education-alignment" || !regionId || !regionKnown) return;
     void loadPolicyPayload(getPolicyEducationAlignment, regionId, setEducationState);
-  }, [policyView, regionId, regionKnown]);
+  }, [policyView, publicDemoMode, regionId, regionKnown]);
 
   useEffect(() => {
+    if (publicDemoMode) return;
     if (policyView !== "report" || !regionId || !regionKnown) return;
     void loadPolicyPayload(getPolicyEarlyCareerReport, regionId, setReportState);
-  }, [policyView, regionId, regionKnown]);
+  }, [policyView, publicDemoMode, regionId, regionKnown]);
+
+  if (publicDemoMode) {
+    return (
+      <div className="policy-page">
+        <section className="notice-state">
+          <strong>Policy intelligence is not available in public demo</strong>
+          <p>
+            The public-demo backend intentionally blocks Layer 24 policy routes.
+            Use public reports, benchmarks, forecasts, and market exploration for
+            externally viewable demo workflows.
+          </p>
+        </section>
+      </div>
+    );
+  }
 
   if (policyView === "landing") {
     return (

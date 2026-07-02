@@ -7,6 +7,7 @@ import {
   requestOpportunityRoutes,
   toggleValue,
 } from "./opportunityRoutes";
+import { isPublicDemoMode } from "./demoMode";
 import type {
   OpportunityLocationMode,
   OpportunityProgramType,
@@ -78,6 +79,7 @@ function formToRequest(form: RouteFormState): OpportunityRouteRequest {
 }
 
 export default function OpportunityRoutesPage() {
+  const publicDemoMode = isPublicDemoMode();
   const [form, setForm] = useState<RouteFormState>(() => initialFormState());
   const [state, setState] = useState<RouteLoadState>({
     loading: false,
@@ -89,6 +91,7 @@ export default function OpportunityRoutesPage() {
   const routes = routePayload?.routes ?? [];
 
   const submitRouteRequest = useCallback(async (request: OpportunityRouteRequest) => {
+    if (publicDemoMode) return;
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const envelope = await requestOpportunityRoutes(request);
@@ -100,17 +103,34 @@ export default function OpportunityRoutesPage() {
         error: error instanceof Error ? error.message : "Opportunity routes are unavailable",
       });
     }
-  }, []);
+  }, [publicDemoMode]);
 
   useEffect(() => {
+    if (publicDemoMode) return;
     void submitRouteRequest(DEFAULT_OPPORTUNITY_ROUTE_REQUEST);
-  }, [submitRouteRequest]);
+  }, [publicDemoMode, submitRouteRequest]);
 
   const requestPreview = useMemo(() => formToRequest(form), [form]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (publicDemoMode) return;
     void submitRouteRequest(requestPreview);
+  }
+
+  if (publicDemoMode) {
+    return (
+      <div className="view-grid opportunity-route-view">
+        <section className="notice-state">
+          <strong>Opportunity routes are not available in public demo</strong>
+          <p>
+            The public-demo backend intentionally blocks opportunity routing and
+            opportunity submission routes. Use market exploration, public reports,
+            forecasts, data standards metadata, or career-agent public answers instead.
+          </p>
+        </section>
+      </div>
+    );
   }
 
   return (

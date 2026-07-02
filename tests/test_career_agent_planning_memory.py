@@ -301,7 +301,9 @@ def test_forecast_and_stale_inputs_create_plan_warnings(session: Session) -> Non
         now=NOW,
     )
 
-    warning_text = " ".join((*plan.warnings, *(warning for step in plan.steps for warning in step.warnings)))
+    warning_text = " ".join(
+        (*plan.warnings, *(warning for step in plan.steps for warning in step.warnings))
+    )
     assert "forecast" in warning_text.casefold()
     assert "stale" in warning_text.casefold()
     assert plan.risks
@@ -520,7 +522,10 @@ def test_memory_routes_are_protected_scoped_and_do_not_leak_to_public_or_export(
     assert deleted.json()["data"]["memory_enabled"] is False
 
 
-def test_action_plan_api_route_returns_grounded_schema(api_client: TestClient, session: Session) -> None:
+def test_action_plan_api_route_returns_grounded_schema(
+    api_client: TestClient,
+    session: Session,
+) -> None:
     _seed_region(
         session,
         region_id="greater_boston",

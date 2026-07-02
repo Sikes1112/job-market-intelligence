@@ -27,6 +27,7 @@ from backend.career_agent.schemas import (
     validate_career_agent_answer,
 )
 from backend.companies.models import Company
+from backend.data_standards.ranking_gate import ranking_eligible_fact_ids
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
@@ -547,6 +548,14 @@ class CareerAgentGroundingService:
         if requested:
             stmt = stmt.where(Region.region_id.in_(requested))
         regions = tuple(self._session.execute(stmt).scalars())
+        eligible_region_ids = ranking_eligible_fact_ids(
+            self._session,
+            "region",
+            [region.region_id for region in regions],
+        )
+        regions = tuple(
+            region for region in regions if region.region_id in eligible_region_ids
+        )
         contexts: list[_RegionContext] = []
         for region in regions:
             score = self._session.execute(
@@ -562,12 +571,22 @@ class CareerAgentGroundingService:
                     .order_by(CompanyRegionHiring.company_id)
                 ).scalars()
             )
+            hiring_rows = self._ranking_eligible_rows(
+                "company_region_hiring",
+                hiring_rows,
+                "hiring_id",
+            )
             entry_rows = tuple(
                 self._session.execute(
                     select(CompanyRegionEntryLevel)
                     .where(CompanyRegionEntryLevel.region_id == region.region_id)
                     .order_by(CompanyRegionEntryLevel.company_id)
                 ).scalars()
+            )
+            entry_rows = self._ranking_eligible_rows(
+                "company_region_entry_level",
+                entry_rows,
+                "entry_level_id",
             )
             freshness = _freshness_for_rows(
                 (*(([score] if score is not None else [])), *hiring_rows, *entry_rows),
@@ -628,6 +647,14 @@ class CareerAgentGroundingService:
         if requested_companies:
             stmt = stmt.where(Company.company_id.in_(requested_companies))
         companies = tuple(self._session.execute(stmt).scalars())
+        eligible_company_ids = ranking_eligible_fact_ids(
+            self._session,
+            "company",
+            [company.company_id for company in companies],
+        )
+        companies = tuple(
+            company for company in companies if company.company_id in eligible_company_ids
+        )
         contexts: list[_CompanyContext] = []
         for company in companies:
             presence_rows = self._rows_for_company(
@@ -635,15 +662,30 @@ class CareerAgentGroundingService:
                 company.company_id,
                 requested_regions,
             )
+            presence_rows = self._ranking_eligible_rows(
+                "company_region_presence",
+                presence_rows,
+                "presence_id",
+            )
             hiring_rows = self._rows_for_company(
                 CompanyRegionHiring,
                 company.company_id,
                 requested_regions,
             )
+            hiring_rows = self._ranking_eligible_rows(
+                "company_region_hiring",
+                hiring_rows,
+                "hiring_id",
+            )
             entry_rows = self._rows_for_company(
                 CompanyRegionEntryLevel,
                 company.company_id,
                 requested_regions,
+            )
+            entry_rows = self._ranking_eligible_rows(
+                "company_region_entry_level",
+                entry_rows,
+                "entry_level_id",
             )
             freshness = _freshness_for_rows(
                 (*presence_rows, *hiring_rows, *entry_rows),
@@ -704,6 +746,19 @@ class CareerAgentGroundingService:
         if region_ids:
             stmt = stmt.where(model.region_id.in_(region_ids))
         return tuple(self._session.execute(stmt).scalars())
+
+    def _ranking_eligible_rows(
+        self,
+        fact_type: str,
+        rows: tuple,
+        id_attr: str,
+    ) -> tuple:
+        eligible_ids = ranking_eligible_fact_ids(
+            self._session,
+            fact_type,
+            [getattr(row, id_attr, None) for row in rows],
+        )
+        return tuple(row for row in rows if getattr(row, id_attr, None) in eligible_ids)
 
     def _forecast_evidence(
         self,

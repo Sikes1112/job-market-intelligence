@@ -52,9 +52,9 @@ class OpportunityService:
     def create_opportunity(self, request: OpportunityCreate) -> OpportunityPayload:
         """Create an internal opportunity fixture/record.
 
-        Layer 23A intentionally exposes no employer submission API. This method
-        exists for internal ingestion paths and tests until the governed Layer
-        23B submission/review workflow is implemented.
+        Public opportunity submission uses the protected Layer 23B submission
+        workflow. This method remains the internal canonical opportunity writer
+        used by governed ingestion, review, and tests.
         """
 
         assert_ranking_influence_disabled(request.employer_influence)

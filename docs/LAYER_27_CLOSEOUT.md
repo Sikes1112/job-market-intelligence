@@ -5,9 +5,10 @@ partner intake format, partner trust metadata, data quality labels, governance
 framework metadata, and public/institutional standards visibility.
 
 Layer 27 does not replace canonical market intelligence domains. It does not
-merge partner submissions into company, region, presence, hiring, entry-level,
-opportunity, recommendation, predictive, policy, career-agent, contribution,
-public report, benchmark, or market-score tables.
+directly merge partner submissions into company, region, presence, hiring,
+entry-level, opportunity, recommendation, predictive, policy, career-agent,
+contribution, public report, benchmark, or market-score tables. Layer 28 later
+adds a separate controlled candidate review and provenance-bound merge path.
 
 ## Final Scope
 
@@ -32,7 +33,9 @@ Implemented slices:
 - `POST /data-standards/partner-submissions`
 
 Submission creation runs the same validation path as validation preview before
-writing to `data_standard_partner_submissions`.
+writing to `data_standard_partner_submissions`. After Layer 29, validation and
+stored intake routes require data-review/admin authorization until a dedicated
+partner-auth principal exists.
 
 ## Frontend Route
 
@@ -46,10 +49,10 @@ types. It displays:
 - Governance framework
 - Non-mutating validation preview
 
-The page states that partner-submitted data is not automatically canonical,
-verified partner status does not equal certified data, quality labels do not
-alter downstream intelligence, and governance is currently a framework rather
-than an active board.
+The page states that Layer 28 supports controlled reviewer-approved canonical
+merge, partner-submitted data never mutates canonical truth directly, quality
+labels do not alter downstream intelligence, and governance is currently a
+framework rather than an active board.
 
 ## Data Quality Label Semantics
 
@@ -92,9 +95,9 @@ Layer 27 may:
 
 Layer 27 may not:
 
-- Mutate canonical company, region, presence, hiring, entry-level, opportunity,
-  recommendation, predictive, policy, career-agent, contribution, public report,
-  benchmark, or market-score tables.
+- Directly mutate canonical company, region, presence, hiring, entry-level,
+  opportunity, recommendation, predictive, policy, career-agent, contribution,
+  public report, benchmark, or market-score tables.
 - Treat verified partner status as certified data.
 - Treat partner submissions as product-owned market evidence.
 - Let quality labels affect ranking or downstream intelligence without an
@@ -119,6 +122,10 @@ Public demo denies Layer 27 evaluation, validation, and intake POST routes:
 - `POST /data-standards/quality-labels/evaluate`
 - `POST /data-standards/partner-submissions/validate`
 - `POST /data-standards/partner-submissions`
+
+Outside public demo, Layer 29 also requires data-review/admin authorization for
+validation and stored intake. This prevents anonymous callers from impersonating
+trusted partners while preserving public read-only standards metadata.
 
 ## False-Integration Findings
 
@@ -170,8 +177,11 @@ Final audit commands and results:
 
 ## Known Caveats
 
-- No canonical merge or review pipeline exists.
-- No partner authentication or partner-management workflow exists.
+- Layer 27 itself has no direct canonical merge path; Layer 28 adds backend-only
+  candidate review and controlled merge.
+- No dedicated partner authentication or partner-management workflow exists.
+  Layer 29 gates stored intake through data-review/admin authorization until a
+  partner principal is introduced.
 - Partner registry records are deterministic service metadata.
 - Quality-label eligibility is not certification and does not influence
   rankings.

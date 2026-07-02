@@ -1,4 +1,4 @@
-"""Read-only API routes for Layer 23A opportunities."""
+"""API routes for Layer 23 opportunity discovery and governed submissions."""
 
 from __future__ import annotations
 
@@ -6,7 +6,13 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from backend.api.dependencies import get_session
+from backend.api.dependencies import (
+    CurrentAdmin,
+    CurrentUser,
+    get_current_user,
+    get_session,
+    require_data_review_access,
+)
 from backend.api.envelope import (
     NOT_FOUND,
     VALIDATION_ERROR,
@@ -70,6 +76,7 @@ def list_opportunities(
 @router.post("/opportunities/submissions")
 def create_opportunity_submission(
     request: OpportunitySubmissionRequest,
+    _current: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
     service = OpportunitySubmissionService(OpportunityRepository(session))
@@ -81,6 +88,7 @@ def create_opportunity_submission(
 def list_opportunity_submissions(
     status: OpportunitySubmissionStatus | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
+    _admin: CurrentAdmin = Depends(require_data_review_access),
     session: Session = Depends(get_session),
 ):
     service = OpportunitySubmissionService(OpportunityRepository(session))
@@ -91,6 +99,7 @@ def list_opportunity_submissions(
 @router.get("/opportunities/submissions/{submission_id}")
 def get_opportunity_submission(
     submission_id: str,
+    _admin: CurrentAdmin = Depends(require_data_review_access),
     session: Session = Depends(get_session),
 ):
     service = OpportunitySubmissionService(OpportunityRepository(session))
@@ -111,6 +120,7 @@ def get_opportunity_submission(
 def review_opportunity_submission(
     submission_id: str,
     request: OpportunityReviewRequest,
+    _admin: CurrentAdmin = Depends(require_data_review_access),
     session: Session = Depends(get_session),
 ):
     service = OpportunitySubmissionService(OpportunityRepository(session))

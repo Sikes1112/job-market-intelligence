@@ -856,10 +856,22 @@ def test_data_standard_review_and_merge_routes_require_admin_roles(
         AdminRole.ADMIN,
         subject="auth0|layer28_merge_admin",
     )
+    unauthenticated_create = api_client.post(
+        "/data-standards/partner-submissions",
+        json=_submission("sub_layer28_unauthenticated"),
+    )
+    ordinary_create = api_client.post(
+        "/data-standards/partner-submissions",
+        headers=ordinary_headers,
+        json=_submission("sub_layer28_ordinary"),
+    )
     create = api_client.post(
         "/data-standards/partner-submissions",
+        headers=reviewer_headers,
         json=_submission("sub_layer28_auth"),
     )
+    assert unauthenticated_create.status_code == 401
+    assert ordinary_create.status_code == 403
     assert create.status_code == 200
 
     denied = api_client.post(
@@ -938,6 +950,7 @@ def test_layer_28_api_executes_review_preview_merge_path(
     )
     create = api_client.post(
         "/data-standards/partner-submissions",
+        headers=admin_headers,
         json=_submission("sub_layer28_api"),
     )
     candidates = api_client.post(

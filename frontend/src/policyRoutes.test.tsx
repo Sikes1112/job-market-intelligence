@@ -419,6 +419,7 @@ function stubFetch() {
 describe("Layer 24 policy routes", () => {
   afterEach(() => {
     cleanup();
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     window.history.pushState(null, "", "/");
   });
@@ -433,6 +434,21 @@ describe("Layer 24 policy routes", () => {
     expect(screen.getByText("Public-sector workforce planning")).toBeTruthy();
     expect(screen.getByText("University career office strategy")).toBeTruthy();
     expect(screen.queryByText("Opportunity concentration API interpretation")).toBeNull();
+  });
+
+  test("public-demo mode hides blocked nav items and renders policy unavailable state", async () => {
+    vi.stubEnv("VITE_PUBLIC_DEMO", "true");
+    const fetchMock = stubFetch();
+    window.history.pushState(null, "", "/markets/policy/regions/greater_boston/workforce");
+
+    render(<App />);
+
+    expect(await screen.findByText("Policy intelligence is not available in public demo")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Opportunity Routes/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Policy/i })).toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) =>
+      String(url).startsWith("/policy/")
+    )).toBe(false);
   });
 
   test("regional policy dashboard consumes backend metrics and safety metadata", async () => {

@@ -85,6 +85,7 @@ function routePayload() {
 describe("OpportunityRoutesPage", () => {
   afterEach(() => {
     cleanup();
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
 
@@ -131,5 +132,17 @@ describe("OpportunityRoutesPage", () => {
     expect(screen.queryByText(/Search jobs/i)).toBeNull();
     expect(screen.queryByText(/Sort by newest/i)).toBeNull();
     expect(screen.queryByText(/Apply now/i)).toBeNull();
+  });
+
+  test("public-demo mode renders unavailable state without calling blocked route", () => {
+    const fetchMock = vi.fn();
+    vi.stubEnv("VITE_PUBLIC_DEMO", "true");
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<OpportunityRoutesPage />);
+
+    expect(screen.getByText("Opportunity routes are not available in public demo")).toBeTruthy();
+    expect(screen.getByText(/public-demo backend intentionally blocks opportunity routing/i)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

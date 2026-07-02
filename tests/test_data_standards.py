@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from backend.admin.roles import AdminRole
 from backend.data_standards.models import DataStandardPartnerSubmissionRecord
 from backend.data_standards.schemas import (
     DataQualityLabelValue,
@@ -22,6 +24,7 @@ from backend.data_standards.service import (
     REQUIRED_FIELDS_BY_RECORD_TYPE,
     DataStandardsService,
 )
+from backend.users.models import User
 
 REQUIRED_STANDARD_TERMS = {
     "entry_level_role",
@@ -126,6 +129,36 @@ def _valid_submission(
             }
         ],
     }
+
+
+def _auth_headers(subject: str) -> dict[str, str]:
+    suffix = subject.split("|")[-1]
+    claims = {
+        "iss": "https://jmi.us.auth0.com/",
+        "sub": subject,
+        "email": f"{suffix}@example.com",
+        "email_verified": True,
+        "name": f"User {suffix}",
+    }
+    return {"X-Verified-OIDC-Claims": json.dumps(claims)}
+
+
+def _assign_role(
+    api_client: TestClient,
+    session: Session,
+    role: AdminRole | None,
+    *,
+    subject: str,
+) -> dict[str, str]:
+    headers = _auth_headers(subject)
+    response = api_client.get("/me", headers=headers)
+    assert response.status_code == 200
+    user_id = response.json()["data"]["user"]["user_id"]
+    user = session.get(User, user_id)
+    assert user is not None
+    user.admin_role = role.value if role is not None else None
+    session.flush()
+    return headers
 
 
 def _quality_eval_payload(
@@ -239,9 +272,17 @@ def test_invalid_partner_submission_is_rejected_with_structured_errors() -> None
 
 def test_source_freshness_confidence_and_warnings_survive_serialization(
     api_client: TestClient,
+    session: Session,
 ) -> None:
+    reviewer_headers = _assign_role(
+        api_client,
+        session,
+        AdminRole.DATA_REVIEWER,
+        subject="auth0|layer27_validation_reviewer",
+    )
     response = api_client.post(
         "/data-standards/partner-submissions/validate",
+        headers=reviewer_headers,
         json=_valid_submission(),
     )
 
@@ -274,36 +315,102 @@ def test_partner_submission_creation_goes_through_validation(
     api_client: TestClient,
     session: Session,
 ) -> None:
+    reviewer_headers = _assign_role(
+        api_client,
+        session,
+        AdminRole.DATA_REVIEWER,
+        subject="auth0|layer27_creation_reviewer",
+    )
     payload = _valid_submission("sub_27a_invalid")
     payload["records"][0]["payload"].pop("company_website")
 
-    response = api_client.post("/data-standards/partner-submissions", json=payload)
+    response = api_client.post(
+        "/data-standards/partner-submissions",
+        headers=reviewer_headers,
+        json=payload,
+    )
 
     assert response.status_code == 400
     assert response.json()["data"]["validation_status"] == "rejected"
     assert session.query(DataStandardPartnerSubmissionRecord).count() == 0
 
 
-def test_layer_27_routes_are_registered_and_reachable(api_client: TestClient) -> None:
+def test_layer_27_routes_are_registered_and_reachable(
+    api_client: TestClient,
+    session: Session,
+) -> None:
+    ordinary_headers = _assign_role(
+        api_client,
+        session,
+        None,
+        subject="auth0|layer27_ordinary",
+    )
+    reviewer_headers = _assign_role(
+        api_client,
+        session,
+        AdminRole.DATA_REVIEWER,
+        subject="auth0|layer27_reviewer",
+    )
     definitions = api_client.get("/data-standards/definitions")
     partner_schema = api_client.get("/data-standards/partner-schema")
+    unauthenticated_validation = api_client.post(
+        "/data-standards/partner-submissions/validate",
+        json=_valid_submission(),
+    )
+    ordinary_creation = api_client.post(
+        "/data-standards/partner-submissions",
+        headers=ordinary_headers,
+        json=_valid_submission("sub_27a_ordinary_denied"),
+    )
     validation = api_client.post(
         "/data-standards/partner-submissions/validate",
+        headers=reviewer_headers,
         json=_valid_submission(),
     )
     creation = api_client.post(
         "/data-standards/partner-submissions",
+        headers=reviewer_headers,
         json=_valid_submission("sub_27a_api_create"),
     )
 
     assert definitions.status_code == 200
     assert partner_schema.status_code == 200
+    assert unauthenticated_validation.status_code == 401
+    assert ordinary_creation.status_code == 403
     assert validation.status_code == 200
     assert creation.status_code == 200
     assert definitions.json()["data"]["definitions"]
     assert partner_schema.json()["data"]["schema_version"] == PARTNER_SCHEMA_VERSION
     assert validation.json()["data"]["validation_status"] == "validated"
+    assert creation.json()["data"]["validation_status"] == "validated"
     assert creation.json()["data"]["submission_id"] == "sub_27a_api_create"
+    assert session.query(DataStandardPartnerSubmissionRecord).count() == 1
+
+
+def test_partner_submission_api_trust_tier_is_registry_derived(
+    api_client: TestClient,
+    session: Session,
+) -> None:
+    reviewer_headers = _assign_role(
+        api_client,
+        session,
+        AdminRole.DATA_REVIEWER,
+        subject="auth0|layer27_trust_reviewer",
+    )
+    payload = _valid_submission(
+        "sub_27a_trust_impersonation",
+        partner_id="partner_acme_employer",
+    )
+    payload["trust_tier"] = "tier_1_verified_institutional"
+
+    response = api_client.post(
+        "/data-standards/partner-submissions",
+        headers=reviewer_headers,
+        json=payload,
+    )
+
+    assert response.status_code == 400
+    assert session.query(DataStandardPartnerSubmissionRecord).count() == 0
 
 
 def test_partner_registry_supports_required_types_statuses_and_trust_tiers() -> None:

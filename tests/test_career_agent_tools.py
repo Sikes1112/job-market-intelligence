@@ -12,8 +12,8 @@ from backend.career_agent.memory import CareerMemoryService
 from backend.career_agent.schemas import (
     CareerActionPlanRequest,
     CareerAgentQuestionType,
-    CareerAgentRequestedToolAction,
     CareerAgentRequest,
+    CareerAgentRequestedToolAction,
     CareerAgentToolApproval,
     CareerAgentToolRequest,
     CareerAgentToolStatus,

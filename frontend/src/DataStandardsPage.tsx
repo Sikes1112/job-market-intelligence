@@ -95,15 +95,16 @@ export default function DataStandardsPage() {
         <p className="eyebrow">Layer 27 standards surface</p>
         <h1>Data standards and partner governance</h1>
         <p className="public-lead">
-          Layer 27 defines standards and intake quality. Partner-submitted data is not
-          automatically canonical, verified partner status does not equal certified data,
-          and quality labels do not currently alter rankings, recommendations, forecasts,
-          policy outputs, career-agent outputs, public reports, or market scores.
+          Layer 27 defines standards and intake quality. Layer 28 adds controlled
+          reviewer-approved canonical merge for eligible candidate facts, but
+          partner-submitted data never mutates canonical truth directly and quality
+          labels do not currently alter rankings, recommendations, forecasts, policy
+          outputs, career-agent outputs, public reports, or market scores.
         </p>
         <div className="metadata-row">
           <span className="badge badge-real">Backend standards API</span>
-          <span className="badge badge-warning">No canonical merge</span>
-          <span className="badge badge-unknown">Governance framework only</span>
+          <span className="badge badge-warning">Controlled merge only</span>
+          <span className="badge badge-unknown">Admin API review path</span>
         </div>
       </section>
 
@@ -119,9 +120,10 @@ export default function DataStandardsPage() {
         <article className="public-section">
           <h2>Standard Definitions</h2>
           <p>
-            Canonical terms are metadata for shared understanding; they do not mutate
-            canonical company, region, opportunity, recommendation, forecast, policy,
-            career-agent, public report, contribution, or market-score records.
+            Canonical terms are metadata for shared understanding. Layer 27 validation
+            does not mutate canonical company, region, opportunity, recommendation,
+            forecast, policy, career-agent, public report, contribution, or market-score
+            records; Layer 28 merge requires internal review and provenance binding.
           </p>
           <div className="standards-grid">
             {definitions.map((definition) => (

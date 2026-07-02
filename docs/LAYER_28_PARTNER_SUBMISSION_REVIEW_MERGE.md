@@ -49,8 +49,9 @@ resolved preview.
   repositories exclude partner-origin merged canonical facts unless a future
   stricter layer explicitly allows ranking influence.
 - Public-demo mode denies all Layer 27/28 mutation routes before auth.
-- Non-demo candidate creation, review, and preview routes require data-review
-  admin access; merge execution requires admin mutation access.
+- After Layer 29, non-demo validation, stored intake, candidate creation,
+  review, and preview routes require data-review/admin access; merge execution
+  requires admin mutation access.
 
 ## API Surface
 
@@ -78,5 +79,5 @@ No frontend admin portal is claimed in this layer.
 - The controlled merge service is authoritative for Layer 28 candidate-to-
   canonical writes, but other pre-existing canonical services can still write
   their own domains.
-- The repository worktree still contains substantial unrelated staged and
-  untracked layer work; lock review should account for that merge-risk boundary.
+- Layer 28 does not provide a frontend admin review portal; review and merge
+  remain backend/admin API workflows.

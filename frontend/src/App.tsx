@@ -80,6 +80,7 @@ import {
   type ProtectedRequestOptions,
 } from "./api";
 import { useFrontendAuth, type FrontendAuthContextValue } from "./auth";
+import { isPublicDemoBlockedProduct } from "./demoMode";
 import PolicyIntelligencePage from "./PolicyIntelligencePage";
 import {
   coverageComponentEntries,
@@ -10067,6 +10068,9 @@ function App() {
   const auth = useFrontendAuth();
   const [route, setRoute] = useState<RouteState>(() => readCurrentRoute());
   const isProductRoute = isProductPage(route.page);
+  const visibleNavItems = NAV_ITEMS.filter(
+    (item) => !isPublicDemoBlockedProduct(item.id),
+  );
   const [health, setHealth] = useState<LoadState<{ service: string }>>(emptyLoadState);
   const [regions, setRegions] = useState<LoadState<{ regions: RegionListItem[] }>>(emptyLoadState);
   const [regionDetails, setRegionDetails] = useState<Record<string, ApiEnvelope<RegionDetail>>>({});
@@ -12437,7 +12441,7 @@ function App() {
           </div>
         </div>
         <nav className="nav-list" aria-label="Main navigation">
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const url = getNavigationUrl(
               item.id,
               selectedRegionId,

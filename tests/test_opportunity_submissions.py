@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 
 import pytest
@@ -7,6 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from backend.admin.roles import AdminRole
 from backend.companies.models import Company
 from backend.geography.models import Region
 from backend.opportunities.models import Opportunity, OpportunitySubmission
@@ -23,6 +25,7 @@ from backend.opportunities.schemas import (
     OpportunityTrustLabel,
 )
 from backend.opportunities.submissions import OpportunitySubmissionService
+from backend.users.models import User
 
 NOW = datetime(2026, 6, 24, 12, tzinfo=UTC)
 
@@ -85,6 +88,36 @@ def _submission_request(**overrides) -> OpportunitySubmissionRequest:
 
 def _service(session: Session) -> OpportunitySubmissionService:
     return OpportunitySubmissionService(OpportunityRepository(session))
+
+
+def _auth_headers(subject: str) -> dict[str, str]:
+    suffix = subject.split("|")[-1]
+    claims = {
+        "iss": "https://jmi.us.auth0.com/",
+        "sub": subject,
+        "email": f"{suffix}@example.com",
+        "email_verified": True,
+        "name": f"User {suffix}",
+    }
+    return {"X-Verified-OIDC-Claims": json.dumps(claims)}
+
+
+def _assign_role(
+    api_client: TestClient,
+    session: Session,
+    role: AdminRole | None,
+    *,
+    subject: str,
+) -> dict[str, str]:
+    headers = _auth_headers(subject)
+    response = api_client.get("/me", headers=headers)
+    assert response.status_code == 200
+    user_id = response.json()["data"]["user"]["user_id"]
+    user = session.get(User, user_id)
+    assert user is not None
+    user.admin_role = role.value if role is not None else None
+    session.flush()
+    return headers
 
 
 def test_employer_submission_defaults_to_safe_pending_partner_state(
@@ -170,8 +203,22 @@ def test_submission_api_create_validation_and_public_boundary(
         submission_id="sub_api",
         opportunity_id="opp_api_submission",
     ).model_dump(mode="json")
+    submitter_headers = _auth_headers("auth0|opportunity_submitter")
+    reviewer_headers = _assign_role(
+        api_client,
+        session,
+        AdminRole.DATA_REVIEWER,
+        subject="auth0|opportunity_submission_reviewer",
+    )
 
-    response = api_client.post("/opportunities/submissions", json=request)
+    unauthenticated = api_client.post("/opportunities/submissions", json=request)
+    assert unauthenticated.status_code == 401
+
+    response = api_client.post(
+        "/opportunities/submissions",
+        headers=submitter_headers,
+        json=request,
+    )
     assert response.status_code == 200
     body = response.json()["data"]
     assert body["submission_id"] == "sub_api"
@@ -181,13 +228,24 @@ def test_submission_api_create_validation_and_public_boundary(
     assert body["opportunity"]["partner_submitted"] is True
     assert body["opportunity"]["ranking_influence_allowed"] is False
 
-    listed = api_client.get("/opportunities/submissions")
+    listed_without_role = api_client.get("/opportunities/submissions", headers=submitter_headers)
+    assert listed_without_role.status_code == 403
+
+    listed = api_client.get("/opportunities/submissions", headers=reviewer_headers)
     assert listed.status_code == 200
     assert listed.json()["data"]["submissions"][0]["submission_id"] == "sub_api"
 
     invalid = dict(request)
     invalid["trust_label"] = "verified"
-    assert api_client.post("/opportunities/submissions", json=invalid).status_code == 422
+    assert api_client.post(
+        "/opportunities/submissions",
+        headers=submitter_headers,
+        json=invalid,
+    ).status_code == 422
     invalid = dict(request)
     invalid["ranking_influence_allowed"] = True
-    assert api_client.post("/opportunities/submissions", json=invalid).status_code == 422
+    assert api_client.post(
+        "/opportunities/submissions",
+        headers=submitter_headers,
+        json=invalid,
+    ).status_code == 422

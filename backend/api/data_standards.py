@@ -107,6 +107,7 @@ def evaluate_data_quality_label(
 @router.post("/data-standards/partner-submissions/validate", response_model=None)
 def validate_partner_submission(
     payload: dict[str, Any] = Body(...),
+    _admin: CurrentAdmin = Depends(require_data_review_access),
 ) -> dict:
     result = DataStandardsService().validate_submission(payload)
     return lightweight_success_envelope(
@@ -118,6 +119,7 @@ def validate_partner_submission(
 @router.post("/data-standards/partner-submissions", response_model=None)
 def create_partner_submission(
     payload: dict[str, Any] = Body(...),
+    _admin: CurrentAdmin = Depends(require_data_review_access),
     session: Session = Depends(get_session),
 ) -> Any:
     service = DataStandardsService(session)

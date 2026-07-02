@@ -95,11 +95,14 @@ and an explicit `DATABASE_URL` plus exact frontend CORS origin:
 ```bash
 APP_ENV=public_demo
 CORS_ALLOWED_ORIGINS=https://<public-demo-frontend-host>
+VITE_PUBLIC_DEMO=true
 ```
 
 `public_demo` keeps the public API read-only, enables in-app rate limiting and
 security headers by default, uses a smaller default request body limit, and
-continues to deny admin/user/canonical mutation routes. See
+continues to deny admin/user/canonical mutation routes. `VITE_PUBLIC_DEMO=true`
+makes the frontend hide product routes that the public-demo backend
+intentionally blocks and render direct visits as unavailable states. See
 `docs/PUBLIC_DEMO_ENVIRONMENT.md`, `docs/PUBLIC_DEMO_MONITORING.md`, and
 `docs/PUBLIC_DEMO_ABUSE_PROTECTION.md`.
 

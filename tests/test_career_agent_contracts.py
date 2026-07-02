@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from backend.admin.models import AdminEventLog
 from backend.career_agent.schemas import (
     CareerAgentAnswer,
     CareerAgentEvidenceRef,
@@ -25,6 +26,12 @@ from backend.career_agent.schemas import (
 )
 from backend.career_agent.service import CareerAgentGroundingService
 from backend.companies.models import Company
+from backend.data_standards.models import (
+    DataStandardCandidateFactRecord,
+    DataStandardCandidateReviewRecord,
+    DataStandardCanonicalMergeRecord,
+    DataStandardPartnerSubmissionRecord,
+)
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
@@ -287,6 +294,131 @@ def _seed_opportunity(session: Session, *, internal_note: str = "Internal-only n
     )
 
 
+def _mark_partner_origin_ranking_ineligible(
+    session: Session,
+    *,
+    fact_type: str,
+    fact_id: str,
+    suffix: str,
+    record_type: str,
+) -> None:
+    submission_id = f"sub_ca_gate_{suffix}"
+    candidate_id = f"cand_ca_gate_{suffix}"
+    review_id = f"review_ca_gate_{suffix}"
+    audit_id = f"audit_ca_gate_{suffix}"
+    session.add(
+        DataStandardPartnerSubmissionRecord(
+            partner_submission_id=submission_id,
+            partner_id="partner_career_platform",
+            submitted_at=NOW,
+            schema_version="partner_submission_v1",
+            submitter_type="data_vendor",
+            validation_status="validated",
+            review_lifecycle_state="merged",
+            review_state_history_json=[],
+            records_json=[],
+            source_refs_json=[],
+            freshness_json={"freshness_status": "fresh"},
+            confidence_json={"confidence_label": "high"},
+            warnings_json=[],
+            validation_errors_json=[],
+            raw_submission_json={"partner_id": "partner_career_platform"},
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    session.flush()
+    session.add(
+        DataStandardCandidateFactRecord(
+            candidate_fact_id=candidate_id,
+            partner_submission_id=submission_id,
+            partner_id="partner_career_platform",
+            partner_name="Career Platform Partner",
+            partner_type="career_platform",
+            partner_verification_status="verified",
+            partner_trust_tier="tier_3_verified_platform",
+            submitter_type="data_vendor",
+            submitted_at=NOW,
+            record_id=f"rec_ca_gate_{suffix}",
+            record_type=record_type,
+            candidate_state="merged",
+            canonical_target_type=fact_type,
+            canonical_target_id=fact_id,
+            canonical_target_key_json={"id": fact_id},
+            fact_payload_json={"id": fact_id},
+            source_refs_json=[],
+            freshness_json={"freshness_status": "fresh"},
+            confidence_json={"confidence_label": "high"},
+            provenance_complete=True,
+            provenance_warnings_json=[],
+            raw_record_json={"record_id": f"rec_ca_gate_{suffix}"},
+            ranking_influence_allowed=False,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    session.add(
+        AdminEventLog(
+            admin_event_id=audit_id,
+            actor="reviewer_ca_gate",
+            actor_role="data_reviewer",
+            action="data_standard.review",
+            object_type="data_standard_candidate_fact",
+            object_id=candidate_id,
+            reason="Mark partner-origin fixture as reviewed.",
+            timestamp=NOW,
+        )
+    )
+    session.flush()
+    session.add(
+        DataStandardCandidateReviewRecord(
+            candidate_review_id=review_id,
+            candidate_fact_id=candidate_id,
+            partner_submission_id=submission_id,
+            decision="approve_candidate",
+            resulting_candidate_state="approved_for_merge",
+            reviewer_id="reviewer_ca_gate",
+            reviewer_name="Career Agent Gate Reviewer",
+            reason="Fixture review.",
+            decision_notes="Fixture source basis.",
+            source_basis_json={"source_ref_ids": ["src_ca_gate"]},
+            before_after_diff_json={},
+            resolved_conflict_codes_json=[],
+            audit_event_id=audit_id,
+            provenance_complete=True,
+            provenance_snapshot_json={"source_ref_ids": ["src_ca_gate"]},
+            ranking_influence_allowed=False,
+            reviewed_at=NOW,
+            created_at=NOW,
+        )
+    )
+    session.flush()
+    session.add(
+        DataStandardCanonicalMergeRecord(
+            merge_record_id=f"merge_ca_gate_{suffix}",
+            candidate_fact_id=candidate_id,
+            partner_submission_id=submission_id,
+            review_decision_id=review_id,
+            canonical_target_type=fact_type,
+            canonical_target_id=fact_id,
+            merge_action="noop",
+            merge_status="merged",
+            conflict_detected=False,
+            conflicts_json=[],
+            canonical_before_json={"id": fact_id},
+            canonical_after_json={"id": fact_id},
+            provenance_binding_json={"source_ref_ids": ["src_ca_gate"]},
+            invalidation_json=[],
+            stale_output_ids_json=[],
+            audit_event_id=audit_id,
+            ranking_influence_allowed=False,
+            merged_by="admin_ca_gate",
+            merged_at=NOW,
+            created_at=NOW,
+        )
+    )
+
+
 def test_career_answer_includes_freshness_and_uncertainty_metadata(
     session: Session,
 ) -> None:
@@ -317,6 +449,112 @@ def test_career_answer_includes_freshness_and_uncertainty_metadata(
     assert answer.uncertainty.confidence_level in Confidence
     assert answer.recommendations[0].freshness.source_count > 0
     assert answer.recommendations[0].uncertainty.bounded is True
+
+
+def test_partner_origin_ranking_ineligible_facts_are_excluded_from_company_watch(
+    session: Session,
+) -> None:
+    session.add(
+        Region(
+            region_id="greater_boston",
+            region_name="greater_boston",
+            display_name="Greater Boston",
+            region_type="metro",
+        )
+    )
+    session.add_all(
+        [
+            Company(
+                company_id="comp_normal",
+                company_name="Normal Systems",
+                normalized_company_name="normal systems",
+                sector_primary="software",
+                eligibility_status="eligible",
+            ),
+            Company(
+                company_id="comp_partner_origin",
+                company_name="Partner Origin Systems",
+                normalized_company_name="partner origin systems",
+                sector_primary="software",
+                eligibility_status="eligible",
+            ),
+        ]
+    )
+    session.flush()
+    session.add_all(
+        [
+            CompanyRegionPresence(
+                presence_id="presence_partner_origin",
+                company_id="comp_normal",
+                region_id="greater_boston",
+                presence_status="present",
+                presence_confidence="high_confidence",
+            ),
+            CompanyRegionHiring(
+                hiring_id="hiring_partner_origin",
+                company_id="comp_normal",
+                region_id="greater_boston",
+                currently_hiring_flag=True,
+                active_posting_count_now=50,
+                role_family_summary={"software_engineering": 12},
+                hiring_confidence="high_confidence",
+            ),
+            CompanyRegionEntryLevel(
+                entry_level_id="entry_platform_owned",
+                company_id="comp_normal",
+                region_id="greater_boston",
+                internship_count=2,
+                entry_level_access_score=0.74,
+                entry_level_confidence="high_confidence",
+            ),
+        ]
+    )
+    _mark_partner_origin_ranking_ineligible(
+        session,
+        fact_type="company_region_presence",
+        fact_id="presence_partner_origin",
+        suffix="presence",
+        record_type="company_region_presence",
+    )
+    _mark_partner_origin_ranking_ineligible(
+        session,
+        fact_type="company_region_hiring",
+        fact_id="hiring_partner_origin",
+        suffix="hiring",
+        record_type="hiring_signal",
+    )
+    _mark_partner_origin_ranking_ineligible(
+        session,
+        fact_type="company",
+        fact_id="comp_partner_origin",
+        suffix="company",
+        record_type="company",
+    )
+    session.flush()
+
+    answer = CareerAgentGroundingService(session).answer(
+        CareerAgentRequest(
+            question_type=CareerAgentQuestionType.COMPANIES_TO_WATCH,
+            target_company_ids=("comp_normal", "comp_partner_origin"),
+            target_region_ids=("greater_boston",),
+            include_forecasts=False,
+        ),
+        now=NOW,
+    )
+
+    assert [recommendation.target_id for recommendation in answer.recommendations] == [
+        "comp_normal"
+    ]
+    evidence_ids = {
+        ref.entity_id
+        for recommendation in answer.recommendations
+        for ref in recommendation.evidence_refs
+    }
+    assert "entry_platform_owned" in evidence_ids
+    assert "presence_partner_origin" not in evidence_ids
+    assert "hiring_partner_origin" not in evidence_ids
+    assert "comp_partner_origin" not in evidence_ids
+    assert "0 presence row(s), 0 hiring row(s)" in answer.recommendations[0].summary
 
 
 def test_forecast_backed_recommendation_has_confidence_and_warning(
