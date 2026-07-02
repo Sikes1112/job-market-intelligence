@@ -273,6 +273,13 @@ def _public_demo_route_allowed(method: str, path: str) -> bool:
     if (
         len(parts) == 3
         and parts[0] == "platform"
+        and parts[1] == "predictive"
+        and parts[2] == "reports"
+    ):
+        return True
+    if (
+        len(parts) == 3
+        and parts[0] == "platform"
         and parts[1] == "reports"
         and parts[2]
     ):

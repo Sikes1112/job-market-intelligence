@@ -13,12 +13,16 @@ export type ProductPage =
   | "compare"
   | "discovery"
   | "recommendations"
+  | "career-agent"
+  | "opportunity-routes"
+  | "policy"
   | "plans"
   | "institution"
   | "account";
 export type PublicPage =
   | "landing"
   | "benchmarks"
+  | "data-standards"
   | "data-licensing"
   | "developers"
   | "developer-docs"
@@ -34,6 +38,7 @@ export type PublicPage =
   | "embed-region-comparison"
   | "embed-market-score-card"
   | "guides"
+  | "forecasts"
   | "reports"
   | "glossary"
   | "methodology"
@@ -44,10 +49,18 @@ export type PublicPage =
 export type AppPage = ProductPage | PublicPage;
 export type InstitutionView =
   | "dashboard"
+  | "decisions"
   | "advisor"
   | "reports"
   | "data-requests"
   | "imports";
+export type PolicyView =
+  | "landing"
+  | "workforce"
+  | "economic-development"
+  | "education-alignment"
+  | "peer-comparison"
+  | "report";
 
 export type ComparisonUrlState = {
   regionA: string;
@@ -71,6 +84,8 @@ export type RouteState = {
   benchmarkSlug?: string;
   reportSlug?: string;
   seoPageSlug?: string;
+  policyView?: PolicyView;
+  policyReportId?: string;
   organizationId?: string;
   institutionView?: InstitutionView;
   comparison: ComparisonUrlState;
@@ -93,6 +108,7 @@ const PRODUCT_ROOT = "/markets";
 
 export const PUBLIC_PAGE_PATHS: Record<Exclude<PublicPage, "landing">, string> = {
   benchmarks: "/benchmarks",
+  "data-standards": "/data-standards",
   "data-licensing": "/data-licensing",
   developers: "/developers",
   "developer-docs": "/developers/docs",
@@ -108,6 +124,7 @@ export const PUBLIC_PAGE_PATHS: Record<Exclude<PublicPage, "landing">, string> =
   "embed-region-comparison": "/embed/region-comparison",
   "embed-market-score-card": "/embed/market-score-card",
   guides: "/career-market-guides",
+  forecasts: "/forecasts",
   reports: "/reports",
   glossary: "/glossary",
   methodology: "/methodology",
@@ -124,6 +141,9 @@ const PRODUCT_PAGES: ProductPage[] = [
   "compare",
   "discovery",
   "recommendations",
+  "career-agent",
+  "opportunity-routes",
+  "policy",
   "plans",
   "institution",
   "account",
@@ -243,6 +263,8 @@ function baseRoute(
     | "benchmarkSlug"
     | "reportSlug"
     | "seoPageSlug"
+    | "policyView"
+    | "policyReportId"
     | "organizationId"
     | "institutionView"
     | "unknownPath"
@@ -331,8 +353,38 @@ export function parseRoute(pathname: string, search: string): RouteState {
   if (section === "compare") return baseRoute("compare", params);
   if (section === "discovery") return baseRoute("discovery", params);
   if (section === "recommendations") return baseRoute("recommendations", params);
+  if (section === "career-agent" || section === "agent") {
+    return baseRoute("career-agent", params);
+  }
+  if (section === "opportunity-routes" || section === "routes") {
+    return baseRoute("opportunity-routes", params);
+  }
+  if (section === "policy") {
+    if (segments[2] === "regions") {
+      const regionId = cleanToken(segments[3]);
+      const view = policyViewForSegment(segments[4]);
+      return baseRoute("policy", params, {
+        policyView: view,
+        regionId,
+      });
+    }
+    if (segments[2] === "reports") {
+      return baseRoute("policy", params, {
+        policyView: "report",
+        regionId: cleanToken(segments[3]),
+        policyReportId: cleanToken(segments[4]) ?? "early-career-opportunity",
+      });
+    }
+    return baseRoute("policy", params, { policyView: "landing" });
+  }
   if (section === "plans" || section === "pricing") return baseRoute("plans", params);
   if (section === "institution") {
+    if (segments[2] === "decisions") {
+      return baseRoute("institution", params, {
+        institutionView: "decisions",
+        organizationId: cleanToken(segments[3]),
+      });
+    }
     if (segments[2] === "advisor") {
       return baseRoute("institution", params, {
         institutionView: "advisor",
@@ -438,8 +490,60 @@ export function recommendationsUrl(goalMode = DEFAULT_RECOMMENDATION_GOAL_MODE):
   return `${PRODUCT_ROOT}/recommendations?${params.toString()}`;
 }
 
+export function careerAgentUrl(): string {
+  return `${PRODUCT_ROOT}/career-agent`;
+}
+
+export function opportunityRoutesUrl(): string {
+  return `${PRODUCT_ROOT}/opportunity-routes`;
+}
+
+export function policyLandingUrl(): string {
+  return `${PRODUCT_ROOT}/policy`;
+}
+
+export function policyRegionUrl(regionId?: string): string {
+  return regionId
+    ? `${PRODUCT_ROOT}/policy/regions/${encodePathValue(regionId)}/workforce`
+    : `${PRODUCT_ROOT}/policy`;
+}
+
+export function policyEconomicDevelopmentUrl(regionId?: string): string {
+  return regionId
+    ? `${PRODUCT_ROOT}/policy/regions/${encodePathValue(regionId)}/economic-development`
+    : `${PRODUCT_ROOT}/policy`;
+}
+
+export function policyEducationAlignmentUrl(regionId?: string): string {
+  return regionId
+    ? `${PRODUCT_ROOT}/policy/regions/${encodePathValue(regionId)}/education-alignment`
+    : `${PRODUCT_ROOT}/policy`;
+}
+
+export function policyPeerComparisonUrl(regionId?: string): string {
+  return regionId
+    ? `${PRODUCT_ROOT}/policy/regions/${encodePathValue(regionId)}/peer-comparison`
+    : `${PRODUCT_ROOT}/policy`;
+}
+
+export function policyReportUrl(
+  regionId?: string,
+  reportId = "early-career-opportunity",
+): string {
+  return regionId
+    ? `${PRODUCT_ROOT}/policy/reports/${encodePathValue(regionId)}/${encodePathValue(reportId)}`
+    : `${PRODUCT_ROOT}/policy`;
+}
+
 export function plansUrl(): string {
   return `${PRODUCT_ROOT}/plans`;
+}
+
+function policyViewForSegment(segment: string | undefined): PolicyView {
+  if (segment === "economic-development") return "economic-development";
+  if (segment === "education-alignment") return "education-alignment";
+  if (segment === "peer-comparison") return "peer-comparison";
+  return "workforce";
 }
 
 export function institutionDashboardUrl(organizationId?: string): string {
@@ -452,6 +556,12 @@ export function institutionAdvisorUrl(organizationId?: string): string {
   return organizationId
     ? `${PRODUCT_ROOT}/institution/advisor/${encodePathValue(organizationId)}`
     : `${PRODUCT_ROOT}/institution/advisor`;
+}
+
+export function institutionDecisionsUrl(organizationId?: string): string {
+  return organizationId
+    ? `${PRODUCT_ROOT}/institution/decisions/${encodePathValue(organizationId)}`
+    : `${PRODUCT_ROOT}/institution/decisions`;
 }
 
 export function institutionReportsUrl(organizationId?: string): string {

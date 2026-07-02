@@ -25,6 +25,7 @@ from backend.institutions.advisor import (
 )
 from backend.institutions.dashboard import DEFAULT_MINIMUM_GROUP_SIZE, MAXIMUM_GROUP_SIZE
 from backend.institutions.data_requests import InstitutionalDataRequestCreateInput
+from backend.institutions.decision_infrastructure import InstitutionWorkforceReportType
 from backend.institutions.exceptions import (
     InstitutionalAccessDenied,
     InstitutionalReportNotFound,
@@ -137,6 +138,104 @@ def get_organization_dashboard(
     except InstitutionalAccessDenied:
         return _forbidden("Institutional dashboard access denied.")
     return lightweight_success_envelope(data=dashboard.model_dump(mode="json"))
+
+
+@router.get("/organizations/{organization_id}/decision-dashboard", response_model=None)
+def get_institution_decision_dashboard(
+    organization_id: str,
+    minimum_group_size: int = Query(
+        default=DEFAULT_MINIMUM_GROUP_SIZE,
+        ge=DEFAULT_MINIMUM_GROUP_SIZE,
+        le=MAXIMUM_GROUP_SIZE,
+    ),
+    current: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> JSONResponse | dict:
+    try:
+        dashboard = _service(session).get_decision_dashboard_for_user(
+            organization_id=organization_id,
+            user_id=current.user.user_id,
+            minimum_group_size=minimum_group_size,
+        )
+    except OrganizationNotFound:
+        return _not_found(f"Organization not found: {organization_id!r}")
+    except InstitutionalAccessDenied:
+        return _forbidden("Institutional decision dashboard access denied.")
+    return lightweight_success_envelope(data=dashboard.model_dump(mode="json"))
+
+
+@router.get("/organizations/{organization_id}/curriculum-market-map", response_model=None)
+def get_institution_curriculum_market_map(
+    organization_id: str,
+    minimum_group_size: int = Query(
+        default=DEFAULT_MINIMUM_GROUP_SIZE,
+        ge=DEFAULT_MINIMUM_GROUP_SIZE,
+        le=MAXIMUM_GROUP_SIZE,
+    ),
+    current: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> JSONResponse | dict:
+    try:
+        mapping = _service(session).get_curriculum_mapping_for_user(
+            organization_id=organization_id,
+            user_id=current.user.user_id,
+            minimum_group_size=minimum_group_size,
+        )
+    except OrganizationNotFound:
+        return _not_found(f"Organization not found: {organization_id!r}")
+    except InstitutionalAccessDenied:
+        return _forbidden("Institutional curriculum mapping access denied.")
+    return lightweight_success_envelope(data=mapping.model_dump(mode="json"))
+
+
+@router.get("/organizations/{organization_id}/workforce-reports/{report_type}", response_model=None)
+def get_institution_workforce_report(
+    organization_id: str,
+    report_type: InstitutionWorkforceReportType,
+    minimum_group_size: int = Query(
+        default=DEFAULT_MINIMUM_GROUP_SIZE,
+        ge=DEFAULT_MINIMUM_GROUP_SIZE,
+        le=MAXIMUM_GROUP_SIZE,
+    ),
+    current: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> JSONResponse | dict:
+    try:
+        report = _service(session).get_workforce_report_for_user(
+            organization_id=organization_id,
+            user_id=current.user.user_id,
+            report_type=report_type,
+            minimum_group_size=minimum_group_size,
+        )
+    except OrganizationNotFound:
+        return _not_found(f"Organization not found: {organization_id!r}")
+    except InstitutionalAccessDenied:
+        return _forbidden("Institutional workforce report access denied.")
+    return lightweight_success_envelope(data=report.model_dump(mode="json"))
+
+
+@router.get("/organizations/{organization_id}/benchmarks", response_model=None)
+def get_institution_benchmarks(
+    organization_id: str,
+    minimum_group_size: int = Query(
+        default=DEFAULT_MINIMUM_GROUP_SIZE,
+        ge=DEFAULT_MINIMUM_GROUP_SIZE,
+        le=MAXIMUM_GROUP_SIZE,
+    ),
+    current: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> JSONResponse | dict:
+    try:
+        benchmarks = _service(session).get_benchmarks_for_user(
+            organization_id=organization_id,
+            user_id=current.user.user_id,
+            minimum_group_size=minimum_group_size,
+        )
+    except OrganizationNotFound:
+        return _not_found(f"Organization not found: {organization_id!r}")
+    except InstitutionalAccessDenied:
+        return _forbidden("Institutional benchmark access denied.")
+    return lightweight_success_envelope(data=benchmarks.model_dump(mode="json"))
 
 
 @router.post(

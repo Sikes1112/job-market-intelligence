@@ -39,6 +39,14 @@ In `APP_ENV=public_demo`, the backend exposes only these HTTP surfaces:
 - `POST /discover/personalized`
 - `GET /recommendations/goal-modes`
 - `POST /recommendations/strategy`
+- `POST /career-agent/answers`
+- `POST /career-agent/action-plans`
+- `GET /data-standards/definitions`
+- `GET /data-standards/partner-schema`
+- `GET /data-standards/partners`
+- `GET /data-standards/partners/{partner_id}`
+- `GET /data-standards/quality-labels`
+- `GET /data-standards/governance-framework`
 - `GET /monetization/plans`
 - `GET /monetization/features`
 - `GET /monetization/reports`
@@ -55,10 +63,16 @@ In `APP_ENV=public_demo`, the backend exposes only these HTTP surfaces:
 
 `POST /discover/personalized` is allowed because it is request-scoped and does
 not persist preferences, snapshots, output metadata, scores, or canonical facts.
-The recommendation strategy and monetization catalog routes are read-only or
-request-scoped; they expose public product metadata and do not create billing
-or user state. Layer 18 platform-intelligence routes are safe GET summaries for
-history, active signals, proprietary indices, and published reports only.
+The recommendation strategy, grounded career-agent answer, grounded
+career-agent action-plan, and monetization catalog routes are read-only or
+request-scoped; they expose public product metadata or structured
+evidence-backed answers/plans and do not create billing or user state.
+Career-agent memory-backed plans and tool previews are protected state surfaces
+and are intentionally not public-demo routes.
+Layer 27 data-standards GET routes expose standards metadata only; validation,
+certification evaluation, and submission creation remain denied.
+Layer 18 platform-intelligence routes are safe GET summaries for history,
+active signals, proprietary indices, and published reports only.
 Billing status is read-only and reports checkout disabled in public demo.
 
 ## public_demo Denials
@@ -89,6 +103,14 @@ Denied mutation surfaces:
   `POST /me/alerts/{user_alert_id}/dismiss`,
   `POST /me/explanations/{entity_type}`,
   `POST /me/recommendation-snapshots`,
+  `POST /me/career-agent/action-plans`,
+  `POST /me/career-agent/tools/preview`,
+  `POST /me/career-agent/tools/approve`,
+  `POST /me/career-agent/tools/reject`,
+  `GET /me/career-agent/tools`,
+  `GET /me/career-memory`,
+  `PUT /me/career-memory`,
+  `DELETE /me/career-memory`,
   `DELETE /me`
 - Billing writes:
   `POST /billing/checkout-session`,
@@ -98,6 +120,10 @@ Denied mutation surfaces:
   `POST /platform/contributions`,
   `GET /platform/contributions/review`,
   `POST /platform/contributions/{contribution_id}/review`
+- Layer 27 partner intake and certification-evaluation surfaces:
+  `POST /data-standards/quality-labels/evaluate`,
+  `POST /data-standards/partner-submissions/validate`,
+  `POST /data-standards/partner-submissions`
 - Canonical write-shaped requests such as `POST`, `PUT`, `PATCH`, or `DELETE`
   under public market paths.
 

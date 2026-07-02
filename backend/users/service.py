@@ -667,6 +667,8 @@ class UserPersonalizationPersistenceService:
             owner_user_id
         )
         deleted_user_alerts = self._repo.delete_user_alerts_for_user(owner_user_id)
+        self._repo.delete_career_memory_for_user(owner_user_id)
+        self._repo.delete_career_agent_tool_records_for_user(owner_user_id)
         deleted_artifacts = self._repo.delete_saved_market_artifacts_for_user(
             owner_user_id
         )

@@ -14,6 +14,9 @@ import type {
   CompanyGeographyResponse,
   CompanySearchResponse,
   ComparisonDetail,
+  DataQualityCertificationResult,
+  DataQualityLabelListPayload,
+  DataStandardDefinitionListPayload,
   CareerPlatformExportPayload,
   CareerPlatformExportRequest,
   CareerPlatformReferenceCreateRequest,
@@ -21,17 +24,23 @@ import type {
   CareerPlatformReferencePayload,
   CareerPlatformRegistryPayload,
   CurrentUserProfile,
+  GovernanceFrameworkPayload,
   ExplanationRequest,
   ExplanationResult,
   FreshnessStatus,
   InstitutionAdvisorComparisonType,
   InstitutionAdvisorRequest,
   InstitutionAdvisorToolResponse,
+  InstitutionBenchmarkPayload,
   InstitutionCurrentOrganizationsPayload,
+  InstitutionDecisionDashboardPayload,
   InstitutionDataRequestCreatePayload,
   InstitutionDataRequestCreateRequest,
   InstitutionDataRequestListPayload,
   InstitutionDashboardPayload,
+  InstitutionWorkforceReportPayload,
+  InstitutionWorkforceReportType,
+  CurriculumMarketMappingPayload,
   IntegrationExportCreatePayload,
   IntegrationExportCreateRequest,
   IntegrationReminderCreatePayload,
@@ -39,6 +48,8 @@ import type {
   InstitutionReportCreateRequest,
   InstitutionReportGeneratePayload,
   InstitutionReportListPayload,
+  EconomicDevelopmentProfile,
+  EducationWorkforceAlignmentProfile,
   MonetizationAccessPreviewPayload,
   MonetizationFeatureKey,
   MonetizationFeaturesPayload,
@@ -51,6 +62,8 @@ import type {
   MonetizationReportProductKey,
   MonetizationReportsPayload,
   MonetizationUsagePayload,
+  PartnerRegistryPayload,
+  PartnerSubmissionSchemaPayload,
   PartnerImportActionRequest,
   PartnerImportCreatePayload,
   PartnerImportCreateRequest,
@@ -61,10 +74,13 @@ import type {
   PersonalizedRequest,
   PersonalizedResult,
   PlatformEmbedAccessPayload,
+  PredictiveReportPayload,
   PublicBenchmark,
   PublicBenchmarkListPayload,
   PublicReport,
   PublicReportListPayload,
+  PeerComparisonProfile,
+  WorkforceDashboardPayload,
   RecommendationGoalModesPayload,
   RecommendationSnapshotList,
   RecommendationStrategyPayload,
@@ -85,6 +101,24 @@ import type {
   UserPreferenceProfileInput,
   WarningItem,
 } from "./types";
+import type {
+  OpportunityRouteRequest as TypedOpportunityRouteRequest,
+  OpportunityRouteResponse as TypedOpportunityRouteResponse,
+} from "./opportunityTypes";
+import type {
+  CareerActionPlan,
+  CareerActionPlanRequest,
+  CareerAgentAnswer,
+  CareerAgentRequest as TypedCareerAgentRequest,
+  CareerAgentToolApproval,
+  CareerAgentToolExecution,
+  CareerAgentToolList,
+  CareerAgentToolPreview,
+  CareerAgentToolRequest,
+  CareerMemoryDeleteRequest,
+  CareerMemoryProfile,
+  CareerMemoryUpdateRequest,
+} from "./careerAgentTypes";
 import { isFreshnessStatus, isRecord } from "./dataQuality";
 import { reportFrontendError } from "./errorMonitoring";
 
@@ -361,6 +395,36 @@ export function getPublicReport(slug: string) {
   return request<PublicReport>(`/public/reports/${encodeURIComponent(slug)}`);
 }
 
+export function getPolicyWorkforceDashboard(regionId: string) {
+  return request<WorkforceDashboardPayload>(
+    `/policy/regions/${encodeURIComponent(regionId)}/workforce-dashboard`,
+  );
+}
+
+export function getPolicyEconomicDevelopment(regionId: string) {
+  return request<EconomicDevelopmentProfile>(
+    `/policy/regions/${encodeURIComponent(regionId)}/economic-development`,
+  );
+}
+
+export function getPolicyPeerComparison(regionId: string) {
+  return request<PeerComparisonProfile>(
+    `/policy/regions/${encodeURIComponent(regionId)}/peer-comparison`,
+  );
+}
+
+export function getPolicyEducationAlignment(regionId: string) {
+  return request<EducationWorkforceAlignmentProfile>(
+    `/policy/regions/${encodeURIComponent(regionId)}/education-alignment`,
+  );
+}
+
+export function getPolicyEarlyCareerReport(regionId: string) {
+  return request<PublicReport>(
+    `/policy/regions/${encodeURIComponent(regionId)}/reports/early-career-opportunity`,
+  );
+}
+
 export function getPublicBenchmarks() {
   return request<PublicBenchmarkListPayload>("/public/benchmarks");
 }
@@ -378,6 +442,47 @@ export function getPlatformEmbed(embedSlug: string, origin?: string | null) {
   );
 }
 
+export function getPredictiveReport(regionIds: string[] = [], companyIds: string[] = []) {
+  const params = new URLSearchParams();
+  for (const regionId of regionIds) {
+    if (regionId) params.append("region_id", regionId);
+  }
+  for (const companyId of companyIds) {
+    if (companyId) params.append("company_id", companyId);
+  }
+  const query = params.toString();
+  return request<PredictiveReportPayload>(
+    `/platform/predictive/reports${query ? `?${query}` : ""}`,
+  );
+}
+
+export function getDataStandardDefinitions() {
+  return request<DataStandardDefinitionListPayload>("/data-standards/definitions");
+}
+
+export function getDataStandardsPartnerSchema() {
+  return request<PartnerSubmissionSchemaPayload>("/data-standards/partner-schema");
+}
+
+export function getDataStandardsPartners() {
+  return request<PartnerRegistryPayload>("/data-standards/partners");
+}
+
+export function getDataStandardsQualityLabels() {
+  return request<DataQualityLabelListPayload>("/data-standards/quality-labels");
+}
+
+export function getDataStandardsGovernanceFramework() {
+  return request<GovernanceFrameworkPayload>("/data-standards/governance-framework");
+}
+
+export function evaluateDataQualityLabel(body: Record<string, unknown>) {
+  return request<DataQualityCertificationResult>("/data-standards/quality-labels/evaluate", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export function discoverPersonalized(body: PersonalizedRequest) {
   return request<PersonalizedResult>("/discover/personalized", {
     method: "POST",
@@ -391,6 +496,27 @@ export function getRecommendationGoalModes() {
 
 export function getRecommendationStrategy(body: RecommendationStrategyRequest) {
   return request<RecommendationStrategyPayload>("/recommendations/strategy", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getOpportunityRoutes(body: TypedOpportunityRouteRequest) {
+  return request<TypedOpportunityRouteResponse>("/opportunities/routes", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getCareerAgentAnswer(body: TypedCareerAgentRequest) {
+  return request<CareerAgentAnswer>("/career-agent/answers", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getCareerActionPlan(body: CareerActionPlanRequest) {
+  return request<CareerActionPlan>("/career-agent/action-plans", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -451,6 +577,47 @@ export function getInstitutionDashboard(
 ) {
   return protectedRequest<InstitutionDashboardPayload>(
     `/api/institutions/organizations/${encodeURIComponent(organizationId)}/dashboard`,
+    auth,
+  );
+}
+
+export function getInstitutionDecisionDashboard(
+  organizationId: string,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<InstitutionDecisionDashboardPayload>(
+    `/api/institutions/organizations/${encodeURIComponent(organizationId)}/decision-dashboard`,
+    auth,
+  );
+}
+
+export function getInstitutionCurriculumMarketMap(
+  organizationId: string,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CurriculumMarketMappingPayload>(
+    `/api/institutions/organizations/${encodeURIComponent(organizationId)}/curriculum-market-map`,
+    auth,
+  );
+}
+
+export function getInstitutionWorkforceReport(
+  organizationId: string,
+  reportType: InstitutionWorkforceReportType,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<InstitutionWorkforceReportPayload>(
+    `/api/institutions/organizations/${encodeURIComponent(organizationId)}/workforce-reports/${encodeURIComponent(reportType)}`,
+    auth,
+  );
+}
+
+export function getInstitutionBenchmarks(
+  organizationId: string,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<InstitutionBenchmarkPayload>(
+    `/api/institutions/organizations/${encodeURIComponent(organizationId)}/benchmarks`,
     auth,
   );
 }
@@ -830,6 +997,81 @@ export function previewScoringOverlay(
   auth: ProtectedRequestOptions,
 ) {
   return protectedRequest<ScoringPreviewResult>("/me/scoring-preview", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getCareerMemory(auth: ProtectedRequestOptions) {
+  return protectedRequest<CareerMemoryProfile>("/me/career-memory", auth);
+}
+
+export function updateCareerMemory(
+  body: CareerMemoryUpdateRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerMemoryProfile>("/me/career-memory", auth, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteCareerMemory(
+  body: CareerMemoryDeleteRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerMemoryProfile>("/me/career-memory", auth, {
+    method: "DELETE",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getCareerActionPlanWithMemory(
+  body: CareerActionPlanRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerActionPlan>("/me/career-agent/action-plans", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function previewCareerAgentTool(
+  body: CareerAgentToolRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerAgentToolPreview>("/me/career-agent/tools/preview", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function listCareerAgentTools(auth: ProtectedRequestOptions) {
+  return protectedRequest<CareerAgentToolList>("/me/career-agent/tools", auth);
+}
+
+export function getCareerAgentTool(toolRequestId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<CareerAgentToolPreview>(
+    `/me/career-agent/tools/${encodeURIComponent(toolRequestId)}`,
+    auth,
+  );
+}
+
+export function approveCareerAgentTool(
+  body: CareerAgentToolApproval,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerAgentToolExecution>("/me/career-agent/tools/approve", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function rejectCareerAgentTool(
+  body: CareerAgentToolApproval,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerAgentToolExecution>("/me/career-agent/tools/reject", auth, {
     method: "POST",
     body: JSON.stringify(body),
   });

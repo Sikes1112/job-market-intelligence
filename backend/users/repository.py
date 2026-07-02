@@ -6,6 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.alerts.models import UserAlert
+from backend.career_agent.models import (
+    CareerAgentToolAuditEventRecord,
+    CareerAgentToolRecord,
+    CareerMemoryEntryRecord,
+    CareerMemoryPermissionRecord,
+)
 from backend.users.models import (
     ExternalAuthIdentity,
     PersonalizedRecommendationSnapshot,
@@ -147,6 +153,44 @@ class UserRepository:
         for alert in alerts:
             self._session.delete(alert)
         return len(alerts)
+
+    def delete_career_memory_for_user(self, user_id: str) -> int:
+        entry_rows = list(
+            self._session.execute(
+                select(CareerMemoryEntryRecord).where(
+                    CareerMemoryEntryRecord.user_id == user_id
+                )
+            ).scalars()
+        )
+        permission_rows = list(
+            self._session.execute(
+                select(CareerMemoryPermissionRecord).where(
+                    CareerMemoryPermissionRecord.user_id == user_id
+                )
+            ).scalars()
+        )
+        for row in (*entry_rows, *permission_rows):
+            self._session.delete(row)
+        return len(entry_rows) + len(permission_rows)
+
+    def delete_career_agent_tool_records_for_user(self, user_id: str) -> int:
+        audit_rows = list(
+            self._session.execute(
+                select(CareerAgentToolAuditEventRecord).where(
+                    CareerAgentToolAuditEventRecord.user_id == user_id
+                )
+            ).scalars()
+        )
+        tool_rows = list(
+            self._session.execute(
+                select(CareerAgentToolRecord).where(
+                    CareerAgentToolRecord.user_id == user_id
+                )
+            ).scalars()
+        )
+        for row in (*audit_rows, *tool_rows):
+            self._session.delete(row)
+        return len(audit_rows) + len(tool_rows)
 
     def clear_snapshot_preference_profile_for_user(self, user_id: str) -> int:
         snapshots = self._session.execute(

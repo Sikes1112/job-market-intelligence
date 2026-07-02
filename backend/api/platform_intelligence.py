@@ -28,6 +28,9 @@ from backend.platform_intelligence.contributions import (
 )
 from backend.platform_intelligence.history_repository import HistoryRepository
 from backend.platform_intelligence.indices import MarketIndexService
+from backend.platform_intelligence.predictive_exports import (
+    export_predictive_observations,
+)
 from backend.platform_intelligence.predictive_signals import PredictiveSignalService
 from backend.platform_intelligence.reports import BenchmarkReportService
 from backend.platform_intelligence.schemas import (
@@ -35,6 +38,7 @@ from backend.platform_intelligence.schemas import (
     ContributionSubmissionRequest,
 )
 from backend.platform_intelligence.snapshots import HistoricalSnapshotService
+from backend.predictive.reports import PredictiveReportBuilder
 
 router = APIRouter(tags=["platform-intelligence"])
 
@@ -118,6 +122,24 @@ def get_benchmark_report(
                 message=f"Published benchmark report not found: {report_key!r}",
             ),
         )
+    return lightweight_success_envelope(data=payload.model_dump(mode="json"))
+
+
+@router.get("/platform/predictive/reports")
+def predictive_reports(
+    region_id: tuple[str, ...] = Query(default=()),
+    company_id: tuple[str, ...] = Query(default=()),
+    limit_per_subject: int = Query(default=500, ge=1, le=1_000),
+    session: Session = Depends(get_session),
+) -> dict:
+    repository = HistoryRepository(session)
+    observations = export_predictive_observations(
+        repository,
+        region_ids=region_id,
+        company_ids=company_id,
+        limit_per_subject=limit_per_subject,
+    )
+    payload = PredictiveReportBuilder().build_report(observations)
     return lightweight_success_envelope(data=payload.model_dump(mode="json"))
 
 

@@ -32,7 +32,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -91,13 +92,19 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   background: var(--paper-strong);
   border: 1px solid var(--line);
   border-radius: 0.85rem;
   color: var(--ink);
   padding: 0.8rem 0.9rem;
   width: 100%;
+}
+
+textarea {
+  min-height: 8rem;
+  resize: vertical;
 }
 
 fieldset {
@@ -340,6 +347,63 @@ legend {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.policy-page {
+  display: grid;
+  gap: 1rem;
+  margin: 0 auto;
+  max-width: 1180px;
+  width: 100%;
+}
+
+.policy-hero {
+  align-items: end;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.policy-tabs {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
+.policy-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.policy-section {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.policy-table-wrap {
+  overflow-x: auto;
+}
+
+.policy-table {
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  width: 100%;
+}
+
+.policy-table th,
+.policy-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.policy-metadata {
+  display: grid;
+  gap: 0.65rem;
+}
+
 .card {
   background: rgb(255 253 247 / 88%);
   border: 1px solid rgb(59 76 64 / 12%);
@@ -388,6 +452,16 @@ legend {
 .secondary-button {
   background: var(--green-soft);
   color: var(--green);
+}
+
+.text-button {
+  background: transparent;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.danger-text {
+  color: #9b2c2c;
 }
 
 .compact-button {
@@ -603,6 +677,24 @@ legend {
   gap: 0.75rem;
 }
 
+.forecast-detail-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.forecast-detail-block {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.forecast-detail-block p,
+.forecast-detail-block ul,
+.forecast-detail-block ol {
+  color: var(--muted);
+  margin: 0;
+}
+
 .score-display-row {
   display: grid;
   gap: 0.25rem;
@@ -739,6 +831,11 @@ legend {
   color: var(--green);
 }
 
+.badge-muted {
+  background: var(--field);
+  color: var(--muted);
+}
+
 .badge-partial,
 .badge-stale,
 .badge-warning {
@@ -798,6 +895,12 @@ legend {
   color: var(--muted);
   font-size: 0.88rem;
   margin-bottom: 0;
+}
+
+.error-copy {
+  color: #9b2c2c;
+  font-size: 0.88rem;
+  font-weight: 800;
 }
 
 .health-dot {
@@ -1049,6 +1152,299 @@ legend {
   gap: 0.75rem;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   margin-bottom: 1rem;
+}
+
+.opportunity-route-view,
+.career-agent-view {
+  align-content: start;
+}
+
+.route-form-grid,
+.career-agent-form-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.route-form-grid fieldset,
+.career-agent-form-grid fieldset {
+  min-width: 0;
+}
+
+.route-toggle-grid {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.route-check {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  flex-direction: row;
+  font-size: 0.86rem;
+  font-weight: 800;
+  gap: 0.5rem;
+}
+
+.route-check input {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.route-check-inline {
+  align-items: center;
+}
+
+.route-submit {
+  align-self: end;
+  min-height: 3rem;
+}
+
+.route-governance-note,
+.route-disclosure {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.route-card-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.opportunity-route-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.route-score-pill {
+  background: var(--green-soft);
+  border: 1px solid rgb(23 63 49 / 14%);
+  border-radius: 8px;
+  color: var(--green);
+  display: grid;
+  gap: 0.15rem;
+  min-width: 7rem;
+  padding: 0.7rem 0.8rem;
+  text-align: right;
+}
+
+.route-score-pill span {
+  font-size: 1.3rem;
+  font-weight: 950;
+}
+
+.route-score-pill small {
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.route-score-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+}
+
+.route-section {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.route-program-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.route-program-row {
+  align-items: start;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0.9rem;
+}
+
+.route-program-row strong,
+.route-program-row span,
+.route-program-row p {
+  margin: 0;
+}
+
+.route-program-row > div:first-child {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.route-program-row span,
+.route-source-summary p {
+  color: var(--muted);
+}
+
+.route-program-actions {
+  align-items: end;
+  display: grid;
+  gap: 0.4rem;
+  min-width: 8.5rem;
+  text-align: right;
+}
+
+.route-program-actions span {
+  color: var(--green);
+  font-weight: 950;
+}
+
+.route-program-actions a {
+  color: var(--green);
+  font-size: 0.86rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.route-warning-list {
+  margin-top: 0.2rem;
+}
+
+.route-next-steps {
+  color: var(--muted);
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.career-agent-summary,
+.career-agent-card,
+.career-agent-guardrails,
+.career-agent-plan-panel,
+.career-agent-tool-panel,
+.career-agent-memory-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.career-agent-plan-controls,
+.career-agent-tool-controls,
+.career-agent-tool-actions,
+.career-agent-memory-actions {
+  align-items: end;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.career-agent-plan-steps,
+.career-agent-memory-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.career-agent-tool-actions {
+  border-top: 0;
+  grid-template-columns: repeat(auto-fit, minmax(170px, max-content));
+  margin-top: 0.35rem;
+  padding-top: 0;
+}
+
+.career-agent-plan-step {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+}
+
+.career-agent-memory-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.career-agent-meta-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+}
+
+.career-agent-evidence-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.career-agent-evidence-row {
+  align-items: start;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0.9rem;
+}
+
+.career-agent-evidence-row > div {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.career-agent-evidence-row strong,
+.career-agent-evidence-row span,
+.career-agent-evidence-row p {
+  margin: 0;
+}
+
+.career-agent-evidence-row span,
+.career-agent-evidence-row p {
+  color: var(--muted);
+}
+
+.career-agent-evidence-row a {
+  color: var(--green);
+  font-size: 0.86rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.career-agent-preview-block,
+.career-agent-preview-record {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem;
+}
+
+.career-agent-preview-record {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.career-agent-preview-record > div {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.career-agent-preview-record span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.career-agent-preview-record strong {
+  overflow-wrap: anywhere;
+}
+
+.career-agent-draft-body {
+  white-space: pre-wrap;
+}
+
+.career-agent-tool-blocked {
+  margin: 0;
 }
 
 .wide-field {
@@ -1953,6 +2349,31 @@ legend {
   }
 }
 
+.standards-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-top: 1rem;
+}
+
+.standards-item {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+}
+
+.standards-item h3 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.standards-item p {
+  margin: 0;
+}
+
 @media (max-width: 1040px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -2007,10 +2428,12 @@ legend {
   .quick-region-grid,
   .split-grid,
   .entry-grid,
+  .policy-grid,
   .toolbar,
   .comparison-controls,
   .form-row,
   .market-filter-grid,
+  .route-form-grid,
   .market-summary-strip,
   .objective-winner-panel,
   .source-compare-grid,
@@ -2031,6 +2454,25 @@ legend {
 
   .account-list-row {
     grid-template-columns: 1fr;
+  }
+
+  .route-program-row {
+    grid-template-columns: 1fr;
+  }
+
+  .policy-hero {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .policy-tabs {
+    justify-content: start;
+  }
+
+  .route-program-actions {
+    align-items: start;
+    min-width: 0;
+    text-align: left;
   }
 
   .public-section-grid {

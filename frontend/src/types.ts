@@ -17,6 +17,113 @@ export type ApiEnvelope<T> = {
 
 export type FreshnessStatus = "fresh" | "stale" | "partial" | "unknown" | "seeded_demo";
 
+export type DataStandardDefinition = {
+  term: string;
+  canonical_name: string;
+  description: string;
+  inclusion_criteria: string[];
+  exclusion_criteria: string[];
+  examples: string[];
+  related_terms: string[];
+  version: string;
+  status: "active" | "draft" | "deprecated" | string;
+};
+
+export type DataStandardDefinitionListPayload = {
+  version: string;
+  definitions: DataStandardDefinition[];
+};
+
+export type PartnerSubmissionSchemaPayload = {
+  schema_version: string;
+  supported_submitter_types: string[];
+  supported_record_types: string[];
+  validation_statuses: string[];
+  required_submission_fields: string[];
+  required_fields_by_record_type: Record<string, string[]>;
+  source_refs_required_for_record_types: string[];
+  freshness_required: boolean;
+  confidence_required: boolean;
+};
+
+export type PartnerRegistryRecord = {
+  partner_id: string;
+  name: string;
+  partner_type: string;
+  region_scope: string[];
+  verification_status: string;
+  allowed_submission_types: string[];
+  trust_tier: string;
+  public_contact_metadata: {
+    website_url: string | null;
+    contact_page_url: string | null;
+    public_contact_label: string | null;
+    public_notes: string | null;
+  };
+  created_at: string;
+  updated_at: string;
+};
+
+export type PartnerRegistryPayload = {
+  version: string;
+  supported_partner_types: string[];
+  verification_statuses: string[];
+  trust_tiers: string[];
+  partners: PartnerRegistryRecord[];
+};
+
+export type DataQualityLabel = {
+  label: string;
+  display_name: string;
+  description: string;
+  allowed_sources: string[];
+  minimum_confidence: "high" | "medium" | "low" | "unknown" | string;
+  requires_source_refs: boolean;
+  requires_partner_verification: boolean;
+  ranking_influence_allowed: boolean;
+  public_display_allowed: boolean;
+  warning_copy: string;
+};
+
+export type DataQualityLabelListPayload = {
+  version: string;
+  labels: DataQualityLabel[];
+};
+
+export type DataQualityCertificationResult = {
+  label: DataQualityLabel;
+  eligible: boolean;
+  certification_status: "eligible" | "not_eligible";
+  reasons: string[];
+  warnings: string[];
+  partner_id: string | null;
+  partner_verification_status: string | null;
+  partner_trust_tier: string | null;
+  source_ref_count: number;
+  freshness: Record<string, unknown> | null;
+  confidence: Record<string, unknown> | null;
+  ranking_influence_allowed: boolean;
+  public_display_allowed: boolean;
+};
+
+export type GovernanceFrameworkRecord = {
+  area: string;
+  display_name: string;
+  description: string;
+  review_questions: string[];
+  risk_flags: string[];
+  recommended_controls: string[];
+  status: "framework_defined" | string;
+  version: string;
+  public_summary: string;
+};
+
+export type GovernanceFrameworkPayload = {
+  version: string;
+  status: "framework_defined" | string;
+  governance_records: GovernanceFrameworkRecord[];
+};
+
 export type PlatformEmbedProductId = "region_comparison" | "market_score_card";
 
 export type PlatformEmbedPayload = {
@@ -46,6 +153,104 @@ export type PlatformEmbedAccessPayload = {
   allowed: true;
   embed_product_id: PlatformEmbedProductId;
   payload: PlatformEmbedPayload;
+};
+
+export type ForecastConfidenceLevel = "high" | "medium" | "low" | "unknown";
+
+export type ForecastConfidenceFactor = {
+  code: string;
+  severity: "info" | "low" | "medium" | "high";
+  explanation: string;
+};
+
+export type ForecastConfidence = {
+  level: ForecastConfidenceLevel;
+  score: number;
+  factors: ForecastConfidenceFactor[];
+};
+
+export type ForecastSourceBasis = {
+  data_basis: string;
+  source_categories: string[];
+  source_count: number;
+  observed_metrics: string[];
+  coverage_tiers: string[];
+  freshness_states: string[];
+  notes: string[];
+};
+
+export type ForecastHistoricalDepth = {
+  observation_count: number;
+  period_count: number;
+  window_start: string | null;
+  window_end: string | null;
+  window_days: number;
+  latest_observed_at: string | null;
+};
+
+export type ForecastUncertainty = {
+  level: "low" | "medium" | "high";
+  known_uncertainties: string[];
+  limitations: string[];
+  bounded: boolean;
+};
+
+export type ForecastReasoningStep = {
+  code: string;
+  summary: string;
+};
+
+export type PredictiveAffectedEntity = {
+  entity_type: "region" | "company_region" | "sector_region" | string;
+  entity_id: string;
+  region_id: string | null;
+  company_id: string | null;
+  sector_id: string | null;
+};
+
+export type PredictiveSupportingSignal = {
+  signal_key: string;
+  signal_kind: "trend" | "emerging_market" | "early_warning" | string;
+  signal_type: string;
+  signal_status: string;
+  summary: string;
+};
+
+export type PredictiveReportForecast = {
+  forecast_id: string;
+  forecast_title: string;
+  forecast_label: string;
+  forecast_type: string;
+  affected_entity: PredictiveAffectedEntity;
+  time_horizon: string;
+  confidence: ForecastConfidence;
+  source_basis: ForecastSourceBasis;
+  historical_depth: ForecastHistoricalDepth;
+  uncertainty: ForecastUncertainty;
+  reasoning_trail: ForecastReasoningStep[];
+  supporting_signals: PredictiveSupportingSignal[];
+  safe_display_summary: string;
+  why_this_forecast_exists: string;
+};
+
+export type PredictiveReportSection = {
+  section_key: string;
+  title: string;
+  summary: string;
+  why_this_section_exists: string;
+  forecasts: PredictiveReportForecast[];
+};
+
+export type PredictiveReportPayload = {
+  report_id: string;
+  report_type: string;
+  title: string;
+  generated_at: string;
+  time_horizon: string;
+  forecast_disclaimer: string;
+  methodology_summary: string;
+  sections: PredictiveReportSection[];
+  limitations: string[];
 };
 
 export type AudienceSegmentKey =
@@ -407,6 +612,266 @@ export type PublicReportSummary = {
 
 export type PublicReportListPayload = {
   reports: PublicReportSummary[];
+};
+
+export type PolicySeverity = "info" | "low" | "medium" | "high";
+export type PolicyConfidenceLevel = "high" | "medium" | "low" | "unknown";
+export type PolicyScoreBand =
+  | "very_low"
+  | "low"
+  | "moderate"
+  | "high"
+  | "very_high"
+  | "unknown";
+
+export type PolicyWarning = {
+  code: string;
+  severity: PolicySeverity;
+  message: string;
+  public_interpretation: string;
+};
+
+export type PolicyConfidenceFactor = {
+  code: string;
+  severity: PolicySeverity;
+  explanation: string;
+};
+
+export type PolicyConfidenceMetadata = {
+  level: PolicyConfidenceLevel;
+  score: number;
+  label: string;
+  factors: PolicyConfidenceFactor[];
+};
+
+export type PolicyFreshnessMetadata = {
+  generated_at: string;
+  freshness_status: FreshnessStatus;
+  freshness_expires_at: string | null;
+  stale: boolean;
+  notes: string[];
+};
+
+export type PolicySourceSummary = {
+  data_basis: "canonical_market_truth" | "mixed" | "unknown";
+  source_count: number;
+  source_categories: string[];
+  evidence_summary: string[];
+};
+
+export type PolicyPublicSafetyMetadata = {
+  public_safe: true;
+  redacted_internal_fields: string[];
+  student_level_data_exposed: false;
+  partner_submission_internals_exposed: false;
+  private_review_fields_exposed: false;
+};
+
+export type PolicyMetric = {
+  metric_id: string;
+  label: string;
+  score: number | null;
+  band: PolicyScoreBand;
+  polarity: "higher_is_better" | "higher_is_risk" | "contextual";
+  interpretation_label: string;
+  explainable_inputs: Record<string, unknown>;
+  limitations: string[];
+  warning_codes: string[];
+};
+
+export type PolicyFinding = {
+  finding_id: string;
+  finding_type: string;
+  severity: PolicySeverity;
+  title: string;
+  summary: string;
+  evidence_references: string[];
+  recommended_interpretation: string;
+  recommended_actions: string[];
+  confidence: PolicyConfidenceLevel;
+  limitations: string[];
+};
+
+export type PolicyRegionSummary = {
+  region_id: string;
+  region_name: string;
+  region_type: string;
+  present_company_count: number;
+  hiring_record_count: number;
+  entry_level_record_count: number;
+  score_available: boolean;
+  normalization_basis: string;
+};
+
+export type RegionalPolicyMetrics = {
+  opportunity_concentration_score: PolicyMetric;
+  early_career_access_score: PolicyMetric;
+  internship_pipeline_score: PolicyMetric;
+  employer_dependency_score: PolicyMetric;
+  sector_diversity_score: PolicyMetric;
+  talent_export_risk_score: PolicyMetric;
+};
+
+export type WorkforceDashboardPayload = {
+  region_summary: PolicyRegionSummary;
+  core_metrics: RegionalPolicyMetrics;
+  policy_findings: PolicyFinding[];
+  warnings: PolicyWarning[];
+  confidence: PolicyConfidenceMetadata;
+  freshness: PolicyFreshnessMetadata;
+  source_summary: PolicySourceSummary;
+  public_safe: true;
+  public_safety: PolicyPublicSafetyMetadata;
+};
+
+export type SectorGapFinding = {
+  sector: string;
+  gap_type: string;
+  severity: PolicySeverity;
+  evidence_references: string[];
+  interpretation: string;
+  recommended_strategy_candidate: string;
+  confidence: PolicyConfidenceLevel;
+  limitations: string[];
+};
+
+export type EmployerBaseRiskFinding = {
+  risk_type: string;
+  severity: PolicySeverity;
+  interpretation: string;
+  evidence_references: string[];
+  strategy_candidate: string;
+  confidence: PolicyConfidenceLevel;
+  limitations: string[];
+};
+
+export type PeerMetricComparison = {
+  metric_id: string;
+  target_value: number | null;
+  peer_value: number | null;
+  comparison: "target_stronger" | "target_weaker" | "similar" | "unknown";
+};
+
+export type PeerMetroComparison = {
+  peer_region_id: string;
+  peer_region_name: string;
+  similarity_score: number | null;
+  similarity_rationale: string;
+  metrics_compared: PeerMetricComparison[];
+  target_region_stronger: string[];
+  target_region_weaker: string[];
+  confidence: PolicyConfidenceLevel;
+  limitations: string[];
+};
+
+export type CompanyAttractionFit = {
+  company_id: string;
+  company_name: string;
+  sector: string | null;
+  fit_score: number | null;
+  fit_band: PolicyScoreBand;
+  fit_rationale: string;
+  regional_gap_addressed: string;
+  early_career_or_internship_relevance: string;
+  diversification_impact: string;
+  confidence: PolicyConfidenceLevel;
+  limitations: string[];
+};
+
+export type DiversificationStrategyCandidate = {
+  candidate_type: string;
+  title: string;
+  rationale: string;
+  evidence_references: string[];
+  confidence: PolicyConfidenceLevel;
+  limitations: string[];
+};
+
+export type EconomicDevelopmentProfile = {
+  region_id: string;
+  region_name: string;
+  analysis_window: {
+    label: string;
+    generated_at: string;
+    freshness_expires_at: string | null;
+  };
+  sector_gap_findings: SectorGapFinding[];
+  employer_base_risk_findings: EmployerBaseRiskFinding[];
+  peer_metro_comparisons: PeerMetroComparison[];
+  company_attraction_candidates: CompanyAttractionFit[];
+  diversification_recommendations: DiversificationStrategyCandidate[];
+  warnings: PolicyWarning[];
+  confidence: PolicyConfidenceMetadata;
+  freshness: PolicyFreshnessMetadata;
+  source_summary: PolicySourceSummary;
+  limitations: string[];
+  public_safe: true;
+  public_safety: PolicyPublicSafetyMetadata;
+};
+
+export type PeerComparisonProfile = {
+  region_id: string;
+  region_name: string;
+  analysis_window: {
+    label: string;
+    generated_at: string;
+    freshness_expires_at: string | null;
+  };
+  peer_metro_comparisons: PeerMetroComparison[];
+  warnings: PolicyWarning[];
+  confidence: PolicyConfidenceMetadata;
+  freshness: PolicyFreshnessMetadata;
+  source_summary: PolicySourceSummary;
+  limitations: string[];
+  public_safe: true;
+  public_safety: PolicyPublicSafetyMetadata;
+};
+
+export type InstitutionRegionalPipeline = {
+  institution_id: string | null;
+  institution_name: string;
+  region_id: string;
+  program_areas_available: string[];
+  related_demand_sectors: string[];
+  nearby_early_career_demand_summary: string;
+  internship_access_summary: string;
+  alignment_confidence: PolicyConfidenceLevel;
+  limitations: string[];
+};
+
+export type ProgramDemandAlignment = {
+  program_area: string;
+  nearby_employer_demand: PolicyMetric;
+  internship_pipeline_strength: PolicyMetric;
+  early_career_access: PolicyMetric;
+  alignment_score: number | null;
+  alignment_band: PolicyScoreBand;
+  finding: string;
+  confidence: PolicyConfidenceLevel;
+  limitations: string[];
+};
+
+export type EducationWorkforceAlignmentProfile = {
+  region_id: string;
+  region_name: string;
+  analysis_window: {
+    label: string;
+    generated_at: string;
+    freshness_expires_at: string | null;
+  };
+  institution_pipeline_summaries: InstitutionRegionalPipeline[];
+  program_alignment_findings: ProgramDemandAlignment[];
+  internship_alignment_gaps: SectorGapFinding[];
+  local_employer_absorption_score: PolicyMetric;
+  talent_export_pressure_score: PolicyMetric;
+  student_interest_market_fit: PolicyMetric | null;
+  warnings: PolicyWarning[];
+  confidence: PolicyConfidenceMetadata;
+  freshness: PolicyFreshnessMetadata;
+  source_summary: PolicySourceSummary;
+  limitations: string[];
+  public_safe: true;
+  public_safety: PolicyPublicSafetyMetadata;
 };
 
 export type PublicBenchmarkLink = {
@@ -1479,6 +1944,171 @@ export type InstitutionDashboardPayload = {
   privacy_notes: string[];
   coverage_warnings: string[];
   data_freshness: Record<string, unknown>;
+};
+
+export type InstitutionPrivacyMetadata = {
+  aggregation_level: string;
+  privacy_mode: string;
+  minimum_cohort_size: number;
+  cohort_size: number;
+  suppression_applied: boolean;
+  suppressed_fields: string[];
+  privacy_notes: string[];
+  student_level_data_exposed: false;
+};
+
+export type InstitutionDecisionConfidence = {
+  level: string;
+  score: number;
+  factors: string[];
+};
+
+export type InstitutionDecisionEvidence = {
+  confidence: InstitutionDecisionConfidence;
+  freshness: string;
+  provenance: string[];
+  source_basis: string[];
+  historical_depth: Record<string, unknown>;
+};
+
+export type InstitutionDecisionMetric = {
+  metric_key: string;
+  label: string;
+  value: number | string | null;
+  unit: string | null;
+  decision_use: string;
+  evidence: InstitutionDecisionEvidence;
+};
+
+export type InstitutionDecisionSection = {
+  section_key: string;
+  title: string;
+  what_is_happening: string;
+  why_it_matters: string;
+  considerations: string[];
+  metrics: InstitutionDecisionMetric[];
+  evidence: InstitutionDecisionEvidence;
+  warnings: string[];
+};
+
+export type InstitutionForecastNote = {
+  forecast_label: string;
+  forecast_type: string;
+  affected_entity: string;
+  time_horizon: string;
+  safe_display_summary: string;
+  confidence: Record<string, unknown>;
+  source_basis: Record<string, unknown>;
+  historical_depth: Record<string, unknown>;
+  uncertainty: Record<string, unknown>;
+  reasoning_trail: string[];
+  supporting_signals: Array<Record<string, unknown>>;
+};
+
+export type InstitutionDecisionDashboardPayload = {
+  organization_id: string;
+  organization_name: string;
+  generated_at: string;
+  time_horizon: string;
+  summary: InstitutionDecisionSection;
+  target_markets: InstitutionDecisionSection[];
+  regional_trends: InstitutionDecisionSection[];
+  program_alignment: InstitutionDecisionSection[];
+  employer_geography: InstitutionDecisionSection[];
+  internship_access: InstitutionDecisionSection[];
+  industry_demand: InstitutionDecisionSection[];
+  forecast_notes: InstitutionForecastNote[];
+  recommended_actions: string[];
+  confidence: InstitutionDecisionConfidence;
+  freshness: string;
+  provenance: string[];
+  privacy: InstitutionPrivacyMetadata;
+  limitations: string[];
+  warnings: string[];
+};
+
+export type CurriculumProgramMapping = {
+  program_name: string;
+  relevant_role_families: string[];
+  strongest_aligned_markets: InstitutionDecisionMetric[];
+  emerging_markets: InstitutionDecisionMetric[];
+  weak_or_saturated_markets: InstitutionDecisionMetric[];
+  skills_with_rising_demand: string[];
+  employer_relationship_targets: string[];
+  advising_recommendations: string[];
+  confidence: InstitutionDecisionConfidence;
+  freshness: string;
+  provenance: string[];
+  sparse_data_warnings: string[];
+  privacy: InstitutionPrivacyMetadata;
+};
+
+export type CurriculumMarketMappingPayload = {
+  organization_id: string;
+  organization_name: string;
+  generated_at: string;
+  programs: CurriculumProgramMapping[];
+  confidence: InstitutionDecisionConfidence;
+  freshness: string;
+  provenance: string[];
+  privacy: InstitutionPrivacyMetadata;
+  warnings: string[];
+  limitations: string[];
+};
+
+export type InstitutionWorkforceReportType =
+  | "regional_workforce_opportunity"
+  | "early_career_market_access"
+  | "tech_sector_growth"
+  | "student_placement_strategy"
+  | "employer_geography"
+  | "program_alignment";
+
+export type InstitutionWorkforceReportPayload = {
+  title: string;
+  report_type: InstitutionWorkforceReportType;
+  audience: string;
+  scope: string;
+  generated_at: string;
+  summary: string;
+  key_findings: string[];
+  recommended_actions: string[];
+  supporting_metrics: InstitutionDecisionMetric[];
+  confidence: InstitutionDecisionConfidence;
+  freshness: string;
+  provenance: string[];
+  privacy_statement: string;
+  privacy: InstitutionPrivacyMetadata;
+  limitations: string[];
+  warnings: string[];
+  export_ready: Record<string, unknown>;
+};
+
+export type InstitutionBenchmarkItem = {
+  benchmark_subject: string;
+  comparison_market_set: string[];
+  opportunity_score: number;
+  alignment_score: number;
+  gap_score: number;
+  emerging_region_gap: number;
+  employer_access_gap: number;
+  internship_access_gap: number;
+  recommendation_summary: string;
+  supporting_rationale: string[];
+  warnings: string[];
+};
+
+export type InstitutionBenchmarkPayload = {
+  organization_id: string;
+  organization_name: string;
+  generated_at: string;
+  benchmarks: InstitutionBenchmarkItem[];
+  confidence: InstitutionDecisionConfidence;
+  freshness: string;
+  provenance: string[];
+  privacy: InstitutionPrivacyMetadata;
+  warnings: string[];
+  limitations: string[];
 };
 
 export type InstitutionAdvisorComparisonType =

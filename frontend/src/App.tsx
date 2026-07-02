@@ -33,8 +33,12 @@ import {
   getBillingStatus,
   getCareerPlatformRegistry,
   getHealth,
+  getInstitutionBenchmarks,
   getInstitutionCurrentOrganizations,
+  getInstitutionCurriculumMarketMap,
+  getInstitutionDecisionDashboard,
   getInstitutionDashboard,
+  getInstitutionWorkforceReport,
   getPartnerImportReceipt,
   generateInstitutionReport,
   getMonetizationAccessPreview,
@@ -46,6 +50,7 @@ import {
   getMyMonetizationUsage,
   getPreferences,
   getPlatformEmbed,
+  getPredictiveReport,
   getPublicBenchmark,
   getPublicBenchmarks,
   getPublicReport,
@@ -75,6 +80,7 @@ import {
   type ProtectedRequestOptions,
 } from "./api";
 import { useFrontendAuth, type FrontendAuthContextValue } from "./auth";
+import PolicyIntelligencePage from "./PolicyIntelligencePage";
 import {
   coverageComponentEntries,
   coverageDescription,
@@ -128,7 +134,14 @@ import type {
   InstitutionAdvisorRequest,
   InstitutionAdvisorToolResponse,
   InstitutionAdvisorTradeoff,
+  InstitutionBenchmarkPayload,
+  InstitutionDecisionDashboardPayload,
+  InstitutionDecisionEvidence,
+  InstitutionDecisionMetric,
+  InstitutionDecisionSection,
+  InstitutionPrivacyMetadata,
   InstitutionCurrentOrganizationsPayload,
+  CurriculumMarketMappingPayload,
   InstitutionDataRequestCreatePayload,
   InstitutionDataRequestCreateRequest,
   InstitutionDataRequestListPayload,
@@ -147,6 +160,7 @@ import type {
   InstitutionReportSection,
   InstitutionReportSummary,
   InstitutionReportType,
+  InstitutionWorkforceReportPayload,
   MonetizationAccessPreviewPayload,
   MonetizationFeature,
   MonetizationFeatureKey,
@@ -170,6 +184,9 @@ import type {
   PersonalizedRecommendationSnapshotInput,
   PersonalizedResult,
   PlatformEmbedPayload,
+  PredictiveReportForecast,
+  PredictiveReportPayload,
+  PredictiveReportSection,
   PreferenceLevel,
   PriorityMarket,
   PublicBenchmark,
@@ -228,16 +245,20 @@ import {
   PREFERENCE_LEVELS,
   ROLE_TARGETS,
   accountUrl,
+  careerAgentUrl,
   companyGeographyUrl,
   compareMarketsUrl,
   exploreUrl,
   institutionAdvisorUrl,
   institutionDataRequestsUrl,
+  institutionDecisionsUrl,
   institutionDashboardUrl,
   institutionImportsUrl,
   institutionReportsUrl,
   isProductPage,
   landingUrl,
+  opportunityRoutesUrl,
+  policyLandingUrl,
   parseRoute,
   personalizedDiscoveryUrl,
   plansUrl,
@@ -271,6 +292,9 @@ import {
   type PublicSeoLink,
   type PublicSeoPage,
 } from "./publicSeoContent";
+import OpportunityRoutesPage from "./OpportunityRoutesPage";
+import CareerAgentPage from "./CareerAgentPage";
+import DataStandardsPage from "./DataStandardsPage";
 
 const SCORE_FIELDS: Array<{ key: keyof RegionScores; label: string; short: string }> = [
   {
@@ -297,6 +321,7 @@ const SCORE_FIELDS: Array<{ key: keyof RegionScores; label: string; short: strin
     short: "Early career",
   },
 ];
+const DEFAULT_FORECAST_REGION_IDS = ["greater_boston", "greater_atlanta", "greater_sf", "greater_austin"];
 const SCORING_WEIGHT_FIELDS: Array<{ key: keyof ScoringWeights; label: string }> = [
   { key: "entry_level_access", label: "Entry-level access" },
   { key: "hiring_density", label: "Hiring density" },
@@ -518,6 +543,9 @@ const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
   { id: "compare", label: "Compare Markets", kicker: "Score comparison" },
   { id: "discovery", label: "Personalized Discovery", kicker: "Personal overlay" },
   { id: "recommendations", label: "Recommendations", kicker: "Decision support" },
+  { id: "career-agent", label: "Career Agent", kicker: "Grounded answers" },
+  { id: "opportunity-routes", label: "Opportunity Routes", kicker: "Route guidance" },
+  { id: "policy", label: "Policy", kicker: "Workforce intel" },
   { id: "plans", label: "Plans", kicker: "Access model" },
   { id: "institution", label: "Institution", kicker: "Cohort dashboard" },
   { id: "account", label: "Account", kicker: "Saved overlays" },
@@ -621,6 +649,9 @@ function getNavigationUrl(
   if (page === "compare") return compareMarketsUrl(comparisonA, comparisonB);
   if (page === "discovery") return personalizedDiscoveryUrl(discoveryFilters);
   if (page === "recommendations") return recommendationsUrl();
+  if (page === "career-agent") return careerAgentUrl();
+  if (page === "opportunity-routes") return opportunityRoutesUrl();
+  if (page === "policy") return policyLandingUrl();
   if (page === "plans") return plansUrl();
   if (page === "institution") return institutionDashboardUrl();
   if (page === "account") return accountUrl();
@@ -3346,6 +3377,154 @@ function PublicReportDetailPage({
   );
 }
 
+function PredictiveForecastCard({ forecast }: { forecast: PredictiveReportForecast }) {
+  return (
+    <article className="public-section public-report-result forecast-card">
+      <div className="metadata-row">
+        <span className="badge badge-real">Forecast</span>
+        <span className={publicConfidenceClass(forecast.confidence.level)}>
+          Confidence: {segmentLabel(forecast.confidence.level)} ({Math.round(forecast.confidence.score * 100)}%)
+        </span>
+        <span className="badge badge-unknown">
+          Time horizon: {segmentLabel(forecast.time_horizon)}
+        </span>
+      </div>
+      <h2>{forecast.forecast_title}</h2>
+      <strong>{forecast.forecast_label}</strong>
+      <p>{forecast.safe_display_summary}</p>
+      <p className="meta-copy">{forecast.why_this_forecast_exists}</p>
+      <div className="metadata-row">
+        <span className="badge badge-unknown">
+          Historical depth: {forecast.historical_depth.observation_count} observation(s)
+        </span>
+        <span className="badge badge-unknown">
+          Source basis: {forecast.source_basis.source_count} signal input(s)
+        </span>
+        <span className="badge badge-unknown">
+          Uncertainty: {segmentLabel(forecast.uncertainty.level)}
+        </span>
+      </div>
+      <div className="forecast-detail-grid">
+        <section className="forecast-detail-block">
+          <h3>Source basis</h3>
+          <p>
+            {segmentLabel(forecast.source_basis.data_basis)} -{" "}
+            {forecast.source_basis.source_categories.map(segmentLabel).join(", ") || "No source categories"}
+          </p>
+          <p className="meta-copy">
+            Window: {formatDateOnly(forecast.historical_depth.window_start)} to{" "}
+            {formatDateOnly(forecast.historical_depth.window_end)}
+          </p>
+        </section>
+        <section className="forecast-detail-block">
+          <h3>Uncertainty</h3>
+          <ul>
+            {forecast.uncertainty.known_uncertainties.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+        <section className="forecast-detail-block">
+          <h3>Reasoning trail</h3>
+          <ol>
+            {forecast.reasoning_trail.map((step) => (
+              <li key={step.code}>{step.summary}</li>
+            ))}
+          </ol>
+        </section>
+        <section className="forecast-detail-block">
+          <h3>Supporting signals</h3>
+          <ul>
+            {forecast.supporting_signals.map((signal) => (
+              <li key={signal.signal_key}>
+                <strong>{segmentLabel(signal.signal_kind)}</strong>:{" "}
+                {segmentLabel(signal.signal_type)} - {segmentLabel(signal.signal_status)}.{" "}
+                {signal.summary}
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+    </article>
+  );
+}
+
+function PredictiveReportSectionBlock({ section }: { section: PredictiveReportSection }) {
+  return (
+    <article className="public-section">
+      <h2>{section.title}</h2>
+      <p>{section.summary}</p>
+      <p className="meta-copy">{section.why_this_section_exists}</p>
+      {section.forecasts.length ? (
+        <div className="public-report-result-list">
+          {section.forecasts.map((forecast) => (
+            <PredictiveForecastCard forecast={forecast} key={forecast.forecast_id} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title="No forecast emitted"
+          body="The available historical evidence did not produce a forecast for this section."
+        />
+      )}
+    </article>
+  );
+}
+
+function PredictiveReportsPage({
+  reportState,
+}: {
+  reportState: LoadState<PredictiveReportPayload>;
+}) {
+  const report = reportState.envelope?.data ?? null;
+  return (
+    <div className="public-page public-document">
+      <section className="public-intro public-document-intro">
+        <p className="eyebrow">Predictive reports</p>
+        <h1>Labor-market forecasts</h1>
+        <p className="public-lead">
+          Forecast cards translate historical trend, emerging-market, and warning signals
+          into bounded directional intelligence with confidence, uncertainty, source basis,
+          historical depth, and reasoning trail.
+        </p>
+      </section>
+      <DemoDisclosure compact />
+      {reportState.loading ? <LoadingBlock label="Loading predictive forecasts" /> : null}
+      {reportState.error ? <ErrorState message={reportState.error} /> : null}
+      {report ? (
+        <section className="public-document-list" aria-label={`${report.title} detail`}>
+          <article className="public-section">
+            <div className="metadata-row">
+              <span className="badge badge-real">Forecast report</span>
+              <span className="badge badge-unknown">Generated: {formatDateTime(report.generated_at)}</span>
+              <span className="badge badge-unknown">Horizon: {segmentLabel(report.time_horizon)}</span>
+            </div>
+            <h2>{report.title}</h2>
+            <p>{report.forecast_disclaimer}</p>
+            <p>{report.methodology_summary}</p>
+          </article>
+          {report.sections.map((section) => (
+            <PredictiveReportSectionBlock section={section} key={section.section_key} />
+          ))}
+          <article className="public-section">
+            <h2>Limitations</h2>
+            <ul>
+              {report.limitations.map((limitation) => (
+                <li key={limitation}>{limitation}</li>
+              ))}
+            </ul>
+          </article>
+        </section>
+      ) : !reportState.loading && !reportState.error ? (
+        <EmptyState
+          title="No predictive report loaded"
+          body="The predictive report endpoint did not return a report payload."
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function PublicRouteView({
   route,
   onNavigate,
@@ -3353,6 +3532,7 @@ function PublicRouteView({
   publicBenchmarkDetailState,
   publicReportListState,
   publicReportDetailState,
+  predictiveReportState,
 }: {
   route: RouteState;
   onNavigate: LinkClickHandler;
@@ -3360,6 +3540,7 @@ function PublicRouteView({
   publicBenchmarkDetailState: LoadState<PublicBenchmark>;
   publicReportListState: LoadState<PublicReportListPayload>;
   publicReportDetailState: LoadState<PublicReport>;
+  predictiveReportState: LoadState<PredictiveReportPayload>;
 }) {
   if (route.page === "embed-region-comparison" || route.page === "embed-market-score-card") {
     return <PlatformEmbedView page={route.page} />;
@@ -3373,6 +3554,8 @@ function PublicRouteView({
         <DevelopersPage onNavigate={onNavigate} />
       ) : activePage === "data-licensing" ? (
         <DataLicensingPage />
+      ) : activePage === "data-standards" ? (
+        <DataStandardsPage />
       ) : isDeveloperDocPage(activePage) ? (
         <DeveloperDocsPage page={activePage} onNavigate={onNavigate} />
       ) : activePage === "guides" ? (
@@ -3411,6 +3594,8 @@ function PublicRouteView({
             reportsState={publicReportListState}
           />
         )
+      ) : activePage === "forecasts" ? (
+        <PredictiveReportsPage reportState={predictiveReportState} />
       ) : (
         <LegalPage page={activePage as LegalPublicPage} />
       )}
@@ -7173,6 +7358,7 @@ function InstitutionDashboardView({
   selectedOrganizationId,
   onLogin,
   onOpenAdvisor,
+  onOpenDecisions,
   onOpenImports,
   onOpenReports,
   onSelectOrganization,
@@ -7185,6 +7371,7 @@ function InstitutionDashboardView({
   selectedOrganizationId: string;
   onLogin: () => void;
   onOpenAdvisor: () => void;
+  onOpenDecisions: () => void;
   onOpenImports: () => void;
   onOpenReports: () => void;
   onSelectOrganization: (organizationId: string) => void;
@@ -7238,6 +7425,9 @@ function InstitutionDashboardView({
             <div className="badge-stack">
               <button className="secondary-button compact-button" onClick={onOpenAdvisor} type="button">
                 Advisor tools
+              </button>
+              <button className="secondary-button compact-button" onClick={onOpenDecisions} type="button">
+                Decisions
               </button>
               <button className="secondary-button compact-button" onClick={onOpenReports} type="button">
                 Reports
@@ -7394,6 +7584,578 @@ function InstitutionDashboardView({
       ) : null}
     </div>
   );
+}
+
+function InstitutionDecisionInfrastructureView({
+  auth,
+  organizationsState,
+  selectedOrganizationId,
+  decisionDashboardState,
+  curriculumState,
+  workforceReportState,
+  benchmarkState,
+  onLogin,
+  onOpenDashboard,
+  onOpenReports,
+  onSelectOrganization,
+}: {
+  auth: FrontendAuthContextValue;
+  organizationsState: LoadState<InstitutionCurrentOrganizationsPayload>;
+  selectedOrganizationId: string;
+  decisionDashboardState: LoadState<InstitutionDecisionDashboardPayload>;
+  curriculumState: LoadState<CurriculumMarketMappingPayload>;
+  workforceReportState: LoadState<InstitutionWorkforceReportPayload>;
+  benchmarkState: LoadState<InstitutionBenchmarkPayload>;
+  onLogin: () => void;
+  onOpenDashboard: () => void;
+  onOpenReports: () => void;
+  onSelectOrganization: (organizationId: string) => void;
+}) {
+  if (!auth.isConfigured) {
+    return (
+      <div className="view-grid">
+        <ShellCard title="Institutional Decisions" eyebrow="Authentication required">
+          <EmptyState
+            title="Institutional decision infrastructure is unavailable"
+            body="Auth0 frontend configuration is required for organization-scoped decision views."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <div className="view-grid">
+        <ShellCard
+          title="Institutional Decisions"
+          eyebrow="Signed out"
+          action={<button type="button" onClick={onLogin}>Sign in</button>}
+        >
+          <EmptyState
+            title="Sign in required"
+            body="Institutional decision infrastructure is organization-scoped and requires backend authorization."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  const organizationRows = organizationsState.envelope?.data?.organizations ?? [];
+  const selectedRow =
+    organizationRows.find((row) => row.organization.organization_id === selectedOrganizationId)
+    ?? organizationRows[0]
+    ?? null;
+  const decisionDashboard = decisionDashboardState.envelope?.data ?? null;
+  const curriculum = curriculumState.envelope?.data ?? null;
+  const workforceReport = workforceReportState.envelope?.data ?? null;
+  const benchmarks = benchmarkState.envelope?.data ?? null;
+  const anyLoading =
+    decisionDashboardState.loading
+    || curriculumState.loading
+    || workforceReportState.loading
+    || benchmarkState.loading;
+  const error =
+    decisionDashboardState.error
+    ?? curriculumState.error
+    ?? workforceReportState.error
+    ?? benchmarkState.error;
+  const privacy =
+    decisionDashboard?.privacy
+    ?? curriculum?.privacy
+    ?? workforceReport?.privacy
+    ?? benchmarks?.privacy
+    ?? null;
+
+  return (
+    <div className="view-grid">
+      <ShellCard
+        title="Institutional Decisions"
+        eyebrow={selectedRow?.organization.name ?? "Organization context"}
+        action={
+          selectedRow ? (
+            <div className="badge-stack">
+              <button className="secondary-button compact-button" onClick={onOpenDashboard} type="button">
+                Cohort dashboard
+              </button>
+              <button className="secondary-button compact-button" onClick={onOpenReports} type="button">
+                Reports
+              </button>
+              <span className="badge badge-success">{selectedRow.membership.role}</span>
+              <span className="badge">{selectedRow.organization.organization_type}</span>
+            </div>
+          ) : null
+        }
+      >
+        {organizationsState.loading ? <LoadingBlock label="Loading organizations" /> : null}
+        {organizationsState.error ? <ErrorState message={organizationsState.error} /> : null}
+        {organizationRows.length > 1 ? (
+          <div className="metadata-row">
+            {organizationRows.map((row) => (
+              <button
+                className={
+                  row.organization.organization_id === selectedOrganizationId
+                    ? "primary-button compact-button"
+                    : "secondary-button compact-button"
+                }
+                key={row.organization.organization_id}
+                onClick={() => onSelectOrganization(row.organization.organization_id)}
+                type="button"
+              >
+                {row.organization.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {anyLoading ? <LoadingBlock label="Loading institutional decision infrastructure" /> : null}
+        {error ? <ErrorState message={error} /> : null}
+        {!anyLoading && !error && !selectedRow ? (
+          <EmptyState
+            title="No institutional organization"
+            body="Your account does not currently have an active institutional membership."
+          />
+        ) : null}
+        {decisionDashboard ? (
+          <>
+            <div className="metadata-row">
+              <span className="badge badge-real">Forecast-aware decision view</span>
+              <span className={confidenceBadgeClass(decisionDashboard.confidence.level)}>
+                Confidence {decisionDashboard.confidence.level} · {Math.round(decisionDashboard.confidence.score * 100)}%
+              </span>
+              <span className="badge">Freshness {prettyKey(decisionDashboard.freshness)}</span>
+              <span className="badge">Horizon {prettyKey(decisionDashboard.time_horizon)}</span>
+            </div>
+            <p className="meta-copy">{decisionDashboard.summary.what_is_happening}</p>
+            <p className="meta-copy">{decisionDashboard.summary.why_it_matters}</p>
+            <InstitutionDecisionEvidenceBlock evidence={decisionDashboard.summary.evidence} />
+          </>
+        ) : null}
+      </ShellCard>
+
+      {privacy ? <InstitutionPrivacyNotice privacy={privacy} /> : null}
+
+      {decisionDashboard ? (
+        <>
+          <InstitutionDecisionSectionList
+            title="Target Markets"
+            sections={decisionDashboard.target_markets}
+          />
+          <InstitutionDecisionSectionList
+            title="Regional Trends"
+            sections={decisionDashboard.regional_trends}
+          />
+          <div className="split-grid">
+            <InstitutionDecisionSectionList
+              title="Program Alignment"
+              sections={decisionDashboard.program_alignment}
+            />
+            <InstitutionDecisionSectionList
+              title="Employer Geography"
+              sections={decisionDashboard.employer_geography}
+            />
+          </div>
+          <div className="split-grid">
+            <InstitutionDecisionSectionList
+              title="Internship Access"
+              sections={decisionDashboard.internship_access}
+            />
+            <InstitutionDecisionSectionList
+              title="Industry Demand"
+              sections={decisionDashboard.industry_demand}
+            />
+          </div>
+          <ShellCard title="Forecast Notes" eyebrow="Layer 21 bounded signals">
+            {decisionDashboard.forecast_notes.length ? (
+              <div className="warning-list">
+                {decisionDashboard.forecast_notes.map((note) => (
+                  <div className="warning-item" key={`${note.forecast_type}-${note.affected_entity}-${note.forecast_label}`}>
+                    <div className="warning-header">
+                      <span className="warning-code">{note.forecast_label}</span>
+                      <span className="badge">{prettyKey(note.time_horizon)}</span>
+                    </div>
+                    <p>{note.safe_display_summary}</p>
+                    <p className="meta-copy">
+                      Confidence {formatValue(note.confidence.level)} · Historical depth {formatValue(note.historical_depth.observation_count)}
+                    </p>
+                    {note.reasoning_trail.length ? (
+                      <ul className="notes-list">
+                        {note.reasoning_trail.slice(0, 3).map((reason) => (
+                          <li key={reason}>{reason}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="No forecast notes available"
+                body="Forecast notes appear only when producer-owned historical exports provide enough Layer 21 evidence."
+              />
+            )}
+          </ShellCard>
+          <ShellCard title="Recommended Actions" eyebrow="Decision support">
+            <ul className="notes-list">
+              {decisionDashboard.recommended_actions.map((action) => (
+                <li key={action}>{action}</li>
+              ))}
+            </ul>
+          </ShellCard>
+          <InstitutionWarningsLimitationsCard
+            warnings={decisionDashboard.warnings}
+            limitations={decisionDashboard.limitations}
+          />
+        </>
+      ) : null}
+
+      {curriculum ? <InstitutionCurriculumMappingView payload={curriculum} /> : null}
+      {workforceReport ? <InstitutionWorkforceReportView report={workforceReport} /> : null}
+      {benchmarks ? <InstitutionBenchmarkView payload={benchmarks} /> : null}
+    </div>
+  );
+}
+
+function InstitutionPrivacyNotice({ privacy }: { privacy: InstitutionPrivacyMetadata }) {
+  return (
+    <ShellCard title="Privacy-Safe Aggregation" eyebrow={prettyKey(privacy.privacy_mode)}>
+      <div className="stat-grid">
+        <div className="stat-card">
+          <span>Aggregation</span>
+          <strong>{prettyKey(privacy.aggregation_level)}</strong>
+        </div>
+        <div className="stat-card">
+          <span>Cohort size</span>
+          <strong>{privacy.cohort_size}</strong>
+        </div>
+        <div className="stat-card">
+          <span>Minimum cohort</span>
+          <strong>{privacy.minimum_cohort_size}</strong>
+        </div>
+        <div className="stat-card">
+          <span>Suppression</span>
+          <strong>{privacy.suppression_applied ? "Applied" : "Not applied"}</strong>
+        </div>
+      </div>
+      {privacy.suppression_applied ? (
+        <div className="warning-list" aria-label="Suppressed data state">
+          <div className="warning-item">
+            <div className="warning-header">
+              <span className="warning-code">Suppressed data</span>
+              <span className="badge badge-warning">Minimum cohort rule</span>
+            </div>
+            <p>
+              Some cohort-derived fields are withheld before rendering:
+              {" "}
+              {privacy.suppressed_fields.length
+                ? privacy.suppressed_fields.map(prettyKey).join(", ")
+                : "low-sample detail"}.
+            </p>
+          </div>
+        </div>
+      ) : null}
+      <ul className="notes-list">
+        {privacy.privacy_notes.slice(0, 4).map((note) => (
+          <li key={note}>{note}</li>
+        ))}
+      </ul>
+    </ShellCard>
+  );
+}
+
+function InstitutionWarningsLimitationsCard({
+  warnings,
+  limitations,
+}: {
+  warnings?: string[];
+  limitations?: string[];
+}) {
+  if (!warnings?.length && !limitations?.length) return null;
+  return (
+    <ShellCard title="Warnings And Limitations" eyebrow="Decision boundaries">
+      <InstitutionWarningsLimitationsList warnings={warnings} limitations={limitations} />
+    </ShellCard>
+  );
+}
+
+function InstitutionWarningsLimitationsList({
+  warnings,
+  limitations,
+}: {
+  warnings?: string[];
+  limitations?: string[];
+}) {
+  const warningItems = warnings ?? [];
+  const limitationItems = limitations ?? [];
+  if (!warningItems.length && !limitationItems.length) return null;
+  return (
+    <div className="warning-list" aria-label="Institutional warnings and limitations">
+      {warningItems.map((warning) => (
+        <div className="warning-item" key={`warning-${warning}`}>
+          <div className="warning-header">
+            <span className="warning-code">Warning</span>
+            <span className="badge badge-warning">Review context</span>
+          </div>
+          <p>{warning}</p>
+        </div>
+      ))}
+      {limitationItems.map((limitation) => (
+        <div className="warning-item" key={`limitation-${limitation}`}>
+          <div className="warning-header">
+            <span className="warning-code">Limitation</span>
+            <span className="badge">Decision boundary</span>
+          </div>
+          <p>{limitation}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InstitutionDecisionSectionList({
+  title,
+  sections,
+}: {
+  title: string;
+  sections: InstitutionDecisionSection[];
+}) {
+  return (
+    <ShellCard title={title} eyebrow="Decision sections">
+      {sections.length ? (
+        <div className="warning-list">
+          {sections.slice(0, 5).map((section) => (
+            <InstitutionDecisionSectionCard key={section.section_key} section={section} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title={`${title} unavailable`}
+          body="This section needs more aggregate or market-level evidence before it can be displayed."
+        />
+      )}
+    </ShellCard>
+  );
+}
+
+function InstitutionDecisionSectionCard({ section }: { section: InstitutionDecisionSection }) {
+  return (
+    <div className="warning-item">
+      <div className="warning-header">
+        <span className="warning-code">{section.title}</span>
+        <span className={confidenceBadgeClass(section.evidence.confidence.level)}>
+          {prettyKey(section.evidence.confidence.level)}
+        </span>
+      </div>
+      <p>{section.what_is_happening}</p>
+      <p className="meta-copy">{section.why_it_matters}</p>
+      {section.metrics.length ? <InstitutionDecisionMetricList metrics={section.metrics} /> : null}
+      {section.considerations.length ? (
+        <ul className="notes-list">
+          {section.considerations.slice(0, 3).map((consideration) => (
+            <li key={consideration}>{consideration}</li>
+          ))}
+        </ul>
+      ) : null}
+      {section.warnings.length ? (
+        <div className="coverage-warning-list">
+          {section.warnings.map((warning) => (
+            <span className="badge badge-warning" key={warning}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+      <InstitutionDecisionEvidenceBlock evidence={section.evidence} />
+    </div>
+  );
+}
+
+function InstitutionDecisionMetricList({ metrics }: { metrics: InstitutionDecisionMetric[] }) {
+  return (
+    <div className="stat-grid">
+      {metrics.slice(0, 4).map((metric) => (
+        <div className="stat-card" key={`${metric.metric_key}-${metric.label}`}>
+          <span>{metric.label}</span>
+          <strong>
+            {formatValue(metric.value)}
+            {metric.unit ? ` ${metric.unit}` : ""}
+          </strong>
+          <p>{metric.decision_use}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InstitutionDecisionEvidenceBlock({ evidence }: { evidence: InstitutionDecisionEvidence }) {
+  return (
+    <div className="forecast-detail-grid">
+      <div className="forecast-detail-block">
+        <strong>Source basis</strong>
+        <p>{evidence.source_basis.map(prettyKey).join(", ") || "Unknown"}</p>
+      </div>
+      <div className="forecast-detail-block">
+        <strong>Historical depth</strong>
+        <p>
+          {Object.entries(evidence.historical_depth)
+            .map(([key, value]) => `${prettyKey(key)}: ${formatValue(value)}`)
+            .join(" · ") || "Unknown"}
+        </p>
+      </div>
+      <div className="forecast-detail-block">
+        <strong>Provenance</strong>
+        <p>{evidence.provenance.join(", ") || "Unknown"}</p>
+      </div>
+    </div>
+  );
+}
+
+function InstitutionCurriculumMappingView({ payload }: { payload: CurriculumMarketMappingPayload }) {
+  return (
+    <ShellCard title="Curriculum-To-Market Mapping" eyebrow="Programs and markets">
+      <div className="warning-list">
+        {payload.programs.map((program) => (
+          <div className="warning-item" key={program.program_name}>
+            <div className="warning-header">
+              <span className="warning-code">{program.program_name}</span>
+              <span className={confidenceBadgeClass(program.confidence.level)}>
+                {prettyKey(program.confidence.level)}
+              </span>
+            </div>
+            <p className="meta-copy">
+              Role families: {program.relevant_role_families.join(", ") || "Sparse"}
+            </p>
+            <InstitutionDecisionMetricList metrics={program.strongest_aligned_markets} />
+            <p className="meta-copy">
+              Skills with rising demand: {program.skills_with_rising_demand.join(", ") || "Sparse"}
+            </p>
+            <p className="meta-copy">
+              Employer targets: {program.employer_relationship_targets.join(", ") || "Sparse"}
+            </p>
+            <ul className="notes-list">
+              {program.advising_recommendations.map((recommendation) => (
+                <li key={recommendation}>{recommendation}</li>
+              ))}
+            </ul>
+            {program.sparse_data_warnings.length ? (
+              <div className="coverage-warning-list">
+                {program.sparse_data_warnings.map((warning) => (
+                  <span className="badge badge-warning" key={warning}>{warning}</span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <InstitutionWarningsLimitationsList
+        warnings={payload.warnings}
+        limitations={payload.limitations}
+      />
+    </ShellCard>
+  );
+}
+
+function InstitutionWorkforceReportView({ report }: { report: InstitutionWorkforceReportPayload }) {
+  return (
+    <ShellCard title={report.title} eyebrow={prettyKey(report.report_type)}>
+      <div className="metadata-row">
+        <span className={confidenceBadgeClass(report.confidence.level)}>
+          Confidence {prettyKey(report.confidence.level)}
+        </span>
+        <span className="badge">Freshness {prettyKey(report.freshness)}</span>
+        <span className="badge">Audience {report.audience}</span>
+      </div>
+      <p className="meta-copy">{report.summary}</p>
+      <p className="meta-copy">{report.privacy_statement}</p>
+      <InstitutionDecisionMetricList metrics={report.supporting_metrics} />
+      <div className="split-grid">
+        <div>
+          <strong>Key findings</strong>
+          <ul className="notes-list">
+            {report.key_findings.map((finding) => (
+              <li key={finding}>{finding}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <strong>Recommended actions</strong>
+          <ul className="notes-list">
+            {report.recommended_actions.map((action) => (
+              <li key={action}>{action}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      <InstitutionWarningsLimitationsList
+        warnings={report.warnings}
+        limitations={report.limitations}
+      />
+    </ShellCard>
+  );
+}
+
+function InstitutionBenchmarkView({ payload }: { payload: InstitutionBenchmarkPayload }) {
+  return (
+    <ShellCard title="Institutional Benchmarks" eyebrow="Market opportunity comparison">
+      <div className="warning-list">
+        {payload.benchmarks.map((benchmark) => (
+          <div className="warning-item" key={benchmark.benchmark_subject}>
+            <div className="warning-header">
+              <span className="warning-code">{benchmark.benchmark_subject}</span>
+              <span className="badge badge-real">Gap {benchmark.gap_score}</span>
+            </div>
+            <div className="stat-grid">
+              <div className="stat-card">
+                <span>Opportunity</span>
+                <strong>{benchmark.opportunity_score}</strong>
+              </div>
+              <div className="stat-card">
+                <span>Alignment</span>
+                <strong>{benchmark.alignment_score}</strong>
+              </div>
+              <div className="stat-card">
+                <span>Emerging gap</span>
+                <strong>{benchmark.emerging_region_gap}</strong>
+              </div>
+              <div className="stat-card">
+                <span>Employer gap</span>
+                <strong>{benchmark.employer_access_gap}</strong>
+              </div>
+              <div className="stat-card">
+                <span>Internship gap</span>
+                <strong>{benchmark.internship_access_gap}</strong>
+              </div>
+            </div>
+            <p>{benchmark.recommendation_summary}</p>
+            <p className="meta-copy">
+              Comparison markets: {benchmark.comparison_market_set.join(", ") || "Sparse"}
+            </p>
+            <ul className="notes-list">
+              {benchmark.supporting_rationale.map((rationale) => (
+                <li key={rationale}>{rationale}</li>
+              ))}
+            </ul>
+            {benchmark.warnings.length ? (
+              <div className="coverage-warning-list">
+                {benchmark.warnings.map((warning) => (
+                  <span className="badge badge-warning" key={warning}>{warning}</span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <InstitutionWarningsLimitationsList
+        warnings={payload.warnings}
+        limitations={payload.limitations}
+      />
+    </ShellCard>
+  );
+}
+
+function confidenceBadgeClass(level: string): string {
+  const normalized = level.toLowerCase();
+  if (normalized === "high") return "badge badge-success";
+  if (normalized === "medium") return "badge badge-real";
+  if (normalized === "insufficient") return "badge badge-warning";
+  return "badge badge-unknown";
 }
 
 function InstitutionAdvisorWorkspace({
@@ -9330,6 +10092,8 @@ function App() {
     useState<LoadState<PublicReportListPayload>>(emptyLoadState);
   const [publicReportDetailStates, setPublicReportDetailStates] =
     useState<Record<string, LoadState<PublicReport>>>({});
+  const [predictiveReportState, setPredictiveReportState] =
+    useState<LoadState<PredictiveReportPayload>>(emptyLoadState);
   const [monetizationPlansState, setMonetizationPlansState] =
     useState<LoadState<MonetizationPlansPayload>>(emptyLoadState);
   const [monetizationFeaturesState, setMonetizationFeaturesState] =
@@ -9350,6 +10114,14 @@ function App() {
     useState<LoadState<InstitutionCurrentOrganizationsPayload>>(emptyLoadState);
   const [institutionDashboardState, setInstitutionDashboardState] =
     useState<LoadState<InstitutionDashboardPayload>>(emptyLoadState);
+  const [institutionDecisionDashboardState, setInstitutionDecisionDashboardState] =
+    useState<LoadState<InstitutionDecisionDashboardPayload>>(emptyLoadState);
+  const [institutionCurriculumState, setInstitutionCurriculumState] =
+    useState<LoadState<CurriculumMarketMappingPayload>>(emptyLoadState);
+  const [institutionWorkforceReportState, setInstitutionWorkforceReportState] =
+    useState<LoadState<InstitutionWorkforceReportPayload>>(emptyLoadState);
+  const [institutionBenchmarkState, setInstitutionBenchmarkState] =
+    useState<LoadState<InstitutionBenchmarkPayload>>(emptyLoadState);
   const [institutionAdvisorState, setInstitutionAdvisorState] =
     useState<LoadState<InstitutionAdvisorToolResponse>>(emptyLoadState);
   const [institutionReportState, setInstitutionReportState] =
@@ -9586,6 +10358,20 @@ function App() {
           error: error instanceof Error ? error.message : "Failed to load public report",
         },
       }));
+    }
+  }, []);
+
+  const loadPredictiveReport = useCallback(async () => {
+    setPredictiveReportState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const envelope = await getPredictiveReport(DEFAULT_FORECAST_REGION_IDS);
+      setPredictiveReportState({ loading: false, envelope, error: null });
+    } catch (error) {
+      setPredictiveReportState({
+        loading: false,
+        envelope: null,
+        error: error instanceof Error ? error.message : "Failed to load predictive forecasts",
+      });
     }
   }, []);
 
@@ -9888,6 +10674,17 @@ function App() {
   ]);
 
   useEffect(() => {
+    if (route.page !== "forecasts") return;
+    if (predictiveReportState.loading || predictiveReportState.envelope) return;
+    void loadPredictiveReport();
+  }, [
+    loadPredictiveReport,
+    predictiveReportState.envelope,
+    predictiveReportState.loading,
+    route.page,
+  ]);
+
+  useEffect(() => {
     if (!auth.isAuthenticated) {
       resetAccountState();
       setAccountDeactivated(false);
@@ -9963,6 +10760,71 @@ function App() {
     }
 
     void loadInstitutionDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    accountDeactivated,
+    auth.isAuthenticated,
+    protectedOptions,
+    route.institutionView,
+    route.page,
+    selectedInstitutionOrganizationId,
+  ]);
+
+  useEffect(() => {
+    if (route.page !== "institution" || route.institutionView !== "decisions") {
+      setInstitutionDecisionDashboardState(emptyLoadState());
+      setInstitutionCurriculumState(emptyLoadState());
+      setInstitutionWorkforceReportState(emptyLoadState());
+      setInstitutionBenchmarkState(emptyLoadState());
+      return;
+    }
+    if (!auth.isAuthenticated || accountDeactivated || !selectedInstitutionOrganizationId) {
+      setInstitutionDecisionDashboardState(emptyLoadState());
+      setInstitutionCurriculumState(emptyLoadState());
+      setInstitutionWorkforceReportState(emptyLoadState());
+      setInstitutionBenchmarkState(emptyLoadState());
+      return;
+    }
+
+    let cancelled = false;
+    async function loadInstitutionDecisionInfrastructure() {
+      setInstitutionDecisionDashboardState((current) => ({ ...current, loading: true, error: null }));
+      setInstitutionCurriculumState((current) => ({ ...current, loading: true, error: null }));
+      setInstitutionWorkforceReportState((current) => ({ ...current, loading: true, error: null }));
+      setInstitutionBenchmarkState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const [dashboardEnvelope, curriculumEnvelope, reportEnvelope, benchmarkEnvelope] = await Promise.all([
+          getInstitutionDecisionDashboard(selectedInstitutionOrganizationId, protectedOptions),
+          getInstitutionCurriculumMarketMap(selectedInstitutionOrganizationId, protectedOptions),
+          getInstitutionWorkforceReport(
+            selectedInstitutionOrganizationId,
+            "regional_workforce_opportunity",
+            protectedOptions,
+          ),
+          getInstitutionBenchmarks(selectedInstitutionOrganizationId, protectedOptions),
+        ]);
+        if (!cancelled) {
+          setInstitutionDecisionDashboardState({ loading: false, envelope: dashboardEnvelope, error: null });
+          setInstitutionCurriculumState({ loading: false, envelope: curriculumEnvelope, error: null });
+          setInstitutionWorkforceReportState({ loading: false, envelope: reportEnvelope, error: null });
+          setInstitutionBenchmarkState({ loading: false, envelope: benchmarkEnvelope, error: null });
+        }
+      } catch (error) {
+        const message = error instanceof Error
+          ? error.message
+          : "Failed to load institutional decision infrastructure";
+        if (!cancelled) {
+          setInstitutionDecisionDashboardState({ loading: false, envelope: null, error: message });
+          setInstitutionCurriculumState({ loading: false, envelope: null, error: message });
+          setInstitutionWorkforceReportState({ loading: false, envelope: null, error: message });
+          setInstitutionBenchmarkState({ loading: false, envelope: null, error: message });
+        }
+      }
+    }
+
+    void loadInstitutionDecisionInfrastructure();
     return () => {
       cancelled = true;
     };
@@ -11558,6 +12420,7 @@ function App() {
         publicBenchmarkListState={publicBenchmarkListState}
         publicReportDetailState={selectedPublicReportDetailState}
         publicReportListState={publicReportListState}
+        predictiveReportState={predictiveReportState}
         route={route}
       />
     );
@@ -11778,6 +12641,28 @@ function App() {
           />
         ) : null}
 
+        {route.page === "career-agent" ? (
+          <CareerAgentPage
+            authenticated={auth.isAuthenticated && !accountDeactivated}
+            protectedOptions={
+              auth.isAuthenticated && !accountDeactivated ? protectedOptions : undefined
+            }
+          />
+        ) : null}
+
+        {route.page === "opportunity-routes" ? (
+          <OpportunityRoutesPage />
+        ) : null}
+
+        {route.page === "policy" ? (
+          <PolicyIntelligencePage
+            onNavigate={handleRouteLink}
+            policyView={route.policyView ?? "landing"}
+            regionId={route.regionId ?? selectedRegionId}
+            regions={regionList}
+          />
+        ) : null}
+
         {route.page === "plans" ? (
           <MonetizationView
             accessPreviewStates={monetizationAccessPreviewStates}
@@ -11814,6 +12699,28 @@ function App() {
               navigateTo(institutionAdvisorUrl(organizationId))
             }
             onSubmit={handleInstitutionAdvisorSubmit}
+            selectedOrganizationId={selectedInstitutionOrganizationId}
+          />
+        ) : null}
+
+        {route.page === "institution" && route.institutionView === "decisions" ? (
+          <InstitutionDecisionInfrastructureView
+            auth={auth}
+            benchmarkState={institutionBenchmarkState}
+            curriculumState={institutionCurriculumState}
+            decisionDashboardState={institutionDecisionDashboardState}
+            organizationsState={institutionOrganizationsState}
+            workforceReportState={institutionWorkforceReportState}
+            onLogin={() => void auth.login()}
+            onOpenDashboard={() =>
+              navigateTo(institutionDashboardUrl(selectedInstitutionOrganizationId))
+            }
+            onOpenReports={() =>
+              navigateTo(institutionReportsUrl(selectedInstitutionOrganizationId))
+            }
+            onSelectOrganization={(organizationId) =>
+              navigateTo(institutionDecisionsUrl(organizationId))
+            }
             selectedOrganizationId={selectedInstitutionOrganizationId}
           />
         ) : null}
@@ -11910,6 +12817,9 @@ function App() {
             onLogin={() => void auth.login()}
             onOpenAdvisor={() =>
               navigateTo(institutionAdvisorUrl(selectedInstitutionOrganizationId))
+            }
+            onOpenDecisions={() =>
+              navigateTo(institutionDecisionsUrl(selectedInstitutionOrganizationId))
             }
             onOpenImports={() =>
               navigateTo(institutionImportsUrl(selectedInstitutionOrganizationId))

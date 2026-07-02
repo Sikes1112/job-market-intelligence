@@ -8,6 +8,12 @@ from sqlalchemy.orm import Session
 
 from backend.alerts.repository import AlertRepository
 from backend.alerts.service import AlertChangeInput, AlertEventType, AlertService
+from backend.career_agent.models import (
+    CareerAgentToolAuditEventRecord,
+    CareerAgentToolRecord,
+    CareerMemoryEntryRecord,
+    CareerMemoryPermissionRecord,
+)
 from backend.companies.models import Company
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
@@ -602,18 +608,84 @@ def test_export_and_deactivate_current_user_data(api_client, session) -> None:
         headers=headers,
         json={"artifact_type": "company", "artifact_ref": "comp_a"},
     )
+    memory = api_client.put(
+        "/me/career-memory",
+        headers=headers,
+        json={
+            "explicit_user_permission": True,
+            "permissions": [
+                {
+                    "category": "career_constraints",
+                    "enabled": True,
+                    "personalize_allowed": True,
+                    "visibility": "private",
+                }
+            ],
+            "entries": [
+                {
+                    "category": "career_constraints",
+                    "value": "hybrid only",
+                }
+            ],
+            "replace_categories": ["career_constraints"],
+        },
+    )
+    assert memory.status_code == 200
+    session.add(
+        Region(
+            region_id="greater_boston",
+            region_name="greater_boston",
+            display_name="Greater Boston",
+            region_type="metro",
+        )
+    )
+    session.flush()
+    session.add(
+        RegionMarketScore(
+            region_score_id="score_career_agent_cleanup",
+            region_id="greater_boston",
+            objective_opportunity_score=0.74,
+            live_market_score=0.5,
+            early_career_accessibility_score=0.66,
+            score_ruleset_version="career_agent_cleanup_test",
+        )
+    )
+    session.flush()
+    tool_preview = api_client.post(
+        "/me/career-agent/tools/preview",
+        headers=headers,
+        json={
+            "tool_type": "reminder",
+            "career_agent_request": {
+                "question_type": "city_fit",
+                "target_region_ids": ["greater_boston"],
+                "include_forecasts": False,
+            },
+        },
+    )
+    assert tool_preview.status_code == 200
+    tool_id = tool_preview.json()["data"]["tool_request_id"]
 
     exported = api_client.get("/me/export", headers=headers)
     assert exported.status_code == 200
     assert exported.json()["data"]["user"]["user_id"] == user_id
     assert exported.json()["data"]["preference_profile"]["role_interests"] == ["product"]
     assert exported.json()["data"]["saved_market_artifacts"][0]["artifact_ref"] == "comp_a"
+    exported_text = json.dumps(exported.json())
+    assert "hybrid only" not in exported_text
+    assert tool_id not in exported_text
+    assert "career_memory" not in exported_text
+    assert "career_agent_tool" not in exported_text
 
     deactivated = api_client.delete("/me", headers=headers)
     assert deactivated.status_code == 200
     assert deactivated.json()["data"]["user_status"] == "deactivated"
     assert session.get(User, user_id).status == "deactivated"
     assert UserRepository(session).list_external_identities(user_id) == []
+    assert session.query(CareerMemoryPermissionRecord).filter_by(user_id=user_id).all() == []
+    assert session.query(CareerMemoryEntryRecord).filter_by(user_id=user_id).all() == []
+    assert session.query(CareerAgentToolAuditEventRecord).filter_by(user_id=user_id).all() == []
+    assert session.query(CareerAgentToolRecord).filter_by(user_id=user_id).all() == []
 
 
 def test_cross_user_route_access_is_blocked_or_excluded(api_client, session: Session) -> None:

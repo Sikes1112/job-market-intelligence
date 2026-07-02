@@ -21,6 +21,7 @@ from backend.api.opportunities import router as opportunities_router
 from backend.api.personalized import router as personalized_router
 from backend.api.platform_intelligence import router as platform_intelligence_router
 from backend.api.platform_public import router as platform_public_router
+from backend.api.policy import router as policy_router
 from backend.api.protection import APIProtectionMiddleware
 from backend.api.public_benchmarks import router as public_benchmarks_router
 from backend.api.public_reports import router as public_reports_router
@@ -112,6 +113,7 @@ def create_app(
     app.include_router(public_benchmarks_router)
     app.include_router(public_reports_router)
     app.include_router(opportunities_router)
+    app.include_router(policy_router)
     app.include_router(platform_intelligence_router)
     app.include_router(platform_public_router)
     app.include_router(monetization_router)

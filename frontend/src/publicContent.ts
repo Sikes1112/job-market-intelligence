@@ -32,6 +32,8 @@ export const PUBLIC_INFO_LINKS: PublicInfoLink[] = [
   { page: "guides", href: PUBLIC_PAGE_PATHS.guides, label: "Guides" },
   { page: "benchmarks", href: PUBLIC_PAGE_PATHS.benchmarks, label: "Benchmarks" },
   { page: "reports", href: PUBLIC_PAGE_PATHS.reports, label: "Reports" },
+  { page: "forecasts", href: PUBLIC_PAGE_PATHS.forecasts, label: "Forecasts" },
+  { page: "data-standards", href: PUBLIC_PAGE_PATHS["data-standards"], label: "Data standards" },
   { page: "developers", href: PUBLIC_PAGE_PATHS.developers, label: "Developers" },
   { page: "data-licensing", href: PUBLIC_PAGE_PATHS["data-licensing"], label: "Data licensing" },
   { page: "glossary", href: PUBLIC_PAGE_PATHS.glossary, label: "Glossary" },

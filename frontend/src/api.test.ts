@@ -14,6 +14,7 @@ import {
   createInstitutionDataRequest,
   createPartnerImport,
   createSavedMarketArtifact,
+  deleteCareerMemory,
   deleteSavedMarketArtifact,
   dismissAlert,
   explainAlert,
@@ -22,7 +23,16 @@ import {
   explainRegion,
   getCurrentUser,
   getBillingStatus,
+  getCareerActionPlan,
+  getCareerActionPlanWithMemory,
+  getCareerAgentAnswer,
+  getCareerMemory,
   getCareerPlatformRegistry,
+  getDataStandardDefinitions,
+  getDataStandardsGovernanceFramework,
+  getDataStandardsPartnerSchema,
+  getDataStandardsPartners,
+  getDataStandardsQualityLabels,
   getInstitutionCurrentOrganizations,
   getInstitutionDashboard,
   getPartnerImport,
@@ -35,26 +45,39 @@ import {
   getMyMonetization,
   getMyMonetizationEntitlements,
   getMyMonetizationUsage,
+  getOpportunityRoutes,
+  getPolicyEarlyCareerReport,
+  getPolicyEconomicDevelopment,
+  getPolicyEducationAlignment,
+  getPolicyPeerComparison,
+  getPolicyWorkforceDashboard,
+  getPredictiveReport,
   getPublicBenchmark,
   getPublicBenchmarks,
   getPublicReport,
   getPublicReports,
   getRecommendationGoalModes,
   getRecommendationStrategy,
+  getCareerAgentTool,
   getRegions,
   listInstitutionDataRequests,
   listInstitutionReports,
   listApiClients,
   listApiUsage,
+  listCareerAgentTools,
   listCareerPlatformReferences,
   listPartnerImports,
   listAlerts,
   listSavedMarketArtifacts,
   markAlertRead,
+  previewCareerAgentTool,
   previewScoringOverlay,
   rejectPartnerImport,
+  approveCareerAgentTool,
+  rejectCareerAgentTool,
   revokeApiKey,
   runInstitutionAdvisorComparison,
+  updateCareerMemory,
   validatePartnerImport,
 } from "./api";
 import { configureFrontendErrorReporter } from "./errorMonitoring";
@@ -123,6 +146,110 @@ describe("frontend API client auth boundary", () => {
     }
   });
 
+  test("opportunity route API call stays route-first and public", async () => {
+    const fetchMock = mockFetch({ routes: [], route_count: 0 });
+
+    await getOpportunityRoutes({
+      user_intent_summary: "Software internship route",
+      target_regions: ["greater_boston"],
+      target_role_families: ["software_engineering"],
+      preferred_program_types: ["internship"],
+      preferred_location_modes: ["hybrid"],
+      experience_level: "internship",
+      include_unverified: false,
+      limit: 3,
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/opportunities/routes");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      user_intent_summary: "Software internship route",
+      target_regions: ["greater_boston"],
+      target_role_families: ["software_engineering"],
+      preferred_program_types: ["internship"],
+      preferred_location_modes: ["hybrid"],
+      experience_level: "internship",
+      include_unverified: false,
+      limit: 3,
+    });
+    expect(String((fetchMock.mock.calls[0][1] as RequestInit).body)).not.toContain("keyword");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({
+      "Content-Type": "application/json",
+    });
+  });
+
+  test("career agent API call stays public and structured", async () => {
+    const fetchMock = mockFetch({ recommendations: [], guardrails: { passed: true } });
+
+    await getCareerAgentAnswer({
+      question_type: "city_fit",
+      target_region_ids: ["greater_boston"],
+      target_role_families: ["software_engineering"],
+      include_forecasts: true,
+      preference_snapshot: {
+        preferred_region_ids: ["greater_boston"],
+        counts_as_evidence: false,
+      },
+      limit: 3,
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/career-agent/answers");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      question_type: "city_fit",
+      target_region_ids: ["greater_boston"],
+      target_role_families: ["software_engineering"],
+      include_forecasts: true,
+      preference_snapshot: {
+        preferred_region_ids: ["greater_boston"],
+        counts_as_evidence: false,
+      },
+      limit: 3,
+    });
+    expect(String((fetchMock.mock.calls[0][1] as RequestInit).body)).not.toContain("prompt");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({
+      "Content-Type": "application/json",
+    });
+  });
+
+  test("career action plan API call stays public and structured", async () => {
+    const fetchMock = mockFetch({ steps: [], guardrails: { passed: true } });
+
+    await getCareerActionPlan({
+      plan_type: "weekly_job_search_plan",
+      career_goal: "Find a grounded weekly plan.",
+      career_agent_request: {
+        question_type: "what_should_i_do_this_month",
+        target_region_ids: ["greater_boston"],
+        target_role_families: ["software_engineering"],
+        include_forecasts: false,
+        limit: 3,
+      },
+      include_memory: false,
+      limit: 3,
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/career-agent/action-plans");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      plan_type: "weekly_job_search_plan",
+      career_goal: "Find a grounded weekly plan.",
+      career_agent_request: {
+        question_type: "what_should_i_do_this_month",
+        target_region_ids: ["greater_boston"],
+        target_role_families: ["software_engineering"],
+        include_forecasts: false,
+        limit: 3,
+      },
+      include_memory: false,
+      limit: 3,
+    });
+    expect(String((fetchMock.mock.calls[0][1] as RequestInit).body)).not.toContain("prompt");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({
+      "Content-Type": "application/json",
+    });
+  });
+
   test("monetization catalog and access-preview calls stay public", async () => {
     const fetchMock = mockFetch({
       plans: [],
@@ -184,6 +311,66 @@ describe("frontend API client auth boundary", () => {
     }
   });
 
+  test("Layer 24 policy requests stay public and route to backend policy payloads", async () => {
+    const fetchMock = mockFetch({
+      region_id: "greater_boston",
+      report_id: "layer24_policy_report:test",
+      title: "Layer 24 report",
+    });
+
+    await getPolicyWorkforceDashboard("greater_boston");
+    await getPolicyEconomicDevelopment("greater_boston");
+    await getPolicyEducationAlignment("greater_boston");
+    await getPolicyPeerComparison("greater_boston");
+    await getPolicyEarlyCareerReport("greater_boston");
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/policy/regions/greater_boston/workforce-dashboard",
+      "/policy/regions/greater_boston/economic-development",
+      "/policy/regions/greater_boston/education-alignment",
+      "/policy/regions/greater_boston/peer-comparison",
+      "/policy/regions/greater_boston/reports/early-career-opportunity",
+    ]);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
+    }
+  });
+
+  test("predictive report request stays public and API-safe", async () => {
+    const fetchMock = mockFetch({ report_id: "predictive_report:test", sections: [] });
+
+    await getPredictiveReport(["greater_boston", "greater_atlanta"], ["comp_a"]);
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/platform/predictive/reports?region_id=greater_boston&region_id=greater_atlanta&company_id=comp_a",
+    );
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({
+      "Content-Type": "application/json",
+    });
+  });
+
+  test("Layer 27 standards requests stay public and read-only", async () => {
+    const fetchMock = mockFetch({ definitions: [], partners: [], labels: [], governance_records: [] });
+
+    await getDataStandardDefinitions();
+    await getDataStandardsPartnerSchema();
+    await getDataStandardsPartners();
+    await getDataStandardsQualityLabels();
+    await getDataStandardsGovernanceFramework();
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/data-standards/definitions",
+      "/data-standards/partner-schema",
+      "/data-standards/partners",
+      "/data-standards/quality-labels",
+      "/data-standards/governance-framework",
+    ]);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
+      expect((init as RequestInit).method).toBeUndefined();
+    }
+  });
+
   test("protected /me requests attach bearer tokens", async () => {
     const fetchMock = mockFetch({
       user: { user_id: "user_a", status: "active" },
@@ -198,6 +385,111 @@ describe("frontend API client auth boundary", () => {
       "Authorization": "Bearer access-token",
       "Content-Type": "application/json",
     });
+  });
+
+  test("protected career memory and memory-backed plan requests attach bearer tokens", async () => {
+    const fetchMock = mockFetch({ memory_enabled: false, steps: [] });
+    const auth = { getAccessToken: async () => "career-token" };
+
+    await getCareerMemory(auth);
+    await updateCareerMemory(
+      {
+        explicit_user_permission: true,
+        permissions: [
+          {
+            category: "saved_companies",
+            enabled: true,
+            personalize_allowed: true,
+            visibility: "private",
+          },
+        ],
+        entries: [{ category: "saved_companies", value: "comp_a" }],
+        replace_categories: ["saved_companies"],
+      },
+      auth,
+    );
+    await deleteCareerMemory({ clear_all: true }, auth);
+    await getCareerActionPlanWithMemory(
+      {
+        plan_type: "weekly_job_search_plan",
+        career_agent_request: {
+          question_type: "what_should_i_do_this_month",
+          target_region_ids: ["greater_boston"],
+        },
+        include_memory: true,
+      },
+      auth,
+    );
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/me/career-memory",
+      "/me/career-memory",
+      "/me/career-memory",
+      "/me/career-agent/action-plans",
+    ]);
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("PUT");
+    expect((fetchMock.mock.calls[2][1] as RequestInit).method).toBe("DELETE");
+    expect((fetchMock.mock.calls[3][1] as RequestInit).method).toBe("POST");
+    expect(JSON.parse(String((fetchMock.mock.calls[3][1] as RequestInit).body))).toMatchObject({
+      include_memory: true,
+    });
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toMatchObject({
+        "Authorization": "Bearer career-token",
+        "Content-Type": "application/json",
+      });
+    }
+  });
+
+  test("protected career agent tool requests attach bearer tokens and structured bodies", async () => {
+    const fetchMock = mockFetch({ tool_previews: [], tool_request_id: "tool_1" });
+    const auth = { getAccessToken: async () => "tool-token" };
+    const previewRequest = {
+      tool_type: "reminder" as const,
+      career_agent_request: {
+        question_type: "what_should_i_do_this_month" as const,
+        target_region_ids: ["greater_boston"],
+      },
+      requested_action: "preview" as const,
+      include_memory: false,
+      limit: 3,
+    };
+
+    await previewCareerAgentTool(previewRequest, auth);
+    await listCareerAgentTools(auth);
+    await getCareerAgentTool("tool_1", auth);
+    await approveCareerAgentTool(
+      { tool_request_id: "tool_1", explicit_user_approval: true },
+      auth,
+    );
+    await rejectCareerAgentTool(
+      { tool_request_id: "tool_1", explicit_user_approval: false },
+      auth,
+    );
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/me/career-agent/tools/preview",
+      "/me/career-agent/tools",
+      "/me/career-agent/tools/tool_1",
+      "/me/career-agent/tools/approve",
+      "/me/career-agent/tools/reject",
+    ]);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual(previewRequest);
+    expect(JSON.parse(String((fetchMock.mock.calls[3][1] as RequestInit).body))).toEqual({
+      tool_request_id: "tool_1",
+      explicit_user_approval: true,
+    });
+    expect(JSON.parse(String((fetchMock.mock.calls[4][1] as RequestInit).body))).toEqual({
+      tool_request_id: "tool_1",
+      explicit_user_approval: false,
+    });
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toMatchObject({
+        "Authorization": "Bearer tool-token",
+        "Content-Type": "application/json",
+      });
+    }
   });
 
   test("protected monetization account requests attach bearer tokens", async () => {

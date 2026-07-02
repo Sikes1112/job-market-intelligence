@@ -34,6 +34,17 @@ from backend.institutions.data_requests import (
     InstitutionalDataRequestSubjectType,
     InstitutionalDataRequestType,
 )
+from backend.institutions.decision_infrastructure import (
+    CurriculumMarketMappingPayload,
+    InstitutionBenchmarkPayload,
+    InstitutionDecisionDashboardPayload,
+    InstitutionWorkforceReportPayload,
+    InstitutionWorkforceReportType,
+    build_curriculum_market_mapping,
+    build_decision_dashboard,
+    build_institution_benchmarks,
+    build_workforce_report,
+)
 from backend.institutions.exceptions import (
     InstitutionalAccessDenied,
     InstitutionalReportNotFound,
@@ -227,6 +238,158 @@ class InstitutionService:
             )
         )
         return dashboard
+
+    def get_decision_dashboard_for_user(
+        self,
+        *,
+        organization_id: str,
+        user_id: str,
+        minimum_group_size: int,
+    ) -> InstitutionDecisionDashboardPayload:
+        organization, membership = self._require_action(
+            organization_id=organization_id,
+            user_id=user_id,
+            action=InstitutionalAction.VIEW_DASHBOARD,
+        )
+        dashboard = self._build_dashboard(
+            organization=organization,
+            minimum_group_size=minimum_group_size,
+        )
+        result = build_decision_dashboard(self._repo.session, dashboard=dashboard)
+        self.record_audit_event(
+            InstitutionalAuditLogInput(
+                organization_id=organization.organization_id,
+                actor_user_id=user_id,
+                actor_role=OrganizationRole(membership.role),
+                action=InstitutionalAuditAction.INSTITUTION_DASHBOARD_VIEWED,
+                target_type="institutional_decision_dashboard",
+                target_id=organization.organization_id,
+                purpose="view privacy-safe institutional decision dashboard",
+                metadata={
+                    "minimum_group_size": result.privacy.minimum_cohort_size,
+                    "cohort_size": result.privacy.cohort_size,
+                    "suppression_applied": result.privacy.suppression_applied,
+                    "forecast_note_count": len(result.forecast_notes),
+                },
+            )
+        )
+        return result
+
+    def get_curriculum_mapping_for_user(
+        self,
+        *,
+        organization_id: str,
+        user_id: str,
+        minimum_group_size: int,
+    ) -> CurriculumMarketMappingPayload:
+        organization, membership = self._require_action(
+            organization_id=organization_id,
+            user_id=user_id,
+            action=InstitutionalAction.VIEW_DASHBOARD,
+        )
+        dashboard = self._build_dashboard(
+            organization=organization,
+            minimum_group_size=minimum_group_size,
+        )
+        result = build_curriculum_market_mapping(
+            self._repo.session,
+            dashboard=dashboard,
+        )
+        self.record_audit_event(
+            InstitutionalAuditLogInput(
+                organization_id=organization.organization_id,
+                actor_user_id=user_id,
+                actor_role=OrganizationRole(membership.role),
+                action=InstitutionalAuditAction.INSTITUTION_DASHBOARD_VIEWED,
+                target_type="institutional_curriculum_market_mapping",
+                target_id=organization.organization_id,
+                purpose="view privacy-safe curriculum-to-market mapping",
+                metadata={
+                    "program_count": len(result.programs),
+                    "minimum_group_size": result.privacy.minimum_cohort_size,
+                    "suppression_applied": result.privacy.suppression_applied,
+                },
+            )
+        )
+        return result
+
+    def get_workforce_report_for_user(
+        self,
+        *,
+        organization_id: str,
+        user_id: str,
+        report_type: InstitutionWorkforceReportType,
+        minimum_group_size: int,
+    ) -> InstitutionWorkforceReportPayload:
+        organization, membership = self._require_action(
+            organization_id=organization_id,
+            user_id=user_id,
+            action=InstitutionalAction.VIEW_REPORTS,
+        )
+        dashboard = self._build_dashboard(
+            organization=organization,
+            minimum_group_size=minimum_group_size,
+        )
+        result = build_workforce_report(
+            self._repo.session,
+            dashboard=dashboard,
+            report_type=report_type,
+        )
+        self.record_audit_event(
+            InstitutionalAuditLogInput(
+                organization_id=organization.organization_id,
+                actor_user_id=user_id,
+                actor_role=OrganizationRole(membership.role),
+                action=InstitutionalAuditAction.INSTITUTIONAL_REPORT_VIEWED,
+                target_type="institutional_workforce_report",
+                target_id=report_type.value,
+                purpose="view generated privacy-safe workforce decision report",
+                metadata={
+                    "report_type": report_type.value,
+                    "minimum_group_size": result.privacy.minimum_cohort_size,
+                    "suppression_applied": result.privacy.suppression_applied,
+                },
+            )
+        )
+        return result
+
+    def get_benchmarks_for_user(
+        self,
+        *,
+        organization_id: str,
+        user_id: str,
+        minimum_group_size: int,
+    ) -> InstitutionBenchmarkPayload:
+        organization, membership = self._require_action(
+            organization_id=organization_id,
+            user_id=user_id,
+            action=InstitutionalAction.VIEW_DASHBOARD,
+        )
+        dashboard = self._build_dashboard(
+            organization=organization,
+            minimum_group_size=minimum_group_size,
+        )
+        result = build_institution_benchmarks(
+            self._repo.session,
+            dashboard=dashboard,
+        )
+        self.record_audit_event(
+            InstitutionalAuditLogInput(
+                organization_id=organization.organization_id,
+                actor_user_id=user_id,
+                actor_role=OrganizationRole(membership.role),
+                action=InstitutionalAuditAction.INSTITUTION_DASHBOARD_VIEWED,
+                target_type="institutional_benchmarks",
+                target_id=organization.organization_id,
+                purpose="view privacy-safe institutional market benchmarks",
+                metadata={
+                    "benchmark_count": len(result.benchmarks),
+                    "minimum_group_size": result.privacy.minimum_cohort_size,
+                    "suppression_applied": result.privacy.suppression_applied,
+                },
+            )
+        )
+        return result
 
     def generate_report_for_user(
         self,
@@ -799,6 +962,22 @@ class InstitutionService:
         if membership is None:
             raise InstitutionalAccessDenied(organization_id)
         return organization, membership
+
+    def _build_dashboard(
+        self,
+        *,
+        organization: Organization,
+        minimum_group_size: int,
+    ) -> InstitutionalDashboardPayload:
+        student_memberships = self._repo.list_memberships_for_organization(
+            organization.organization_id
+        )
+        return build_institutional_dashboard(
+            self._repo.session,
+            organization=organization,
+            student_memberships=student_memberships,
+            minimum_group_size=minimum_group_size,
+        )
 
     def _require_active_membership(
         self,
