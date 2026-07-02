@@ -10,11 +10,17 @@ from backend.api.admin import router as admin_router
 from backend.api.auth0_middleware import Auth0JWTMiddleware
 from backend.api.billing import router as billing_router
 from backend.api.errors import register_exception_handlers
+from backend.api.external import router as external_router
 from backend.api.institutions import router as institutions_router
+from backend.api.integrations import router as integrations_router
 from backend.api.monetization import router as monetization_router
 from backend.api.observability import RequestObservabilityMiddleware
 from backend.api.personalized import router as personalized_router
+from backend.api.platform_intelligence import router as platform_intelligence_router
+from backend.api.platform_public import router as platform_public_router
 from backend.api.protection import APIProtectionMiddleware
+from backend.api.public_benchmarks import router as public_benchmarks_router
+from backend.api.public_reports import router as public_reports_router
 from backend.api.recommendations import router as recommendations_router
 from backend.api.routes import router as read_router
 from backend.api.user import router as user_router
@@ -53,7 +59,7 @@ def create_app(
             allow_origins=allowed_origins,
             allow_credentials=False,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+            allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID"],
         )
     app.add_middleware(Auth0JWTMiddleware, settings=settings)
     app.add_middleware(RequestObservabilityMiddleware)
@@ -98,10 +104,16 @@ def create_app(
     app.include_router(read_router)
     app.include_router(personalized_router)
     app.include_router(recommendations_router)
+    app.include_router(public_benchmarks_router)
+    app.include_router(public_reports_router)
+    app.include_router(platform_intelligence_router)
+    app.include_router(platform_public_router)
     app.include_router(monetization_router)
     app.include_router(billing_router)
     app.include_router(user_router)
     app.include_router(institutions_router)
+    app.include_router(integrations_router)
+    app.include_router(external_router)
     app.include_router(admin_router)
 
     return app

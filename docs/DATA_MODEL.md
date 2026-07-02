@@ -2529,3 +2529,194 @@ The MVP data model is acceptable when it can support:
 9. preserving state/version/freshness metadata
 10. supporting read APIs for region, company, comparison, and personalization flows
 That is the required data model baseline.
+
+⸻
+
+26. Layer 18 Historical Intelligence Foundation
+Layer 18A adds append-only historical labor-market intelligence records.
+These records are not canonical truth and do not replace current scoring or
+ranking authority.
+
+Historical tables:
+* `market_snapshots`
+* `company_region_snapshots`
+* `sector_region_snapshots`
+* `market_score_history`
+* `historical_observations`
+
+Snapshot rows include point-in-time score fields where available, coverage tier,
+freshness state, confidence score, warning metadata, provenance summary, and
+`created_at`. They intentionally do not include canonical `state`, `version`,
+or `updated_at` fields.
+
+Historical observations are derived from adjacent snapshots with conservative
+thresholds. They include observation type, target type/id, region id where
+relevant, previous/current snapshot ids, signed delta value, delta direction,
+severity, confidence score, evidence summary, and `created_at`.
+
+Rules:
+1. Snapshot creation is append-only.
+2. Delta detection does not mutate canonical rankings or current scores.
+3. Corrections create later historical records rather than rewriting older rows.
+4. API summaries do not expose raw internal source refs or admin-only metadata.
+
+⸻
+
+27. Layer 18B Predictive Signals And Market Indices
+Layer 18B adds derived intelligence on top of historical snapshots and
+observations. It does not create new canonical authority.
+
+Predictive signal tables:
+* `predictive_signals`
+* `signal_inputs`
+
+Predictive signal rows include signal type, target type/id, region id where
+relevant, signal strength, confidence level, evidence window, snapshot count,
+minimum-evidence flag, summary, warnings, status, `created_at`, and optional
+`expires_at`.
+
+Signal inputs preserve audit references to source snapshots and historical
+observations. Signals require at least 3 snapshots before becoming active.
+Below-threshold evidence can create candidate signals but must not be returned
+as active.
+
+Proprietary index tables:
+* `market_indices`
+* `market_index_versions`
+* `market_index_scores`
+* `market_index_inputs`
+
+Required index keys:
+* `early_career_tech_access`
+* `ai_opportunity_geography`
+* `internship_density`
+* `company_presence_quality`
+* `hidden_market_opportunity`
+
+Index versions store public formula descriptions, input schema, internal weight
+configuration, status, effective date, and `created_at`. Formula changes create
+new version rows. Existing score rows continue to reference the version used at
+calculation time.
+
+Index scores preserve index id, index version id, region id, score, optional
+rank, confidence score, freshness state, evidence summary, calculated time, and
+`created_at`. Index inputs preserve input names, values, weights, source type,
+source id, and `created_at`.
+
+Rules:
+1. Predictive signals and index scores do not mutate canonical rankings.
+2. Predictive signals and index scores do not mutate official region scores.
+3. Predictive signals and index scores do not mutate recommendation outputs.
+4. Public APIs do not expose internal formula weights or raw input references.
+
+⸻
+
+28. Layer 18C Benchmark Reports
+Layer 18C adds reviewable, public-facing benchmark report records generated
+from Layer 18A historical intelligence and Layer 18B derived indices/signals.
+Benchmark reports are intelligence products, not canonical market truth.
+
+Benchmark report tables:
+* `benchmark_reports`
+* `benchmark_report_sections`
+* `benchmark_report_rankings`
+* `benchmark_report_evidence`
+
+Required report keys:
+* `best_cities_early_career_ai_roles`
+* `top_emerging_tech_markets`
+* `best_markets_product_careers`
+* `best_regions_internship_access`
+
+Allowed report states:
+* `draft`
+* `review_ready`
+* `published`
+* `archived`
+* `superseded`
+
+`benchmark_reports` rows store report key, title, report period/type, status,
+summary, public methodology summary, data window, freshness notes, confidence
+notes, coverage notes, limitations, `created_at`, and lifecycle timestamps for
+publication, archival, or supersession.
+
+`benchmark_report_sections` rows store ordered report sections. Sections are
+attached to one report and are public-safe narrative payloads.
+
+`benchmark_report_rankings` rows store report-specific ranked regions with
+rank, score, optional index score reference, public-safe explanation, warnings,
+confidence score, freshness state, and `created_at`.
+
+`benchmark_report_evidence` rows store auditable references to safe evidence
+classes such as index scores, historical observations, and active predictive
+signals. Evidence summaries must be public-safe and must not expose internal
+formula weights, raw index inputs, admin-only metadata, or internal source
+internals.
+
+Rules:
+1. Draft and review-ready reports are not public.
+2. Published reports are exposed through read-only public APIs.
+3. Publishing is explicit; reports do not auto-publish from unreviewed signals.
+4. Published reports are superseded or archived rather than silently rewritten.
+5. Report generation does not mutate canonical rankings, official scores,
+   index scores, predictive signals, recommendation outputs, or contribution
+   data.
+6. Partial coverage and missing inputs are disclosed through warnings,
+   coverage notes, confidence notes, freshness notes, and limitations.
+
+⸻
+
+29. Layer 18D Data Network Effects And Contribution Governance
+Layer 18D adds governed contribution intake and review records. These records
+allow users and institutions to submit structured market intelligence while
+keeping external data outside canonical authority until reviewed through
+existing governance paths.
+
+Contribution governance tables:
+* `data_contributions`
+* `contribution_evidence`
+* `contribution_reviews`
+
+Allowed contribution types:
+* `verified_correction`
+* `company_presence_update`
+* `regional_employer_list`
+* `career_center_intelligence`
+* `internship_program_information`
+* `role_access_feedback`
+* `source_suggestion`
+* `market_quality_feedback`
+* `outdated_data_report`
+
+Allowed contribution statuses:
+* `submitted`
+* `needs_review`
+* `verified`
+* `rejected`
+* `merged`
+* `superseded`
+
+`data_contributions` rows store contributor type/id, optional institution id,
+target type/id, optional region id, contribution type, structured payload,
+summary, claimed confidence, status, `created_at`, and optional `reviewed_at`.
+They are noncanonical workflow records and do not carry canonical `state`,
+`version`, or `updated_at` fields.
+
+`contribution_evidence` rows store evidence type, safe URL or reference fields,
+description, optional uploaded-reference id, and `created_at`.
+
+`contribution_reviews` rows store reviewer id, review decision, internal review
+notes, governed follow-up candidate/task flags or refs, and `created_at`.
+Review rows are append-only.
+
+Rules:
+1. Submitted/unverified contributions do not mutate canonical rankings,
+   official scores, index scores, predictive signals, benchmark reports,
+   recommendation outputs, historical snapshots, or published outputs.
+2. Verified contributions still do not directly mutate rankings or scores.
+3. Verified or merged reviews may record governed follow-up candidate/task
+   flags or refs, but canonical changes must pass existing governance/refresh
+   paths.
+4. Contribution review must not rewrite historical snapshots; corrections use
+   later safe correction records or future governed refresh flows.
+5. Rejected contributions are preserved for auditability.

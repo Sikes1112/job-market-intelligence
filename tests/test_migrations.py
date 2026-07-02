@@ -86,7 +86,7 @@ def test_local_demo_migration_wrapper_stamps_existing_create_all_schema(tmp_path
     try:
         with engine.connect() as connection:
             version = connection.execute(text("select version_num from alembic_version"))
-            assert version.scalar_one() == "0016_institutional_reports_data_requests"
+            assert version.scalar_one() == "0024_platform_api_access_control"
     finally:
         engine.dispose()
 
@@ -102,7 +102,7 @@ def test_alembic_upgrade_head_is_idempotent(tmp_path) -> None:
     try:
         with engine.connect() as connection:
             version = connection.execute(text("select version_num from alembic_version"))
-            assert version.scalar_one() == "0016_institutional_reports_data_requests"
+            assert version.scalar_one() == "0024_platform_api_access_control"
     finally:
         engine.dispose()
 
@@ -130,6 +130,6 @@ def test_existing_schema_stamp_rejects_schema_with_missing_index(tmp_path) -> No
                 versions = connection.execute(
                     text("select version_num from alembic_version")
                 ).scalars()
-            assert "0016_institutional_reports_data_requests" not in set(versions)
+            assert "0024_platform_api_access_control" not in set(versions)
     finally:
         engine.dispose()

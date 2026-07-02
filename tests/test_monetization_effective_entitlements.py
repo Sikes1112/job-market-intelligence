@@ -7,6 +7,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from backend.api import monetization as monetization_api
 from backend.monetization.accounts import (
     MonetizationAccountType,
     PlanAssignmentSource,
@@ -85,8 +86,10 @@ def test_monetization_me_and_entitlements_default_to_free(api_client) -> None:
 
 def test_monetization_usage_endpoint_exposes_only_usage_state(
     api_client,
+    monkeypatch,
     session: Session,
 ) -> None:
+    monkeypatch.setattr(monetization_api, "_now", lambda: NOW)
     headers = _auth_headers("auth0|usage_user")
     user_id = _current_user_id(api_client, headers)
     repo = MonetizationRepository(session)

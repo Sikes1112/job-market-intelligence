@@ -13,6 +13,9 @@ from backend.institutions.roles import (
     INSTITUTIONAL_REPORT_ROLES,
     ORG_ADMIN_ROLES,
     ORGANIZATION_SURFACE_ROLES,
+    PARTNER_IMPORT_REVIEW_ROLES,
+    PARTNER_IMPORT_UPLOAD_ROLES,
+    PARTNER_IMPORT_VIEW_ROLES,
     OrganizationMembershipStatus,
     OrganizationRole,
     parse_organization_role,
@@ -28,6 +31,9 @@ class InstitutionalAction(StrEnum):
     VIEW_MEMBERS = "view_members"
     MANAGE_MEMBERS = "manage_members"
     VIEW_AUDIT_LOGS = "view_audit_logs"
+    VIEW_PARTNER_IMPORTS = "view_partner_imports"
+    UPLOAD_PARTNER_IMPORTS = "upload_partner_imports"
+    REVIEW_PARTNER_IMPORTS = "review_partner_imports"
 
 
 REQUIRED_ROLES_BY_ACTION: dict[InstitutionalAction, frozenset[OrganizationRole]] = {
@@ -39,6 +45,9 @@ REQUIRED_ROLES_BY_ACTION: dict[InstitutionalAction, frozenset[OrganizationRole]]
     InstitutionalAction.VIEW_MEMBERS: ORG_ADMIN_ROLES,
     InstitutionalAction.MANAGE_MEMBERS: ORG_ADMIN_ROLES,
     InstitutionalAction.VIEW_AUDIT_LOGS: AUDIT_LOG_ROLES,
+    InstitutionalAction.VIEW_PARTNER_IMPORTS: PARTNER_IMPORT_VIEW_ROLES,
+    InstitutionalAction.UPLOAD_PARTNER_IMPORTS: PARTNER_IMPORT_UPLOAD_ROLES,
+    InstitutionalAction.REVIEW_PARTNER_IMPORTS: PARTNER_IMPORT_REVIEW_ROLES,
 }
 
 
@@ -174,6 +183,48 @@ def can_manage_data_requests(
         user_id=user_id,
         organization_id=organization_id,
         required_roles=DATA_REQUEST_ADMIN_ROLES,
+    )
+
+
+def can_view_partner_imports(
+    repository: InstitutionRepository,
+    *,
+    user_id: str,
+    organization_id: str,
+) -> bool:
+    return has_required_institutional_role(
+        repository,
+        user_id=user_id,
+        organization_id=organization_id,
+        required_roles=PARTNER_IMPORT_VIEW_ROLES,
+    )
+
+
+def can_upload_partner_imports(
+    repository: InstitutionRepository,
+    *,
+    user_id: str,
+    organization_id: str,
+) -> bool:
+    return has_required_institutional_role(
+        repository,
+        user_id=user_id,
+        organization_id=organization_id,
+        required_roles=PARTNER_IMPORT_UPLOAD_ROLES,
+    )
+
+
+def can_review_partner_imports(
+    repository: InstitutionRepository,
+    *,
+    user_id: str,
+    organization_id: str,
+) -> bool:
+    return has_required_institutional_role(
+        repository,
+        user_id=user_id,
+        organization_id=organization_id,
+        required_roles=PARTNER_IMPORT_REVIEW_ROLES,
     )
 
 

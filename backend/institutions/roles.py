@@ -86,6 +86,9 @@ ADVISOR_TOOL_ROLES: frozenset[OrganizationRole] = frozenset(
 )
 INSTITUTIONAL_REPORT_ROLES: frozenset[OrganizationRole] = ORGANIZATION_SURFACE_ROLES
 DATA_REQUEST_ADMIN_ROLES: frozenset[OrganizationRole] = ORG_ADMIN_ROLES
+PARTNER_IMPORT_VIEW_ROLES: frozenset[OrganizationRole] = ORGANIZATION_SURFACE_ROLES
+PARTNER_IMPORT_UPLOAD_ROLES: frozenset[OrganizationRole] = ADVISOR_TOOL_ROLES
+PARTNER_IMPORT_REVIEW_ROLES: frozenset[OrganizationRole] = ORG_ADMIN_ROLES
 
 
 def parse_organization_role(value: OrganizationRole | str | None) -> OrganizationRole | None:

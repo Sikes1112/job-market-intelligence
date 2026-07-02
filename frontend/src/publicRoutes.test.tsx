@@ -3,10 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
 import { FrontendAuthProvider } from "./auth";
+import { PUBLIC_SEO_PAGES } from "./publicSeoContent";
 
 type MockPayload = {
   data: unknown;
   warnings?: unknown[];
+  status?: number;
+  error?: { code: string; message: string };
 };
 
 function envelope(data: unknown, warnings: unknown[] = []) {
@@ -15,6 +18,61 @@ function envelope(data: unknown, warnings: unknown[] = []) {
     data,
     metadata: { state: "test", source_versions: {}, warnings },
     error: null,
+  };
+}
+
+function errorEnvelope(code: string, message: string) {
+  return {
+    status: "error",
+    data: null,
+    metadata: { state: "failed", source_versions: {}, warnings: [] },
+    error: { code, message },
+  };
+}
+
+function platformEmbedAccessPayload(slug: string) {
+  const comparison = slug === "region-comparison";
+  return {
+    allowed: true,
+    embed_product_id: comparison ? "region_comparison" : "market_score_card",
+    payload: {
+      embed_product_id: comparison ? "region_comparison" : "market_score_card",
+      title: comparison ? "Regional market comparison" : "Market score card",
+      attribution: "Powered by Job Market Intelligence. Verify important decisions independently.",
+      freshness: {
+        status: "partial",
+        freshness_expires_at: null,
+        last_updated_at: null,
+      },
+      confidence: {
+        level: "medium",
+        label: comparison ? "Directional public-safe comparison" : "Directional public-safe score",
+      },
+      source_summary: {
+        data_basis: "public_safe_summary",
+        source_count: comparison ? 2 : 1,
+        source_categories: comparison
+          ? ["region score summary", "company-region summaries"]
+          : ["region score summary"],
+        notes: ["No raw records or source ids are exposed."],
+      },
+      warnings: comparison
+        ? [
+            "Embed output is a summary view, not a raw export.",
+            "Coverage and freshness vary by market.",
+          ]
+        : ["Score card is derived market intelligence, not comprehensive truth."],
+      metrics: comparison
+        ? [
+            { label: "Greater Boston", opportunity: 0.81, early_career_access: 0.86 },
+            { label: "Greater Atlanta", opportunity: 0.67, early_career_access: 0.58 },
+          ]
+        : [
+            { label: "Opportunity", value: 0.81 },
+            { label: "Early-career access", value: 0.86 },
+            { label: "Live market", value: 0.68 },
+          ],
+    },
   };
 }
 
@@ -841,10 +899,303 @@ function monetizationAccessPreview(value: string) {
   };
 }
 
+const PUBLIC_REPORT_SLUGS = [
+  "best-cities-early-career-ai-careers",
+  "top-product-management-markets",
+  "hidden-tech-hubs-new-graduates",
+];
+
+const PUBLIC_BENCHMARK_SLUGS = [
+  "early-career-tech-access-index",
+  "ai-career-geography-index",
+  "product-career-market-index",
+];
+
+function publicReport(slug: string) {
+  const titles: Record<string, string> = {
+    "best-cities-early-career-ai-careers": "Best Cities for Early-Career AI Careers",
+    "top-product-management-markets": "Top Product Management Markets",
+    "hidden-tech-hubs-new-graduates": "Hidden Tech Hubs for New Graduates",
+  };
+  const markets = slug === "top-product-management-markets"
+    ? [["nyc", "NYC"], ["austin", "Austin"]]
+    : slug === "hidden-tech-hubs-new-graduates"
+      ? [["raleigh_durham", "Raleigh-Durham"], ["pittsburgh", "Pittsburgh"]]
+      : [["boston", "Boston"], ["sf_bay_area", "SF Bay Area"]];
+  return {
+    report_id: `public_report:${slug}`,
+    slug,
+    title: titles[slug] ?? "Unknown Report",
+    category: slug.replaceAll("-", "_"),
+    report_period: "2026 methodology preview",
+    summary: "Fixture public career market intelligence report summary.",
+    markets_covered: markets.map(([market_id, market_label]) => ({
+      market_id,
+      market_label,
+      coverage_note: "Coverage must be checked before use.",
+    })),
+    market_results: markets.map(([market_id, market_label]) => ({
+      result_type: "featured",
+      rank: null,
+      market_id,
+      market_label,
+      headline: `${market_label} fixture headline`,
+      rationale: `${market_label} fixture rationale with current coverage caveat.`,
+      evidence_signals: ["company-region presence", "early-career access"],
+      freshness_date: "2026-06-18",
+      confidence: "low",
+      warnings: [
+        "Featured-market example only; not a computed ranking.",
+        "Current coverage, freshness, and source evidence must be checked before use.",
+      ],
+      source_provenance_summary: publicReportProvenance(),
+    })),
+    methodology_summary:
+      "This fixture methodology explains public report evidence without benchmark scoring or recommendation ranking.",
+    limitations: [
+      "No benchmark/index scoring is performed in Layer 19B.",
+      "Featured order is editorial/template order, not a computed ranking.",
+    ],
+    freshness_date: "2026-06-18",
+    freshness_status: "unknown",
+    confidence: "low",
+    warnings: [
+      "Layer 19B public reports are demo-safe templates.",
+    ],
+    source_provenance_summary: publicReportProvenance(),
+    related_links: [
+      { label: "Methodology foundation", href: "/methodology", link_type: "public_page" },
+      { label: "Category glossary", href: "/glossary", link_type: "public_page" },
+    ],
+    suggested_citation: {
+      source_name: "Job Market Intelligence",
+      title: titles[slug] ?? "Unknown Report",
+      period: "2026 methodology preview",
+      product_attribution: "Opportunity Geography Intelligence / Career Market Intelligence",
+      public_path: `/reports/${slug}`,
+      accessed_or_freshness_date: "2026-06-18",
+    },
+    share_summary: {
+      title: titles[slug] ?? "Unknown Report",
+      category_claim: "Public career market intelligence report",
+      confidence_label: "Low confidence",
+      freshness_label: "Freshness unknown - 2026-06-18",
+      takeaway: "Fixture public career market intelligence report summary.",
+      public_path: `/reports/${slug}`,
+      warning: "Demo-safe public report; not production ranking truth.",
+    },
+    source_authority: {
+      labels: [
+        "demo-safe",
+        "low-confidence",
+        "methodology-backed",
+        "not production ranking truth",
+      ],
+      summary:
+        "This report is a public Layer 19 display artifact without production rankings or hidden scoring.",
+    },
+    institutional_cta: {
+      label: "Use this report for career-center planning",
+      body: "Apply the report as directional career-market intelligence for advising.",
+      href: "/career-market-guides",
+      link_type: "public_page",
+    },
+  };
+}
+
+function publicReportProvenance() {
+  return {
+    data_basis: "demo_template",
+    source_count: 3,
+    source_categories: ["Layer 19 category language", "public priority-market vocabulary"],
+    provenance_notes: ["No raw source references are exposed."],
+  };
+}
+
+function publicReports() {
+  return {
+    reports: PUBLIC_REPORT_SLUGS.map((slug) => {
+      const report = publicReport(slug);
+      return {
+        report_id: report.report_id,
+        slug: report.slug,
+        title: report.title,
+        category: report.category,
+        report_period: report.report_period,
+        summary: report.summary,
+        freshness_date: report.freshness_date,
+        confidence: report.confidence,
+        warnings: report.warnings,
+      };
+    }),
+  };
+}
+
+function publicBenchmark(slug: string) {
+  const names: Record<string, string> = {
+    "early-career-tech-access-index": "Early-Career Tech Access Index",
+    "ai-career-geography-index": "AI Career Geography Index",
+    "product-career-market-index": "Product Career Market Index",
+  };
+  const markets = slug === "ai-career-geography-index"
+    ? [["sf_bay_area", "SF Bay Area", 72], ["seattle", "Seattle", 66]]
+    : slug === "product-career-market-index"
+      ? [["nyc", "NYC", 69], ["austin", "Austin", 60]]
+      : [["boston", "Boston", 68], ["raleigh_durham", "Raleigh-Durham", 61]];
+  return {
+    benchmark_id: `public_benchmark:${slug}`,
+    slug,
+    name: names[slug] ?? "Unknown Benchmark",
+    category: slug.replaceAll("-", "_"),
+    period: "2026 methodology preview",
+    summary: "Fixture public benchmark summary with demo-safe display data.",
+    methodology_summary:
+      "This fixture methodology explains benchmark display without production scoring or recommendation ranking.",
+    limitations: [
+      "No production benchmark/index scoring is performed in Layer 19C.",
+      "Demo display values are static examples, not production-grade truth.",
+    ],
+    freshness_date: "2026-06-18",
+    freshness_status: "unknown",
+    confidence: "low",
+    warnings: [
+      "Layer 19C public benchmarks are demo-safe display templates and not production benchmark scores.",
+    ],
+    market_results: markets.map(([market_id, market_label, value]) => ({
+      result_type: "featured",
+      rank: null,
+      market_id,
+      market_label,
+      score_display: {
+        label: "Demo display score",
+        value,
+        display_value: `${value} / 100 demo-safe display`,
+        score_basis: "demo_static",
+        caveat: "Demo display value only; not production benchmark scoring.",
+      },
+      subscores: [
+        {
+          key: "early_career_access",
+          label: "Early-career access",
+          value: Number(value) - 2,
+          display_value: `${Number(value) - 2} / 100 demo-safe display`,
+          explanation: "Static fixture subscore for public rendering.",
+        },
+        {
+          key: "coverage_readiness",
+          label: "Coverage readiness",
+          value: Number(value) - 6,
+          display_value: `${Number(value) - 6} / 100 demo-safe display`,
+          explanation: "Static fixture subscore for coverage caveats.",
+        },
+      ],
+      explanation: `${market_label} fixture explanation; not production benchmark scoring.`,
+      warnings: [
+        "Demo-safe benchmark display only; not production-grade truth.",
+      ],
+      freshness_date: "2026-06-18",
+      confidence: "low",
+      source_provenance_summary: publicBenchmarkProvenance(),
+    })),
+    source_provenance_summary: publicBenchmarkProvenance(),
+    related_links: [
+      { label: "Benchmark methodology", href: "/methodology", link_type: "public_page" },
+      { label: "Market intelligence reports", href: "/reports", link_type: "public_page" },
+    ],
+    suggested_citation: {
+      source_name: "Job Market Intelligence",
+      title: names[slug] ?? "Unknown Benchmark",
+      period: "2026 methodology preview",
+      product_attribution: "Opportunity Geography Intelligence / Career Market Intelligence",
+      public_path: `/benchmarks/${slug}`,
+      accessed_or_freshness_date: "2026-06-18",
+    },
+    share_summary: {
+      title: names[slug] ?? "Unknown Benchmark",
+      category_claim: "Public career market intelligence benchmark",
+      confidence_label: "Low confidence",
+      freshness_label: "Freshness unknown - 2026-06-18",
+      takeaway: "Fixture public benchmark summary with demo-safe display data.",
+      public_path: `/benchmarks/${slug}`,
+      warning: "Demo-safe public benchmark; not production benchmark truth.",
+    },
+    source_authority: {
+      labels: [
+        "demo-safe",
+        "low-confidence",
+        "methodology-backed",
+        "not production benchmark truth",
+      ],
+      summary:
+        "This benchmark is a public Layer 19 display artifact without production scoring authority.",
+    },
+    institutional_cta: {
+      label: "Compare markets for student placement strategy",
+      body: "Use this index as directional career-market intelligence for planning.",
+      href: "/career-market-guides",
+      link_type: "public_page",
+    },
+  };
+}
+
+function publicBenchmarkProvenance() {
+  return {
+    data_basis: "demo_template",
+    source_count: 3,
+    source_categories: ["Layer 19 benchmark methodology", "public priority-market vocabulary"],
+    provenance_notes: ["No raw source references are exposed."],
+  };
+}
+
+function publicBenchmarks() {
+  return {
+    benchmarks: PUBLIC_BENCHMARK_SLUGS.map((slug) => {
+      const benchmark = publicBenchmark(slug);
+      return {
+        benchmark_id: benchmark.benchmark_id,
+        slug: benchmark.slug,
+        name: benchmark.name,
+        category: benchmark.category,
+        period: benchmark.period,
+        summary: benchmark.summary,
+        freshness_date: benchmark.freshness_date,
+        confidence: benchmark.confidence,
+        warnings: benchmark.warnings,
+      };
+    }),
+  };
+}
+
 function responsePayloadFor(input: RequestInfo | URL): MockPayload {
   const value = typeof input === "string" ? input : input.toString();
 
+  if (value.startsWith("/api/v1/platform/embeds/")) {
+    const url = new URL(value, "https://app.local");
+    const slug = url.pathname.split("/").at(-1) ?? "";
+    const origin = url.searchParams.get("origin");
+    if (!origin || origin.includes("blocked.example") || origin.includes("unknown.example")) {
+      return {
+        data: null,
+        status: 403,
+        error: {
+          code: "EMBED_DOMAIN_NOT_ALLOWED",
+          message: "This embed is not approved for the requesting domain.",
+        },
+      };
+    }
+    return { data: platformEmbedAccessPayload(slug) };
+  }
   if (value === "/health") return { data: { service: "test" } };
+  if (value === "/public/benchmarks") return { data: publicBenchmarks() };
+  if (value.startsWith("/public/benchmarks/")) {
+    const slug = decodeURIComponent(value.slice("/public/benchmarks/".length));
+    return { data: PUBLIC_BENCHMARK_SLUGS.includes(slug) ? publicBenchmark(slug) : null };
+  }
+  if (value === "/public/reports") return { data: publicReports() };
+  if (value.startsWith("/public/reports/")) {
+    const slug = decodeURIComponent(value.slice("/public/reports/".length));
+    return { data: PUBLIC_REPORT_SLUGS.includes(slug) ? publicReport(slug) : null };
+  }
   if (value === "/regions") {
     return {
       data: {
@@ -1147,9 +1498,13 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
 function stubPublicFetch() {
   const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input) => {
     const payload = responsePayloadFor(input);
-    return new Response(JSON.stringify(envelope(payload.data, payload.warnings)), {
+    const status = payload.status ?? 200;
+    const responseBody = payload.error
+      ? errorEnvelope(payload.error.code, payload.error.message)
+      : envelope(payload.data, payload.warnings);
+    return new Response(JSON.stringify(responseBody), {
       headers: { "Content-Type": "application/json" },
-      status: 200,
+      status,
     });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -1165,10 +1520,18 @@ function renderAt(path: string) {
   );
 }
 
+function setDocumentReferrer(value: string) {
+  Object.defineProperty(document, "referrer", {
+    configurable: true,
+    value,
+  });
+}
+
 describe("public demo routes", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    setDocumentReferrer("");
     window.history.pushState(null, "", "/");
   });
 
@@ -1181,6 +1544,9 @@ describe("public demo routes", () => {
     expect(screen.getAllByRole("link", { name: "Enter demo" }).some((link) =>
       link.getAttribute("href") === "/markets"
     )).toBe(true);
+    expect(screen.getAllByRole("link", { name: "Guides" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Glossary" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Methodology" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Data limitations" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Privacy" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Terms and disclaimer" }).length).toBeGreaterThan(0);
@@ -1195,6 +1561,315 @@ describe("public demo routes", () => {
 
     expect(window.location.pathname).toBe("/markets");
     expect(await screen.findByRole("heading", { name: "Explore markets" })).toBeTruthy();
+  });
+
+  test("developer portal and docs routes render API packaging content", () => {
+    renderAt("/developers");
+
+    expect(screen.getByRole("heading", { name: "Platform API developer portal" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "OpenAPI JSON" }).getAttribute("href"))
+      .toBe("/api/v1/platform/docs/openapi.json");
+    expect(screen.getByRole("link", { name: "Postman JSON" }).getAttribute("href"))
+      .toBe("/api/v1/platform/docs/postman.json");
+
+    cleanup();
+    renderAt("/developers/docs/authentication");
+
+    expect(screen.getByRole("heading", { name: "Authentication" })).toBeTruthy();
+    expect(screen.getAllByText(/X-API-Key/i).length).toBeGreaterThan(0);
+
+    cleanup();
+    renderAt("/developers/docs/errors");
+
+    expect(screen.getByRole("heading", { name: "Errors" })).toBeTruthy();
+    expect(screen.getByText(/UNSUPPORTED_QUERY/i)).toBeTruthy();
+    expect(screen.getByText(/RATE_LIMIT_EXCEEDED/i)).toBeTruthy();
+  });
+
+  test("data licensing route renders source-safe dataset cards", () => {
+    renderAt("/data-licensing");
+
+    expect(screen.getByRole("heading", { name: "Derived market intelligence datasets" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Regional market intelligence" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Early-career access scores" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Company-region presence" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Historical hiring signal snapshots" })).toBeTruthy();
+    expect(screen.getAllByText(/Raw scrape records/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Contact sales for enterprise licensing" })).toBeTruthy();
+  });
+
+  test("approved iframe embed routes render attribution freshness and source summary", async () => {
+    const fetchMock = stubPublicFetch();
+    setDocumentReferrer("https://careers.example.edu/page");
+    renderAt("/embed/region-comparison");
+
+    expect(await screen.findByRole("heading", { name: "Regional market comparison" })).toBeTruthy();
+    expect(screen.getByText(/Powered by Job Market Intelligence/i)).toBeTruthy();
+    expect(screen.getByText("Freshness")).toBeTruthy();
+    expect(screen.getByText("Source summary")).toBeTruthy();
+    expect(screen.getByText(/not a raw export/i)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/platform/embeds/region-comparison?origin=https%3A%2F%2Fcareers.example.edu%2Fpage",
+      expect.anything(),
+    );
+
+    cleanup();
+    setDocumentReferrer("https://partners.example.org/page");
+    renderAt("/embed/market-score-card");
+
+    expect(await screen.findByRole("heading", { name: "Market score card" })).toBeTruthy();
+    expect(screen.getByText("Confidence")).toBeTruthy();
+    expect(screen.getByText(/no raw records or source ids/i)).toBeTruthy();
+  });
+
+  test("blocked and unapproved iframe embed routes render safe denial states", async () => {
+    stubPublicFetch();
+    setDocumentReferrer("https://blocked.example/frame");
+    renderAt("/embed/region-comparison");
+
+    expect(await screen.findByRole("heading", { name: "Embed unavailable" })).toBeTruthy();
+    expect(screen.getByText("EMBED_DOMAIN_NOT_ALLOWED")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Regional market comparison" })).toBeNull();
+    expect(document.body.textContent ?? "").not.toMatch(/raw_job|raw_scrape|billing|ingestion/i);
+
+    cleanup();
+    setDocumentReferrer("https://blocked.example/frame");
+    renderAt("/embed/market-score-card");
+
+    expect(await screen.findByRole("heading", { name: "Embed unavailable" })).toBeTruthy();
+    expect(screen.getByText("EMBED_DOMAIN_NOT_ALLOWED")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Market score card" })).toBeNull();
+    expect(document.body.textContent ?? "").not.toMatch(/raw_job|raw_scrape|billing|ingestion/i);
+
+    cleanup();
+    setDocumentReferrer("");
+    renderAt("/embed/region-comparison");
+
+    expect(await screen.findByRole("heading", { name: "Embed unavailable" })).toBeTruthy();
+    expect(screen.getByText("EMBED_DOMAIN_NOT_ALLOWED")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Regional market comparison" })).toBeNull();
+
+    cleanup();
+    setDocumentReferrer("https://unknown.example/frame");
+    renderAt("/embed/market-score-card");
+
+    expect(await screen.findByRole("heading", { name: "Embed unavailable" })).toBeTruthy();
+    expect(screen.getByText("EMBED_DOMAIN_NOT_ALLOWED")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Market score card" })).toBeNull();
+  });
+
+  test("/career-market-guides renders public SEO content cards", () => {
+    renderAt("/career-market-guides");
+
+    expect(screen.getByRole("heading", { name: "Opportunity geography guides" })).toBeTruthy();
+    for (const page of PUBLIC_SEO_PAGES) {
+      expect(screen.getByRole("heading", { name: page.title })).toBeTruthy();
+    }
+    expect(screen.getAllByRole("link", { name: "Read guide" }).length).toBe(PUBLIC_SEO_PAGES.length);
+    expect(screen.getAllByText(/Confidence: Low/i).length).toBeGreaterThan(0);
+  });
+
+  test.each(PUBLIC_SEO_PAGES.map((page) => [page.slug, page.routePath, page.title]))(
+    "%s renders public SEO page requirements",
+    (slug, routePath, title) => {
+      renderAt(routePath);
+
+      expect(screen.getByRole("heading", { name: title })).toBeTruthy();
+      expect(screen.getAllByText(/Confidence: Low/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Freshness date/i).length).toBeGreaterThan(0);
+      expect(screen.getByRole("heading", { name: "Methodology" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Limitations" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Warnings" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Category language" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Related reports" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Related benchmarks" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Source authority" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Share summary" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Suggested citation" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Institutional use" })).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Explore institutional market intelligence" })).toBeTruthy();
+      expect(screen.getAllByText(/demo-safe/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/not production ranking truth/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("link", { name: "Methodology foundation" }).length).toBeGreaterThan(0);
+      expect(document.title).toBe(PUBLIC_SEO_PAGES.find((page) => page.slug === slug)?.seo.title);
+    },
+  );
+
+  test("best cities SEO page renders featured cities and related assets", () => {
+    renderAt("/best-cities/best-cities-product-managers");
+
+    expect(screen.getByRole("heading", { name: "Featured cities" })).toBeTruthy();
+    expect(screen.getByText(/what this page is measuring/i)).toBeTruthy();
+    expect(screen.getAllByText("NYC").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Austin").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Top Product Management Markets" }).getAttribute("href"))
+      .toBe("/reports/top-product-management-markets");
+    expect(screen.getByRole("link", { name: "Product Career Market Index" }).getAttribute("href"))
+      .toBe("/benchmarks/product-career-market-index");
+  });
+
+  test("comparison SEO page renders summary, markets, best-for guidance, and tradeoffs", () => {
+    renderAt("/compare/nyc-vs-seattle-tech-careers");
+
+    expect(screen.getByRole("heading", { name: "Comparison summary" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Market-by-market sections" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Best-for guidance" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Tradeoffs" })).toBeTruthy();
+    expect(screen.getAllByText("NYC").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Seattle").length).toBeGreaterThan(0);
+  });
+
+  test("city market SEO page renders market overview and career-market signals", () => {
+    renderAt("/career-markets/seattle-ai-careers-market");
+
+    expect(screen.getByRole("heading", { name: "Market overview" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Career-market signals" })).toBeTruthy();
+    expect(screen.getAllByText(/company-region presence/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/early-career access/i).length).toBeGreaterThan(0);
+  });
+
+  test("role market SEO page renders overview, examples, and early-career access", () => {
+    renderAt("/roles/cybersecurity-entry-level-markets");
+
+    expect(screen.getByRole("heading", { name: "Role market overview" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Market examples" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Early-career access" })).toBeTruthy();
+    expect(screen.getAllByText(/cybersecurity/i).length).toBeGreaterThan(0);
+  });
+
+  test("unknown public SEO slug renders graceful not-found state", () => {
+    renderAt("/best-cities/missing-guide");
+
+    expect(screen.getByRole("heading", { name: "Guide not found" })).toBeTruthy();
+    expect(screen.getByText(/No public career market guide is registered for missing-guide/i)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to guides" })).toBeTruthy();
+  });
+
+  test("/reports renders public report cards", async () => {
+    stubPublicFetch();
+    renderAt("/reports");
+
+    expect(await screen.findByRole("heading", { name: "Market intelligence reports" })).toBeTruthy();
+    expect(screen.getAllByText("Best Cities for Early-Career AI Careers").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Top Product Management Markets").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Hidden Tech Hubs for New Graduates").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Confidence: Low/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/warning/i).length).toBeGreaterThan(0);
+  });
+
+  test("/benchmarks renders public benchmark cards", async () => {
+    stubPublicFetch();
+    renderAt("/benchmarks");
+
+    expect(await screen.findByRole("heading", { name: "Career market indices" })).toBeTruthy();
+    expect(screen.getAllByText("Early-Career Tech Access Index").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("AI Career Geography Index").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Product Career Market Index").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Confidence: Low/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/warning/i).length).toBeGreaterThan(0);
+  });
+
+  test.each(PUBLIC_REPORT_SLUGS)("/reports/%s renders report detail", async (slug) => {
+    stubPublicFetch();
+    renderAt(`/reports/${slug}`);
+    const report = publicReport(slug);
+
+    expect(await screen.findByRole("heading", { name: report.title })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Methodology" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Limitations" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Warnings" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Source and provenance summary" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Source authority" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Share summary" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Suggested citation" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Institutional use" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Use this report for career-center planning" })).toBeTruthy();
+    expect(screen.getAllByText(/Freshness/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Confidence: Low/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Featured-market example only/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/not production ranking truth/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/No benchmark\/index scoring is performed in Layer 19B/i)).toBeTruthy();
+  });
+
+  test.each(PUBLIC_BENCHMARK_SLUGS)("/benchmarks/%s renders benchmark detail", async (slug) => {
+    stubPublicFetch();
+    renderAt(`/benchmarks/${slug}`);
+    const benchmark = publicBenchmark(slug);
+
+    expect(await screen.findByRole("heading", { name: benchmark.name })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Methodology" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Score display" })).toBeTruthy();
+    expect(screen.getAllByRole("heading", { name: "Subscores" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Limitations" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Warnings" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Source and provenance summary" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Related links" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Source authority" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Share summary" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Suggested citation" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Institutional use" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Benchmark methodology" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Market intelligence reports" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Compare markets for student placement strategy" })).toBeTruthy();
+    expect(screen.getAllByText(/Freshness/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Confidence: Low/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/demo-safe display/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/not production benchmark truth/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/No production benchmark\/index scoring is performed in Layer 19C/i)).toBeTruthy();
+  });
+
+  test("unknown public report slug renders graceful not-found state", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const value = typeof input === "string" ? input : input.toString();
+      if (value === "/public/reports") {
+        return new Response(JSON.stringify(envelope(publicReports())), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({
+        status: "error",
+        data: null,
+        metadata: { state: "failed", warnings: [] },
+        error: { code: "NOT_FOUND", message: "Public report not found: 'missing-report'" },
+      }), {
+        headers: { "Content-Type": "application/json" },
+        status: 404,
+      });
+    }));
+
+    renderAt("/reports/missing-report");
+
+    expect(await screen.findByRole("heading", { name: "Report not found" })).toBeTruthy();
+    expect(screen.getByText(/No public report is registered for missing-report/i)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to reports" })).toBeTruthy();
+  });
+
+  test("unknown public benchmark slug renders graceful not-found state", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const value = typeof input === "string" ? input : input.toString();
+      if (value === "/public/benchmarks") {
+        return new Response(JSON.stringify(envelope(publicBenchmarks())), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({
+        status: "error",
+        data: null,
+        metadata: { state: "failed", warnings: [] },
+        error: { code: "NOT_FOUND", message: "Public benchmark not found: 'missing-index'" },
+      }), {
+        headers: { "Content-Type": "application/json" },
+        status: 404,
+      });
+    }));
+
+    renderAt("/benchmarks/missing-index");
+
+    expect(await screen.findByRole("heading", { name: "Benchmark not found" })).toBeTruthy();
+    expect(screen.getByText(/No public benchmark is registered for missing-index/i)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to benchmarks" })).toBeTruthy();
   });
 
   test("region page renders read-only visualization and unsupported precision states", async () => {
@@ -1368,14 +2043,16 @@ describe("public demo routes", () => {
   });
 
   test.each([
+    ["/glossary", "Category glossary", /Opportunity geography/i],
+    ["/methodology", "Methodology foundation", /Batch 19A does not create report rankings/i],
     ["/data-limitations", "Data limitations", /Scores are derived signals/i],
     ["/privacy", "Privacy notice", /Public browsing/i],
     ["/terms", "Terms and disclaimer", /No guarantee/i],
     ["/sources", "Source explanation", /Imported or source data/i],
-  ])("%s renders public legal content", (path, heading, marker) => {
+  ])("%s renders public document content", (path, heading, marker) => {
     renderAt(path);
 
     expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
-    expect(screen.getByText(marker)).toBeTruthy();
+    expect(screen.getAllByText(marker).length).toBeGreaterThan(0);
   });
 });

@@ -1395,6 +1395,156 @@ Unknown goal modes, invalid limits, and extra request fields are rejected. The
 endpoint does not accept prompt fields, call AI, scrape jobs, invent companies,
 or claim current openings.
 
+## Layer 18 Historical Intelligence
+
+Layer 18A adds read-only historical intelligence endpoints. They expose
+append-only summaries of historical market/company observations; they do not
+create snapshots, recalculate scores, mutate canonical market records, or expose
+raw source references.
+
+### `GET /platform/history/regions/{region_id}`
+
+Returns a safe region history summary:
+
+- `region_id`
+- ordered `market_snapshots`
+- ordered `sector_snapshots`
+- historical `observations`
+- latest `coverage_context` with coverage tier, freshness state, and confidence
+
+Snapshot entries include observed score fields where available, coverage tier,
+freshness state, confidence score, warning metadata, snapshot date/type, and
+created time. Raw provenance/source internals are not exposed.
+
+### `GET /platform/history/companies/{company_id}`
+
+Returns safe company-region history:
+
+- `company_id`
+- ordered `region_snapshots`
+- historical `observations`
+
+Company-region snapshots include presence, hiring, entry-level, internship, and
+coverage/freshness/confidence context where available. The endpoint is
+read-only and does not change canonical company, hiring, entry-level, ranking,
+or scoring records.
+
+### `GET /platform/signals/regions/{region_id}`
+
+Returns active, unexpired predictive signals for a region. The endpoint returns
+signal language only: signal type, target, strength, confidence level, evidence
+window, snapshot count, minimum-evidence status, summary, warnings, status, and
+expiration where present.
+
+Candidate, rejected, expired, and superseded signals are not returned as active.
+Signal inputs remain internal audit records and are not exposed.
+
+### `GET /platform/indices`
+
+Returns public-safe proprietary market index metadata:
+
+- index id/key/name/description
+- status
+- latest active version label
+- public methodology summary
+- created time
+
+Internal formula weights and source/input records are not exposed.
+
+### `GET /platform/indices/{index_key}/scores`
+
+Returns public-safe score summaries for a proprietary index. Entries include
+region id, score, rank where available, confidence, freshness, evidence
+summary, public methodology summary, calculated time, and created time.
+
+Index score inputs and internal weight configs remain internal audit records.
+Index scores are derived intelligence and do not override canonical rankings,
+official region scores, or recommendation outputs.
+
+### `GET /platform/reports`
+
+Returns public-safe summaries for published benchmark reports only. Draft,
+review-ready, archived, and superseded reports are not returned as current
+public reports.
+
+Each summary includes report id, report key, title, report period, report type,
+published status, summary, data window, and publication time. The endpoint does
+not expose review notes, internal formula weights, raw index inputs, private
+source internals, or admin-only metadata.
+
+### `GET /platform/reports/{report_key}`
+
+Returns the latest published public-safe benchmark report for a report key.
+The detail payload includes:
+
+- report key, title, report period, report type, and safe status
+- summary and methodology summary
+- data window
+- freshness notes, confidence notes, coverage notes, and limitations
+- ranked regions with score, rank, explanation, warnings, confidence, and
+  freshness state
+- report sections
+- public-safe evidence summaries
+
+Missing, draft, review-ready, archived, and superseded reports return `404` on
+the public route. Benchmark report APIs are read-only and do not mutate
+canonical rankings, official region scores, index scores, predictive signals,
+recommendation outputs, or contribution data.
+
+### `POST /platform/contributions`
+
+Accepts authenticated, governed market-intelligence contributions. Basic
+authenticated users may submit corrections, source suggestions, outdated-data
+reports, role-access feedback, market-quality feedback, and company-presence
+updates. Institution-scoped submissions require an active institution
+membership with existing advisor/upload-style roles.
+
+Accepted contribution types are:
+
+- `verified_correction`
+- `company_presence_update`
+- `regional_employer_list`
+- `career_center_intelligence`
+- `internship_program_information`
+- `role_access_feedback`
+- `source_suggestion`
+- `market_quality_feedback`
+- `outdated_data_report`
+
+The safe submission response includes contribution id, status, contribution
+type, summary, created time, and a next-step message. It does not expose
+internal reviewer notes, admin-only metadata, private institution data, source
+validation internals, or canonical candidate internals.
+
+Evidence URLs must be public `http`/`https` URLs without embedded credentials
+or credential-like query fields. File paths, private references, and unsafe
+uploaded-reference identifiers are rejected.
+
+Submitted contributions create review queue records only. They do not mutate
+canonical rankings, company rankings, official scores, index scores, predictive
+signals, benchmark reports, recommendations, historical snapshots, public
+confidence scores, public warnings, or published outputs.
+
+### `GET /platform/contributions/review`
+
+Returns the internal contribution review queue. This route requires existing
+admin/data-reviewer access. It returns contribution metadata, structured
+payload, evidence summaries, status, and timestamps for review. It is not a
+public endpoint and is denied to ordinary authenticated users.
+
+### `POST /platform/contributions/{contribution_id}/review`
+
+Records an append-only contribution review and advances the contribution
+lifecycle to `needs_review`, `verified`, `rejected`, `merged`, or `superseded`.
+This route requires existing admin/data-reviewer access.
+
+The safe review response includes contribution id, review decision, resulting
+status, governed follow-up flags, and created time. It strips internal review
+notes. Verified or merged reviews may record governed follow-up candidate/task
+flags or refs, but review does not directly change canonical data, derived
+indices/signals, benchmark reports, recommendations, historical snapshots, or
+published outputs.
+
 ## Deferred Endpoints
 
 These endpoints may appear in older planning docs, but they are not currently implemented as public API routes:

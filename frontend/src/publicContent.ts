@@ -1,9 +1,16 @@
 import { PUBLIC_PAGE_PATHS, type PublicPage } from "./urlState";
 
-export type LegalPublicPage = Exclude<PublicPage, "landing">;
+export type LegalPublicPage =
+  | "glossary"
+  | "methodology"
+  | "data-limitations"
+  | "privacy"
+  | "terms"
+  | "sources";
+export type PublicInfoPage = Exclude<PublicPage, "landing">;
 
 export type PublicInfoLink = {
-  page: LegalPublicPage;
+  page: PublicInfoPage;
   href: string;
   label: string;
 };
@@ -22,16 +29,233 @@ export type LegalPageCopy = {
 };
 
 export const PUBLIC_INFO_LINKS: PublicInfoLink[] = [
+  { page: "guides", href: PUBLIC_PAGE_PATHS.guides, label: "Guides" },
+  { page: "benchmarks", href: PUBLIC_PAGE_PATHS.benchmarks, label: "Benchmarks" },
+  { page: "reports", href: PUBLIC_PAGE_PATHS.reports, label: "Reports" },
+  { page: "developers", href: PUBLIC_PAGE_PATHS.developers, label: "Developers" },
+  { page: "data-licensing", href: PUBLIC_PAGE_PATHS["data-licensing"], label: "Data licensing" },
+  { page: "glossary", href: PUBLIC_PAGE_PATHS.glossary, label: "Glossary" },
+  { page: "methodology", href: PUBLIC_PAGE_PATHS.methodology, label: "Methodology" },
   { page: "data-limitations", href: PUBLIC_PAGE_PATHS["data-limitations"], label: "Data limitations" },
+  { page: "sources", href: PUBLIC_PAGE_PATHS.sources, label: "Source explanation" },
   { page: "privacy", href: PUBLIC_PAGE_PATHS.privacy, label: "Privacy" },
   { page: "terms", href: PUBLIC_PAGE_PATHS.terms, label: "Terms and disclaimer" },
-  { page: "sources", href: PUBLIC_PAGE_PATHS.sources, label: "Source explanation" },
 ];
+
+export type DeveloperDocPageKey =
+  | "developer-docs"
+  | "developer-doc-authentication"
+  | "developer-doc-errors"
+  | "developer-doc-rate-limits"
+  | "developer-doc-freshness-confidence"
+  | "developer-doc-region-scores"
+  | "developer-doc-company-geography"
+  | "developer-doc-early-career-access"
+  | "developer-doc-hiring-concentration"
+  | "developer-doc-market-comparisons";
+
+export type DeveloperDocCopy = {
+  page: DeveloperDocPageKey;
+  title: string;
+  summary: string;
+  sections: PublicSection[];
+};
+
+export type LicensingDatasetCopy = {
+  datasetId: string;
+  title: string;
+  description: string;
+  sampleFields: string[];
+  restrictions: string[];
+  sourceSafety: string;
+};
+
+export const DEVELOPER_DOCS_NAV: Array<{ page: DeveloperDocPageKey; label: string; href: string }> = [
+  { page: "developer-docs", label: "Overview", href: PUBLIC_PAGE_PATHS["developer-docs"] },
+  { page: "developer-doc-authentication", label: "Authentication", href: PUBLIC_PAGE_PATHS["developer-doc-authentication"] },
+  { page: "developer-doc-errors", label: "Errors", href: PUBLIC_PAGE_PATHS["developer-doc-errors"] },
+  { page: "developer-doc-rate-limits", label: "Rate limits", href: PUBLIC_PAGE_PATHS["developer-doc-rate-limits"] },
+  { page: "developer-doc-freshness-confidence", label: "Freshness and confidence", href: PUBLIC_PAGE_PATHS["developer-doc-freshness-confidence"] },
+  { page: "developer-doc-region-scores", label: "Region scores", href: PUBLIC_PAGE_PATHS["developer-doc-region-scores"] },
+  { page: "developer-doc-company-geography", label: "Company geography", href: PUBLIC_PAGE_PATHS["developer-doc-company-geography"] },
+  { page: "developer-doc-early-career-access", label: "Early-career access", href: PUBLIC_PAGE_PATHS["developer-doc-early-career-access"] },
+  { page: "developer-doc-hiring-concentration", label: "Hiring concentration", href: PUBLIC_PAGE_PATHS["developer-doc-hiring-concentration"] },
+  { page: "developer-doc-market-comparisons", label: "Market comparisons", href: PUBLIC_PAGE_PATHS["developer-doc-market-comparisons"] },
+];
+
+export const DEVELOPER_DOCS_COPY: Record<DeveloperDocPageKey, DeveloperDocCopy> = {
+  "developer-docs": {
+    page: "developer-docs",
+    title: "Platform API developer docs",
+    summary:
+      "Read-only market intelligence endpoints for external consumers. The API is versioned, key-authenticated, and intentionally public-safe.",
+    sections: [
+      {
+        title: "Base surface",
+        body:
+          "All data endpoints live under /api/v1/platform and return a Layer 20 envelope with data, meta, and error fields.",
+        bullets: [
+          "GET /api/v1/platform/regions/{region_id}/scores",
+          "GET /api/v1/platform/companies/{company_id}/geography",
+          "GET /api/v1/platform/regions/{region_id}/early-career-access",
+          "GET /api/v1/platform/markets/hiring-concentration",
+          "GET /api/v1/platform/markets/compare",
+        ],
+      },
+      {
+        title: "Specs",
+        body:
+          "OpenAPI and Postman exports are available at /api/v1/platform/docs/openapi.json and /api/v1/platform/docs/postman.json.",
+      },
+    ],
+  },
+  "developer-doc-authentication": {
+    page: "developer-doc-authentication",
+    title: "Authentication",
+    summary: "Secured Platform API endpoints require X-API-Key. Do not put raw keys in browser code or partner embeds.",
+    sections: [
+      {
+        title: "Header",
+        body: "Send X-API-Key with each Platform API data request.",
+        bullets: ["Raw keys are returned only once.", "Stored keys use hashes, prefixes, and display strings only."],
+      },
+      {
+        title: "Tiers and scopes",
+        body:
+          "Access requires both the backend-owned tier entitlement and the key's stored product scope for the requested product.",
+      },
+    ],
+  },
+  "developer-doc-errors": {
+    page: "developer-doc-errors",
+    title: "Errors",
+    summary: "Errors use the same public-safe envelope as successful responses.",
+    sections: [
+      {
+        title: "Access errors",
+        body:
+          "401 covers MISSING_API_KEY, INVALID_API_KEY, and REVOKED_API_KEY. 403 covers MISSING_PRODUCT_SCOPE and ENTITLEMENT_DENIED. 429 covers RATE_LIMIT_EXCEEDED.",
+      },
+      {
+        title: "Request errors",
+        body:
+          "400 UNSUPPORTED_QUERY is returned for unsupported query parameters. 400 VALIDATION_ERROR is returned for malformed required query input.",
+      },
+    ],
+  },
+  "developer-doc-rate-limits": {
+    page: "developer-doc-rate-limits",
+    title: "Rate limits and usage",
+    summary: "Tier limits are enforced before endpoint execution and successful requests consume monthly usage units.",
+    sections: [
+      {
+        title: "Request windows",
+        body: "Rate limits are tier-based request windows checked per API key.",
+      },
+      {
+        title: "Monthly usage",
+        body:
+          "Monthly usage is counted from successful allowed request units. Denied requests are audit-logged but do not consume request units.",
+      },
+    ],
+  },
+  "developer-doc-freshness-confidence": {
+    page: "developer-doc-freshness-confidence",
+    title: "Freshness, confidence, source summary, and warnings",
+    summary: "Every response meta block gives public-safe context for interpreting the returned data.",
+    sections: [
+      {
+        title: "Freshness",
+        body: "Freshness can be fresh, stale, partial, or unknown, with public-safe timestamps where available.",
+      },
+      {
+        title: "Confidence and sources",
+        body:
+          "Confidence labels and source summaries explain output quality without exposing source ids, raw records, or scoring internals.",
+      },
+    ],
+  },
+  "developer-doc-region-scores": {
+    page: "developer-doc-region-scores",
+    title: "Region scores",
+    summary: "GET /api/v1/platform/regions/{region_id}/scores returns public-safe regional score summaries.",
+    sections: [{ title: "Product id", body: "region_scores" }],
+  },
+  "developer-doc-company-geography": {
+    page: "developer-doc-company-geography",
+    title: "Company geography",
+    summary: "GET /api/v1/platform/companies/{company_id}/geography returns public-safe company-region coverage.",
+    sections: [{ title: "Product id", body: "company_geography" }],
+  },
+  "developer-doc-early-career-access": {
+    page: "developer-doc-early-career-access",
+    title: "Early-career access",
+    summary:
+      "GET /api/v1/platform/regions/{region_id}/early-career-access returns public-safe early-career access summaries.",
+    sections: [{ title: "Product id", body: "early_career_access" }],
+  },
+  "developer-doc-hiring-concentration": {
+    page: "developer-doc-hiring-concentration",
+    title: "Hiring concentration",
+    summary:
+      "GET /api/v1/platform/markets/hiring-concentration returns public-safe hiring concentration summaries.",
+    sections: [{ title: "Product id", body: "hiring_concentration" }],
+  },
+  "developer-doc-market-comparisons": {
+    page: "developer-doc-market-comparisons",
+    title: "Market comparisons",
+    summary:
+      "GET /api/v1/platform/markets/compare returns public-safe comparisons for two region ids.",
+    sections: [{ title: "Product id", body: "market_comparisons" }],
+  },
+};
+
+export const DATA_LICENSING_COPY = {
+  eyebrow: "Data licensing",
+  title: "Derived market intelligence datasets",
+  intro:
+    "Licensing is limited to aggregated, derived, source-safe datasets. Raw scrape records, raw job listings, source ids, private user data, billing records, ingestion metadata, and scoring formulas are excluded.",
+  cta: "Contact sales for enterprise licensing",
+  datasets: [
+    {
+      datasetId: "regional_market_intelligence_v1",
+      title: "Regional market intelligence",
+      description: "Derived opportunity, coverage, early-career, and hiring summaries by region.",
+      sampleFields: ["region_id", "coverage_tier", "opportunity_score", "early_career_access_score"],
+      restrictions: ["No resale as raw job listings.", "No reverse-engineering source providers or scoring internals."],
+      sourceSafety: "Raw scrape records, source ids, and ingestion metadata are excluded.",
+    },
+    {
+      datasetId: "early_career_access_scores_v1",
+      title: "Early-career access scores",
+      description: "Derived internship, co-op, entry-level, and access pathway indicators.",
+      sampleFields: ["region_id", "internship_count", "entry_level_full_time_count", "confidence_label"],
+      restrictions: ["No applicant profiling or automated decisioning.", "Do not claim comprehensive market coverage."],
+      sourceSafety: "Counts are derived summaries, not raw postings.",
+    },
+    {
+      datasetId: "company_region_presence_v1",
+      title: "Company-region presence",
+      description: "Derived employer presence and regional activity summaries.",
+      sampleFields: ["company_id", "region_id", "presence_status", "current_hiring"],
+      restrictions: ["No employer CRM enrichment with raw source provenance.", "No redistribution as a source feed."],
+      sourceSafety: "Presence basis is summarized without source refs.",
+    },
+    {
+      datasetId: "historical_hiring_signal_snapshots_v1",
+      title: "Historical hiring signal snapshots",
+      description: "Derived time-window snapshots of hiring concentration and market signal changes.",
+      sampleFields: ["snapshot_month", "region_id", "posting_count_30d", "concentration_share"],
+      restrictions: ["No reconstruction of raw posting feeds.", "Historical gaps must remain visible."],
+      sourceSafety: "Snapshots are aggregated and source-safe.",
+    },
+  ] satisfies LicensingDatasetCopy[],
+};
 
 export const DEMO_DISCLOSURE_COPY = {
   title: "Public demo disclosure",
   summary:
-    "This demo may combine seeded demo data with real imported records. Coverage is partial; data can be incomplete, stale, or missing. Derived scores are directional signals, not absolute truth or individualized career advice.",
+    "This Opportunity Geography Intelligence demo may combine seeded demo data with real imported records. Coverage is partial; data can be incomplete, stale, or missing. Derived scores are directional career-market signals, not absolute truth or individualized career advice.",
   bullets: [
     "Demo and real imported data may appear side by side.",
     "Coverage is partial and source availability varies by market, company, and date.",
@@ -45,19 +269,19 @@ export const LANDING_COPY = {
   eyebrow: "Public demo",
   title: "Job Market Intelligence",
   intro:
-    "A demo interface for inspecting prepared regional job-market facts, company presence and hiring signals, source freshness, and derived opportunity scores.",
+    "An Opportunity Geography Intelligence and Career Market Intelligence platform for inspecting regional opportunity density, company-region presence, early-career access, source freshness, and market fit signals.",
   ctaLabel: "Enter demo",
-  secondaryCtaLabel: "Review data limitations",
+  secondaryCtaLabel: "Review methodology",
   sections: [
     {
       title: "What it does",
       body:
-        "The app organizes returned market outputs so visitors can explore regions, inspect company geography, compare regional score fields, and run a request-scoped discovery overlay.",
+        "The app organizes returned market outputs so visitors can explore regions, inspect company-region presence, compare regional score fields, and run a request-scoped discovery overlay.",
     },
     {
-      title: "Who it is for",
+      title: "Category",
       body:
-        "It is intended for reviewers, builders, and early users who want to understand the shape of the demo and the data-quality signals behind it.",
+        "The product category is career market intelligence: public, structured explanation of where opportunity is concentrated, how employer presence varies by region, and which evidence is strong enough to treat as directional.",
     },
     {
       title: "What data it uses",
@@ -67,12 +291,88 @@ export const LANDING_COPY = {
     {
       title: "Current limits",
       body:
-        "The demo does not claim comprehensive job-market coverage, real-time completeness, or individualized career advice. Important decisions should be checked against independent sources.",
+        "The demo does not claim comprehensive job-market coverage, real-time completeness, public report rankings, benchmark scoring, or individualized career advice. Important decisions should be checked against independent sources.",
     },
   ],
 };
 
 export const LEGAL_PAGE_COPY: Record<LegalPublicPage, LegalPageCopy> = {
+  glossary: {
+    eyebrow: "Category language",
+    title: "Category glossary",
+    intro:
+      "These terms make the product publicly legible as opportunity geography and career market intelligence rather than a job board.",
+    sections: [
+      {
+        title: "Opportunity geography",
+        body:
+          "Opportunity geography describes how career opportunity varies across regions, employers, sectors, and access conditions. It is the map of where opportunity appears concentrated, accessible, durable, or under-covered.",
+      },
+      {
+        title: "Career market intelligence",
+        body:
+          "Career market intelligence is structured analysis of regional labor-market conditions, employer presence, hiring signals, access patterns, source quality, and limitations for career planning. It explains market context without claiming to be an exhaustive list of open jobs.",
+      },
+      {
+        title: "Company-region presence",
+        body:
+          "Company-region presence means observable evidence that an employer has meaningful activity in a region, such as offices, roles, hiring traces, internship activity, partnerships, or other verified market signals.",
+      },
+      {
+        title: "Early-career access",
+        body:
+          "Early-career access describes whether a market or employer has visible pathways for students, interns, new graduates, career switchers, and other candidates without extensive prior experience.",
+      },
+      {
+        title: "Market fit",
+        body:
+          "Market fit is the alignment between a user's goals and the visible evidence for a region, company, role family, industry, career stage, preferences, and constraints. It is directional and should not be treated as individualized advice.",
+      },
+      {
+        title: "Regional opportunity density",
+        body:
+          "Regional opportunity density describes the concentration of relevant employers, hiring signals, company-region presence, sector activity, access pathways, and evidence quality in a specific geography.",
+      },
+      {
+        title: "Career-market signal",
+        body:
+          "A career-market signal is a structured piece of evidence or derived indicator about opportunity conditions. Signals can be strong, weak, stale, partial, missing, or inferred, and must be read with coverage and freshness context.",
+      },
+    ],
+  },
+  methodology: {
+    eyebrow: "Public methodology",
+    title: "Methodology foundation",
+    intro:
+      "This page explains how public opportunity geography and career market intelligence surfaces should be read. It defines explanation posture only; Batch 19A does not create report rankings or benchmark scoring.",
+    sections: [
+      {
+        title: "What the product explains",
+        body:
+          "Public pages explain regional opportunity density, company-region presence, early-career access, market fit, career-market signals, coverage quality, freshness, source posture, and known limitations.",
+      },
+      {
+        title: "Evidence posture",
+        body:
+          "Visible intelligence should separate source records, prepared canonical facts, derived signals, freshness metadata, confidence context, and demo data. Missing evidence is treated as unknown, not as proof that opportunity is absent.",
+      },
+      {
+        title: "Report methodology",
+        body:
+          "Public report methodology should disclose report purpose, included geography, data windows, evidence categories, freshness posture, confidence posture, coverage limits, and caveats before any future report is published.",
+      },
+      {
+        title: "Benchmark methodology",
+        body:
+          "Benchmark methodology should explain comparison boundaries, eligible inputs, coverage thresholds, confidence rules, limitations, and review expectations before any future benchmark score is exposed.",
+      },
+      {
+        title: "Batch 19A boundary",
+        body:
+          "This foundation does not rank regions, score benchmarks, change recommendations, expand market coverage, refresh data, alter billing, add institutional authority, or personalize outputs. It only defines public language and explanation surfaces.",
+      },
+    ],
+  },
   "data-limitations": {
     eyebrow: "Demo limitations",
     title: "Data limitations",

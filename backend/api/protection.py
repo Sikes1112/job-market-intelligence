@@ -28,6 +28,8 @@ PUBLIC_DEMO_EXACT_ALLOWLIST = frozenset(
         ("POST", "/discover/personalized"),
         ("GET", "/recommendations/goal-modes"),
         ("POST", "/recommendations/strategy"),
+        ("GET", "/public/benchmarks"),
+        ("GET", "/public/reports"),
         ("GET", "/monetization/plans"),
         ("GET", "/monetization/features"),
         ("GET", "/monetization/reports"),
@@ -214,9 +216,98 @@ def _public_demo_route_allowed(method: str, path: str) -> bool:
         return parts[1] != "search"
     if (
         len(parts) == 3
+        and parts[0] == "public"
+        and parts[1] in {"benchmarks", "reports"}
+        and parts[2]
+    ):
+        return True
+    if (
+        len(parts) == 3
         and parts[0] == "regions"
         and parts[1]
         and parts[2] == "sources"
+    ):
+        return True
+    if (
+        len(parts) == 4
+        and parts[0] == "platform"
+        and parts[1] == "history"
+        and parts[2] in {"regions", "companies"}
+        and parts[3]
+    ):
+        return True
+    if (
+        len(parts) == 4
+        and parts[0] == "platform"
+        and parts[1] == "signals"
+        and parts[2] == "regions"
+        and parts[3]
+    ):
+        return True
+    if len(parts) == 2 and parts[0] == "platform" and parts[1] == "indices":
+        return True
+    if (
+        len(parts) == 4
+        and parts[0] == "platform"
+        and parts[1] == "indices"
+        and parts[2]
+        and parts[3] == "scores"
+    ):
+        return True
+    if len(parts) == 2 and parts[0] == "platform" and parts[1] == "reports":
+        return True
+    if (
+        len(parts) == 3
+        and parts[0] == "platform"
+        and parts[1] == "reports"
+        and parts[2]
+    ):
+        return True
+    if (
+        len(parts) == 6
+        and parts[0] == "api"
+        and parts[1] == "v1"
+        and parts[2] == "platform"
+        and parts[3] == "regions"
+        and parts[4]
+        and parts[5] in {"scores", "early-career-access"}
+    ):
+        return True
+    if (
+        len(parts) == 6
+        and parts[0] == "api"
+        and parts[1] == "v1"
+        and parts[2] == "platform"
+        and parts[3] == "companies"
+        and parts[4]
+        and parts[5] == "geography"
+    ):
+        return True
+    if (
+        len(parts) == 5
+        and parts[0] == "api"
+        and parts[1] == "v1"
+        and parts[2] == "platform"
+        and parts[3] == "docs"
+        and parts[4] in {"openapi.json", "postman.json"}
+    ):
+        return True
+    if (
+        len(parts) == 5
+        and parts[0] == "api"
+        and parts[1] == "v1"
+        and parts[2] == "platform"
+        and parts[3] == "embeds"
+        and parts[4] in {"region-comparison", "market-score-card"}
+    ):
+        return True
+    if (
+        len(parts) == 5
+        and parts[0] == "api"
+        and parts[1] == "v1"
+        and parts[2] == "platform"
+        and parts[3] == "markets"
+        and parts[4] in {"hiring-concentration", "compare"}
     ):
         return True
     return (

@@ -44,13 +44,21 @@ In `APP_ENV=public_demo`, the backend exposes only these HTTP surfaces:
 - `GET /monetization/reports`
 - `GET /monetization/access-preview`
 - `GET /billing/status`
+- `GET /platform/history/regions/{region_id}`
+- `GET /platform/history/companies/{company_id}`
+- `GET /platform/signals/regions/{region_id}`
+- `GET /platform/indices`
+- `GET /platform/indices/{index_key}/scores`
+- `GET /platform/reports`
+- `GET /platform/reports/{report_key}`
 - `OPTIONS *` for preflight handling
 
 `POST /discover/personalized` is allowed because it is request-scoped and does
 not persist preferences, snapshots, output metadata, scores, or canonical facts.
 The recommendation strategy and monetization catalog routes are read-only or
 request-scoped; they expose public product metadata and do not create billing
-or user state.
+or user state. Layer 18 platform-intelligence routes are safe GET summaries for
+history, active signals, proprietary indices, and published reports only.
 Billing status is read-only and reports checkout disabled in public demo.
 
 ## public_demo Denials
@@ -86,6 +94,10 @@ Denied mutation surfaces:
   `POST /billing/checkout-session`,
   `POST /billing/portal-session`,
   `POST /billing/stripe/webhook`
+- Platform intelligence contribution/review surfaces:
+  `POST /platform/contributions`,
+  `GET /platform/contributions/review`,
+  `POST /platform/contributions/{contribution_id}/review`
 - Canonical write-shaped requests such as `POST`, `PUT`, `PATCH`, or `DELETE`
   under public market paths.
 

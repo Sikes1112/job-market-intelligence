@@ -26,13 +26,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.geography.market_coverage import (
+from backend.orchestration.jobs.errors import JobWarning
+from backend.shared.coverage_payloads import (
     CoverageMetadataPayload,
     PriorityMarket,
     SectorCoverageMetadataPayload,
     placeholder_coverage_metadata,
 )
-from backend.orchestration.jobs.errors import JobWarning
 
 # ---------------------------------------------------------------------------
 # Shared payload metadata

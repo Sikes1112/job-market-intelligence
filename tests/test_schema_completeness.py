@@ -41,6 +41,37 @@ REQUIRED_TABLES = {
     "institutional_audit_logs",
     "institutional_reports",
     "institutional_data_requests",
+    "integration_exports",
+    "integration_reminders",
+    "partner_import_batches",
+    "partner_import_records",
+    "api_clients",
+    "api_keys",
+    "api_usage_records",
+    "api_access_audit_events",
+    "career_platform_references",
+    "career_platform_exports",
+    "market_snapshots",
+    "company_region_snapshots",
+    "sector_region_snapshots",
+    "market_score_history",
+    "historical_observations",
+    "predictive_signals",
+    "signal_inputs",
+    "market_indices",
+    "market_index_versions",
+    "market_index_scores",
+    "market_index_inputs",
+    "benchmark_reports",
+    "benchmark_report_sections",
+    "benchmark_report_rankings",
+    "benchmark_report_evidence",
+    "data_contributions",
+    "contribution_evidence",
+    "contribution_reviews",
+    "platform_api_keys",
+    "platform_api_usage_events",
+    "platform_api_audit_logs",
 }
 
 # Every canonical truth/output object must carry these metadata columns
@@ -48,14 +79,38 @@ REQUIRED_TABLES = {
 CANONICAL_METADATA_COLUMNS = {"state", "version", "created_at", "updated_at"}
 
 APPEND_ONLY_LOG_TABLES = {"admin_event_logs", "institutional_audit_logs"}
+HISTORICAL_INTELLIGENCE_TABLES = {
+    "market_snapshots",
+    "company_region_snapshots",
+    "sector_region_snapshots",
+    "market_score_history",
+    "historical_observations",
+    "predictive_signals",
+    "signal_inputs",
+    "market_indices",
+    "market_index_versions",
+    "market_index_scores",
+    "market_index_inputs",
+    "benchmark_reports",
+    "benchmark_report_sections",
+    "benchmark_report_rankings",
+    "benchmark_report_evidence",
+    "data_contributions",
+    "contribution_evidence",
+    "contribution_reviews",
+}
 ADMIN_REVIEW_TABLES = {
     "audit_finding_reviews",
     "admin_overrides",
     "admin_repair_actions",
 }
 CANONICAL_METADATA_TABLES = (
-    REQUIRED_TABLES - {"jobs"} - APPEND_ONLY_LOG_TABLES - ADMIN_REVIEW_TABLES
-)  # jobs and admin logs carry their own metadata shapes
+    REQUIRED_TABLES
+    - {"jobs"}
+    - APPEND_ONLY_LOG_TABLES
+    - HISTORICAL_INTELLIGENCE_TABLES
+    - ADMIN_REVIEW_TABLES
+)  # jobs, logs, and history rows carry their own metadata shapes
 USER_IDENTITY_TABLES = {
     "users",
     "external_auth_identities",
@@ -83,6 +138,23 @@ INSTITUTIONAL_TABLES = {
     "institutional_reports",
     "institutional_data_requests",
 }
+INTEGRATION_TABLES = {
+    "integration_exports",
+    "integration_reminders",
+    "partner_import_batches",
+    "partner_import_records",
+    "api_clients",
+    "api_keys",
+    "api_usage_records",
+    "api_access_audit_events",
+    "career_platform_references",
+    "career_platform_exports",
+}
+PLATFORM_API_TABLES = {
+    "platform_api_keys",
+    "platform_api_usage_events",
+    "platform_api_audit_logs",
+}
 MARKET_CANONICAL_METADATA_TABLES = CANONICAL_METADATA_TABLES - USER_IDENTITY_TABLES
 MARKET_CANONICAL_METADATA_TABLES = (
     MARKET_CANONICAL_METADATA_TABLES - SYSTEM_EVENT_TABLES - OPERATOR_WORKFLOW_TABLES
@@ -92,6 +164,8 @@ MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - BILLING_TA
 MARKET_CANONICAL_METADATA_TABLES = (
     MARKET_CANONICAL_METADATA_TABLES - INSTITUTIONAL_TABLES
 )
+MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - INTEGRATION_TABLES
+MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - PLATFORM_API_TABLES
 
 
 def test_all_required_tables_registered() -> None:
@@ -307,6 +381,395 @@ def test_institutional_tables_have_scoped_permission_columns() -> None:
         "created_at",
         "updated_at",
     }.issubset(data_request_cols)
+
+
+def test_integration_tables_preserve_noncanonical_boundaries() -> None:
+    engine = make_engine("sqlite:///:memory:")
+    create_all(engine)
+    inspector = inspect(engine)
+
+    batch_cols = {c["name"] for c in inspector.get_columns("partner_import_batches")}
+    assert {
+        "partner_import_batch_id",
+        "organization_id",
+        "uploaded_by_user_id",
+        "source_type",
+        "status",
+        "import_format",
+        "source_attribution",
+        "raw_payload_text",
+        "record_count",
+        "accepted_record_count",
+        "quarantined_record_count",
+        "rejected_record_count",
+        "validation_result_json",
+        "receipt_json",
+        "governance_warnings_json",
+        "created_at",
+        "updated_at",
+    }.issubset(batch_cols)
+    assert {"state", "version", "canonical_company_id", "canonical_region_id"}.isdisjoint(
+        batch_cols
+    )
+
+    record_cols = {c["name"] for c in inspector.get_columns("partner_import_records")}
+    assert {
+        "partner_import_record_id",
+        "partner_import_batch_id",
+        "organization_id",
+        "record_index",
+        "source_type",
+        "record_status",
+        "decision",
+        "source_attribution",
+        "employer_name",
+        "region_label",
+        "confidence",
+        "freshness_status",
+        "partner_payload_json",
+        "evidence_json",
+        "validation_warnings_json",
+        "created_at",
+        "updated_at",
+    }.issubset(record_cols)
+    assert {"state", "version", "raw_total_score", "score_ruleset_version"}.isdisjoint(
+        record_cols
+    )
+
+    api_client_cols = {c["name"] for c in inspector.get_columns("api_clients")}
+    assert {
+        "api_client_id",
+        "display_name",
+        "created_by_user_id",
+        "organization_id",
+        "status",
+        "scopes_json",
+        "allowed_origins_json",
+        "rate_limit_count",
+        "rate_limit_window_seconds",
+        "created_at",
+        "updated_at",
+    }.issubset(api_client_cols)
+    assert {"raw_key", "access_token", "refresh_token", "ats_pipeline_scope"}.isdisjoint(
+        api_client_cols
+    )
+
+    api_key_cols = {c["name"] for c in inspector.get_columns("api_keys")}
+    assert {
+        "api_key_id",
+        "api_client_id",
+        "created_by_user_id",
+        "key_prefix",
+        "key_hash",
+        "display_key",
+        "status",
+        "last_used_at",
+        "revoked_at",
+        "created_at",
+        "updated_at",
+    }.issubset(api_key_cols)
+    assert {"raw_key", "token", "secret"}.isdisjoint(api_key_cols)
+
+    usage_cols = {c["name"] for c in inspector.get_columns("api_usage_records")}
+    assert {
+        "api_usage_record_id",
+        "api_client_id",
+        "api_key_id",
+        "route",
+        "method",
+        "scope",
+        "decision",
+        "status_code",
+        "rate_limit_limit",
+        "rate_limit_remaining",
+        "rate_limit_reset_at",
+        "occurred_at",
+    }.issubset(usage_cols)
+
+    career_export_cols = {
+        c["name"] for c in inspector.get_columns("career_platform_exports")
+    }
+    assert {
+        "career_platform_export_id",
+        "created_by_user_id",
+        "organization_id",
+        "platform",
+        "risk_posture",
+        "export_mode",
+        "rows_json",
+        "receipt_json",
+        "manual_only",
+        "automation_performed",
+        "ats_state_created",
+        "application_status_created",
+        "recruiter_outreach_created",
+        "created_at",
+        "updated_at",
+    }.issubset(career_export_cols)
+    assert {"application_status", "resume_payload", "recruiter_message"}.isdisjoint(
+        career_export_cols
+    )
+
+
+def test_platform_api_tables_preserve_external_access_boundaries() -> None:
+    engine = make_engine("sqlite:///:memory:")
+    create_all(engine)
+    inspector = inspect(engine)
+
+    key_cols = {c["name"] for c in inspector.get_columns("platform_api_keys")}
+    assert {
+        "platform_api_key_id",
+        "key_prefix",
+        "key_hash",
+        "display_key",
+        "label",
+        "status",
+        "environment",
+        "tier",
+        "product_scopes_json",
+        "last_used_at",
+        "revoked_at",
+        "created_at",
+        "updated_at",
+    }.issubset(key_cols)
+    assert {
+        "raw_key",
+        "token",
+        "secret",
+        "billing_record",
+        "user_id",
+        "institution_id",
+        "raw_job_record",
+    }.isdisjoint(key_cols)
+
+    usage_cols = {
+        c["name"] for c in inspector.get_columns("platform_api_usage_events")
+    }
+    assert {
+        "platform_api_usage_event_id",
+        "platform_api_key_id",
+        "key_prefix",
+        "product_id",
+        "endpoint",
+        "method",
+        "request_units",
+        "status_code",
+        "outcome",
+        "decision_reason",
+        "occurred_at",
+    }.issubset(usage_cols)
+    assert {"raw_key", "raw_job_record", "billing_record", "ingestion_metadata"}.isdisjoint(
+        usage_cols
+    )
+
+    audit_cols = {c["name"] for c in inspector.get_columns("platform_api_audit_logs")}
+    assert {
+        "platform_api_audit_log_id",
+        "platform_api_key_id",
+        "key_prefix",
+        "product_id",
+        "endpoint",
+        "method",
+        "event_type",
+        "decision",
+        "status_code",
+        "metadata",
+        "occurred_at",
+    }.issubset(audit_cols)
+    assert {"raw_key", "token", "secret", "raw_scrape_record"}.isdisjoint(audit_cols)
+
+
+def test_historical_intelligence_tables_are_append_only_records() -> None:
+    engine = make_engine("sqlite:///:memory:")
+    create_all(engine)
+    inspector = inspect(engine)
+
+    for table_name in HISTORICAL_INTELLIGENCE_TABLES:
+        cols = {c["name"] for c in inspector.get_columns(table_name)}
+        assert "created_at" in cols
+        assert "updated_at" not in cols
+        assert "state" not in cols
+        if table_name != "market_index_versions":
+            assert "version" not in cols
+
+    market_cols = {c["name"] for c in inspector.get_columns("market_snapshots")}
+    assert {
+        "market_snapshot_id",
+        "region_id",
+        "snapshot_date",
+        "snapshot_type",
+        "overall_score",
+        "entry_level_access_score",
+        "internship_density_score",
+        "ai_opportunity_score",
+        "product_opportunity_score",
+        "company_presence_score",
+        "hidden_opportunity_score",
+        "coverage_tier",
+        "freshness_state",
+        "confidence_score",
+        "warnings",
+        "provenance_summary",
+        "created_at",
+    }.issubset(market_cols)
+
+    observation_cols = {
+        c["name"] for c in inspector.get_columns("historical_observations")
+    }
+    assert {
+        "historical_observation_id",
+        "observation_type",
+        "target_type",
+        "target_id",
+        "region_id",
+        "previous_snapshot_id",
+        "current_snapshot_id",
+        "delta_value",
+        "delta_direction",
+        "severity",
+        "confidence_score",
+        "evidence_summary",
+        "created_at",
+    }.issubset(observation_cols)
+
+    signal_cols = {c["name"] for c in inspector.get_columns("predictive_signals")}
+    assert {
+        "predictive_signal_id",
+        "signal_type",
+        "target_type",
+        "target_id",
+        "region_id",
+        "signal_strength",
+        "confidence_level",
+        "evidence_window_start",
+        "evidence_window_end",
+        "snapshot_count",
+        "minimum_snapshot_count_met",
+        "summary",
+        "warnings",
+        "status",
+        "created_at",
+        "expires_at",
+    }.issubset(signal_cols)
+
+    index_version_cols = {
+        c["name"] for c in inspector.get_columns("market_index_versions")
+    }
+    assert {
+        "market_index_version_id",
+        "index_id",
+        "version",
+        "formula_description",
+        "input_schema",
+        "internal_weight_config",
+        "status",
+        "effective_date",
+        "created_at",
+    }.issubset(index_version_cols)
+
+    index_score_cols = {
+        c["name"] for c in inspector.get_columns("market_index_scores")
+    }
+    assert {
+        "market_index_score_id",
+        "index_id",
+        "index_version_id",
+        "region_id",
+        "score",
+        "rank",
+        "confidence_score",
+        "freshness_state",
+        "evidence_summary",
+        "calculated_at",
+        "created_at",
+    }.issubset(index_score_cols)
+
+    report_cols = {c["name"] for c in inspector.get_columns("benchmark_reports")}
+    assert {
+        "benchmark_report_id",
+        "report_key",
+        "title",
+        "report_period",
+        "report_type",
+        "status",
+        "summary",
+        "methodology_summary",
+        "data_window_start",
+        "data_window_end",
+        "freshness_notes",
+        "confidence_notes",
+        "coverage_notes",
+        "limitations",
+        "created_at",
+        "published_at",
+        "archived_at",
+        "superseded_at",
+    }.issubset(report_cols)
+
+    report_ranking_cols = {
+        c["name"] for c in inspector.get_columns("benchmark_report_rankings")
+    }
+    assert {
+        "benchmark_report_ranking_id",
+        "report_id",
+        "region_id",
+        "rank",
+        "score",
+        "index_score_id",
+        "explanation",
+        "warnings",
+        "confidence_score",
+        "freshness_state",
+        "created_at",
+    }.issubset(report_ranking_cols)
+
+    contribution_cols = {c["name"] for c in inspector.get_columns("data_contributions")}
+    assert {
+        "data_contribution_id",
+        "contributor_type",
+        "contributor_id",
+        "institution_id",
+        "target_type",
+        "target_id",
+        "region_id",
+        "contribution_type",
+        "structured_payload",
+        "summary",
+        "claimed_confidence",
+        "status",
+        "created_at",
+        "reviewed_at",
+    }.issubset(contribution_cols)
+
+    contribution_evidence_cols = {
+        c["name"] for c in inspector.get_columns("contribution_evidence")
+    }
+    assert {
+        "contribution_evidence_id",
+        "contribution_id",
+        "evidence_type",
+        "url",
+        "reference",
+        "description",
+        "uploaded_reference_id",
+        "created_at",
+    }.issubset(contribution_evidence_cols)
+
+    contribution_review_cols = {
+        c["name"] for c in inspector.get_columns("contribution_reviews")
+    }
+    assert {
+        "contribution_review_id",
+        "contribution_id",
+        "reviewer_id",
+        "review_decision",
+        "review_notes",
+        "canonical_update_candidate_created",
+        "canonical_update_candidate_ref",
+        "refresh_task_created",
+        "refresh_task_ref",
+        "created_at",
+    }.issubset(contribution_review_cols)
 
 
 def test_jobs_table_has_envelope_columns() -> None:

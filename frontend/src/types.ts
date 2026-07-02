@@ -17,6 +17,37 @@ export type ApiEnvelope<T> = {
 
 export type FreshnessStatus = "fresh" | "stale" | "partial" | "unknown" | "seeded_demo";
 
+export type PlatformEmbedProductId = "region_comparison" | "market_score_card";
+
+export type PlatformEmbedPayload = {
+  embed_product_id: PlatformEmbedProductId;
+  title: string;
+  attribution: string;
+  freshness: {
+    status: string;
+    freshness_expires_at: string | null;
+    last_updated_at: string | null;
+  };
+  confidence: {
+    level: string;
+    label: string;
+  };
+  source_summary: {
+    data_basis: string;
+    source_count: number;
+    source_categories: string[];
+    notes: string[];
+  };
+  warnings: string[];
+  metrics: Array<Record<string, string | number | boolean | null>>;
+};
+
+export type PlatformEmbedAccessPayload = {
+  allowed: true;
+  embed_product_id: PlatformEmbedProductId;
+  payload: PlatformEmbedPayload;
+};
+
 export type AudienceSegmentKey =
   | "students"
   | "early_career_job_seekers"
@@ -274,6 +305,190 @@ export type WarningRecord = {
 };
 
 export type WarningItem = string | WarningRecord;
+
+export type PublicReportLink = {
+  label: string;
+  href: string;
+  link_type: "report" | "public_page";
+};
+
+export type PublicSourceProvenanceSummary = {
+  data_basis: "demo_template" | "public_safe_summary" | "mixed" | "unknown";
+  source_count: number;
+  source_categories: string[];
+  provenance_notes: string[];
+};
+
+export type PublicCitation = {
+  source_name: string;
+  title: string;
+  period: string;
+  product_attribution: string;
+  public_path: string;
+  accessed_or_freshness_date: string;
+};
+
+export type PublicShareSummary = {
+  title: string;
+  category_claim: string;
+  confidence_label: string;
+  freshness_label: string;
+  takeaway: string;
+  public_path: string;
+  warning: string;
+};
+
+export type PublicSourceAuthority = {
+  labels: string[];
+  summary: string;
+};
+
+export type PublicInstitutionalCta = {
+  label: string;
+  body: string;
+  href: string;
+  link_type: "public_page";
+};
+
+export type PublicReportMarket = {
+  market_id: string;
+  market_label: string;
+  coverage_note: string;
+};
+
+export type PublicReportMarketResult = {
+  result_type: "featured" | "ranked";
+  rank: number | null;
+  market_id: string;
+  market_label: string;
+  headline: string;
+  rationale: string;
+  evidence_signals: string[];
+  freshness_date: string;
+  confidence: "high" | "medium" | "low" | "unknown";
+  warnings: string[];
+  source_provenance_summary: PublicSourceProvenanceSummary;
+};
+
+export type PublicReport = {
+  report_id: string;
+  slug: string;
+  title: string;
+  category: string;
+  report_period: string;
+  summary: string;
+  markets_covered: PublicReportMarket[];
+  market_results: PublicReportMarketResult[];
+  methodology_summary: string;
+  limitations: string[];
+  freshness_date: string;
+  freshness_status: FreshnessStatus;
+  confidence: "high" | "medium" | "low" | "unknown";
+  warnings: string[];
+  source_provenance_summary: PublicSourceProvenanceSummary;
+  related_links: PublicReportLink[];
+  suggested_citation: PublicCitation;
+  share_summary: PublicShareSummary;
+  source_authority: PublicSourceAuthority;
+  institutional_cta: PublicInstitutionalCta;
+};
+
+export type PublicReportSummary = {
+  report_id: string;
+  slug: string;
+  title: string;
+  category: string;
+  report_period: string;
+  summary: string;
+  freshness_date: string;
+  confidence: "high" | "medium" | "low" | "unknown";
+  warnings: string[];
+};
+
+export type PublicReportListPayload = {
+  reports: PublicReportSummary[];
+};
+
+export type PublicBenchmarkLink = {
+  label: string;
+  href: string;
+  link_type: "benchmark" | "report" | "public_page";
+};
+
+export type PublicBenchmarkSourceSummary = {
+  data_basis: "demo_template" | "public_safe_summary" | "mixed" | "unknown";
+  source_count: number;
+  source_categories: string[];
+  provenance_notes: string[];
+};
+
+export type PublicBenchmarkScoreDisplay = {
+  label: string;
+  value: number | null;
+  display_value: string;
+  score_basis: "demo_static" | "public_safe_summary" | "unavailable";
+  caveat: string;
+};
+
+export type PublicBenchmarkSubscore = {
+  key: string;
+  label: string;
+  value: number | null;
+  display_value: string;
+  explanation: string;
+};
+
+export type PublicBenchmarkMarketResult = {
+  result_type: "featured" | "ranked";
+  rank: number | null;
+  market_id: string;
+  market_label: string;
+  score_display: PublicBenchmarkScoreDisplay;
+  subscores: PublicBenchmarkSubscore[];
+  explanation: string;
+  warnings: string[];
+  freshness_date: string;
+  confidence: "high" | "medium" | "low" | "unknown";
+  source_provenance_summary: PublicBenchmarkSourceSummary;
+};
+
+export type PublicBenchmark = {
+  benchmark_id: string;
+  slug: string;
+  name: string;
+  category: string;
+  period: string;
+  summary: string;
+  methodology_summary: string;
+  limitations: string[];
+  freshness_date: string;
+  freshness_status: FreshnessStatus;
+  confidence: "high" | "medium" | "low" | "unknown";
+  warnings: string[];
+  market_results: PublicBenchmarkMarketResult[];
+  source_provenance_summary: PublicBenchmarkSourceSummary;
+  related_links: PublicBenchmarkLink[];
+  suggested_citation: PublicCitation;
+  share_summary: PublicShareSummary;
+  source_authority: PublicSourceAuthority;
+  institutional_cta: PublicInstitutionalCta;
+};
+
+export type PublicBenchmarkSummary = {
+  benchmark_id: string;
+  slug: string;
+  name: string;
+  category: string;
+  period: string;
+  summary: string;
+  freshness_date: string;
+  confidence: "high" | "medium" | "low" | "unknown";
+  warnings: string[];
+};
+
+export type PublicBenchmarkListPayload = {
+  benchmarks: PublicBenchmarkSummary[];
+};
 
 export type CoverageTier = "tier_1" | "tier_2" | "tier_3" | "tier_4";
 
@@ -1410,6 +1625,497 @@ export type InstitutionReportGeneratePayload = {
 
 export type InstitutionReportListPayload = {
   reports: InstitutionReportSummary[];
+};
+
+export type IntegrationDestination =
+  | "csv"
+  | "pdf"
+  | "google_sheets"
+  | "notion"
+  | "airtable"
+  | "ics_calendar";
+
+export type IntegrationCapability =
+  | "export_file"
+  | "prepared_payload"
+  | "calendar_file";
+
+export type IntegrationRiskPosture =
+  | "local_download_only"
+  | "prepared_no_sync"
+  | "calendar_file_no_sync"
+  | "unsupported_deferred";
+
+export type IntegrationExportFormat =
+  | "csv"
+  | "pdf"
+  | "prepared_google_sheets"
+  | "prepared_notion"
+  | "prepared_airtable";
+
+export type IntegrationProductObjectType =
+  | "region"
+  | "company"
+  | "comparison"
+  | "recommendation_strategy"
+  | "institutional_dashboard"
+  | "institutional_report";
+
+export type IntegrationReminderType =
+  | "application_window"
+  | "internship_deadline"
+  | "follow_up"
+  | "market_refresh_alert"
+  | "institutional_report_review"
+  | "data_request_due";
+
+export type IntegrationPermissionDecision = {
+  allowed: boolean;
+  reason: string;
+  boundary: string;
+  owner_user_id: string | null;
+  organization_id: string | null;
+};
+
+export type IntegrationProvenance = {
+  product_object_type: IntegrationProductObjectType;
+  product_object_id: string;
+  product_object_label: string | null;
+  generated_at: string;
+  generated_by_user_id: string;
+  organization_id: string | null;
+  freshness_status: string;
+  freshness_as_of: string | null;
+  confidence_label: string;
+  evidence_basis: string[];
+  source_object_version: string | null;
+  limitations: string[];
+  governance_warnings: string[];
+};
+
+export type IntegrationReceipt = {
+  integration_id: string;
+  destination: IntegrationDestination;
+  capability: IntegrationCapability;
+  risk_posture: IntegrationRiskPosture;
+  status: string;
+  permission_decision: IntegrationPermissionDecision;
+  provenance: IntegrationProvenance;
+  external_write_performed: boolean;
+  live_sync_enabled: boolean;
+  oauth_performed: boolean;
+  two_way_sync_enabled: boolean;
+  product_authority_retained: boolean;
+  limitations: string[];
+  governance_warnings: string[];
+};
+
+export type IntegrationExportCreateRequest = {
+  product_object_type: IntegrationProductObjectType;
+  product_object_id: string;
+  export_format: IntegrationExportFormat;
+  organization_id?: string | null;
+  source_context?: Record<string, unknown>;
+};
+
+export type IntegrationExportPayload = {
+  export_id: string;
+  product_object_type: IntegrationProductObjectType;
+  product_object_id: string;
+  export_format: IntegrationExportFormat;
+  destination: IntegrationDestination;
+  capability: IntegrationCapability;
+  risk_posture: IntegrationRiskPosture;
+  status: string;
+  filename: string | null;
+  content_type: string | null;
+  payload: Record<string, unknown>;
+  receipt: IntegrationReceipt;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IntegrationExportCreatePayload = {
+  export: IntegrationExportPayload;
+};
+
+export type IntegrationReminderCreateRequest = {
+  reminder_type: IntegrationReminderType;
+  product_object_type: IntegrationProductObjectType;
+  product_object_id: string;
+  title: string;
+  due_at: string;
+  organization_id?: string | null;
+  timezone?: string;
+  description?: string | null;
+  duration_minutes?: number;
+};
+
+export type IntegrationReminderPayload = {
+  reminder_id: string;
+  reminder_type: IntegrationReminderType;
+  product_object_type: IntegrationProductObjectType;
+  product_object_id: string;
+  destination: IntegrationDestination;
+  capability: IntegrationCapability;
+  risk_posture: IntegrationRiskPosture;
+  status: string;
+  title: string;
+  due_at: string;
+  timezone: string;
+  receipt: IntegrationReceipt;
+  ics_filename: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IntegrationReminderCreatePayload = {
+  reminder: IntegrationReminderPayload;
+};
+
+export type PartnerImportSourceType =
+  | "local_employer_list"
+  | "internship_partner_list"
+  | "regional_workforce_data"
+  | "aggregated_career_center_outcome_data";
+
+export type PartnerImportFormat = "csv" | "json";
+
+export type PartnerImportStatus =
+  | "uploaded"
+  | "validated"
+  | "needs_review"
+  | "accepted"
+  | "partially_accepted"
+  | "rejected"
+  | "archived"
+  | "quarantined";
+
+export type PartnerImportDecision =
+  | "accept"
+  | "needs_review"
+  | "reject"
+  | "quarantine";
+
+export type PartnerDataConfidence =
+  | "high"
+  | "medium"
+  | "low"
+  | "unknown"
+  | "unverified"
+  | "blocked";
+
+export type PartnerImportGovernanceWarning = {
+  code: string;
+  severity: string;
+  message: string;
+  record_index: number | null;
+  field: string | null;
+  action: PartnerImportDecision;
+};
+
+export type PartnerImportValidationResult = {
+  status: PartnerImportStatus;
+  record_count: number;
+  accepted_record_count: number;
+  quarantined_record_count: number;
+  rejected_record_count: number;
+  warning_count: number;
+  warnings: PartnerImportGovernanceWarning[];
+  required_fields_missing: string[];
+  unsupported_fields: string[];
+  has_blocking_privacy_issue: boolean;
+  has_blocking_source_issue: boolean;
+  can_accept: boolean;
+};
+
+export type PartnerContributedEvidence = {
+  partner_contributed: boolean;
+  canonical_truth: boolean;
+  import_batch_id: string;
+  import_record_id: string;
+  organization_id: string;
+  source_type: PartnerImportSourceType;
+  source_attribution: string;
+  confidence: PartnerDataConfidence;
+  freshness_status: string;
+  imported_at: string;
+  governance_warnings: PartnerImportGovernanceWarning[];
+  canonical_identity_overwrite_performed: boolean;
+  canonical_region_overwrite_performed: boolean;
+  product_scoring_override_performed: boolean;
+};
+
+export type PartnerImportReceipt = {
+  import_batch_id: string;
+  organization_id: string;
+  uploaded_by_user_id: string;
+  source_type: PartnerImportSourceType;
+  status: PartnerImportStatus;
+  source_attribution: string;
+  validation_result: PartnerImportValidationResult;
+  permission_decision: IntegrationPermissionDecision;
+  partner_contributed_evidence: boolean;
+  canonical_truth: boolean;
+  canonical_identity_overwrite_performed: boolean;
+  canonical_region_overwrite_performed: boolean;
+  product_scoring_override_performed: boolean;
+  governance_warnings_removed: boolean;
+  student_level_pii_imported: boolean;
+  individual_outcome_records_imported: boolean;
+  sensitive_demographics_imported: boolean;
+  internal_only_fields_exposed: boolean;
+  limitations: string[];
+  governance_warnings: PartnerImportGovernanceWarning[];
+  created_at: string;
+};
+
+export type PartnerImportCreateRequest = {
+  organization_id: string;
+  source_type: PartnerImportSourceType;
+  import_format: PartnerImportFormat;
+  source_attribution?: string | null;
+  content: string;
+  original_filename?: string | null;
+};
+
+export type PartnerImportActionRequest = {
+  reason?: string | null;
+};
+
+export type PartnerImportRecordPayload = {
+  import_record_id: string;
+  import_batch_id: string;
+  organization_id: string;
+  record_index: number;
+  source_type: PartnerImportSourceType;
+  record_status: string;
+  decision: PartnerImportDecision;
+  source_attribution: string;
+  employer_name: string | null;
+  region_label: string | null;
+  confidence: PartnerDataConfidence;
+  freshness_status: string;
+  partner_payload: Record<string, unknown>;
+  evidence: PartnerContributedEvidence;
+  validation_warnings: PartnerImportGovernanceWarning[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type PartnerImportBatchPayload = {
+  import_batch_id: string;
+  organization_id: string;
+  uploaded_by_user_id: string;
+  source_type: PartnerImportSourceType;
+  status: PartnerImportStatus;
+  import_format: PartnerImportFormat;
+  source_attribution: string;
+  original_filename: string | null;
+  record_count: number;
+  accepted_record_count: number;
+  quarantined_record_count: number;
+  rejected_record_count: number;
+  validation_result: PartnerImportValidationResult;
+  receipt: PartnerImportReceipt;
+  governance_warnings: PartnerImportGovernanceWarning[];
+  records: PartnerImportRecordPayload[];
+  preview_records: Array<Record<string, unknown>>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PartnerImportCreatePayload = {
+  partner_import: PartnerImportBatchPayload;
+};
+
+export type PartnerImportListPayload = {
+  imports: PartnerImportBatchPayload[];
+};
+
+export type PartnerImportReceiptPayload = {
+  receipt: PartnerImportReceipt;
+};
+
+export type ApiScope =
+  | "region:read"
+  | "company_geography:read"
+  | "market_signal:read"
+  | "institution_dashboard:read"
+  | "exports:create"
+  | "imports:create";
+
+export type ApiClientStatus = "active" | "revoked";
+
+export type ApiAccessPolicy = {
+  scopes: ApiScope[];
+  organization_id: string | null;
+  rate_limit_count: number;
+  rate_limit_window_seconds: number;
+  allowed_origins: string[];
+};
+
+export type SafeApiKeyDisplay = {
+  api_key_id: string;
+  key_prefix: string;
+  display_key: string;
+  raw_key: string | null;
+  revealed_once: boolean;
+};
+
+export type ApiClientPayload = {
+  api_client_id: string;
+  display_name: string;
+  created_by_user_id: string;
+  organization_id: string | null;
+  status: ApiClientStatus;
+  policy: ApiAccessPolicy;
+  keys: SafeApiKeyDisplay[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiClientCreateRequest = {
+  display_name: string;
+  scopes: ApiScope[];
+  organization_id?: string | null;
+  rate_limit_count?: number;
+  rate_limit_window_seconds?: number;
+  allowed_origins?: string[];
+};
+
+export type ApiClientUpdateRequest = {
+  scopes?: ApiScope[] | null;
+  rate_limit_count?: number | null;
+  rate_limit_window_seconds?: number | null;
+  status?: ApiClientStatus | null;
+};
+
+export type ApiClientCreatePayload = {
+  api_client: ApiClientPayload;
+};
+
+export type ApiClientListPayload = {
+  api_clients: ApiClientPayload[];
+};
+
+export type ApiKeyCreatePayload = {
+  api_key: SafeApiKeyDisplay;
+};
+
+export type ApiUsagePayload = {
+  usage_record_id: string;
+  api_client_id: string | null;
+  api_key_id: string | null;
+  route: string;
+  method: string;
+  scope: string | null;
+  decision: string;
+  status_code: number;
+  rate_limit_limit: number | null;
+  rate_limit_remaining: number | null;
+  rate_limit_reset_at: string | null;
+  occurred_at: string;
+};
+
+export type ApiUsageListPayload = {
+  usage: ApiUsagePayload[];
+};
+
+export type CareerPlatform =
+  | "linkedin"
+  | "handshake"
+  | "university_job_board"
+  | "company_career_page"
+  | "other_public_career_site";
+
+export type CareerPlatformRiskPosture =
+  | "safe_manual"
+  | "export_only"
+  | "deep_link_only"
+  | "official_api_only"
+  | "requires_review"
+  | "blocked_hostile_tos"
+  | "deferred";
+
+export type CareerPlatformRegistryItem = {
+  platform: CareerPlatform;
+  display_name: string;
+  risk_posture: CareerPlatformRiskPosture;
+  allowed_capabilities: string[];
+  blocked_capabilities: string[];
+  notes: string[];
+  manual_only: boolean;
+  automation_performed: boolean;
+  ats_state_created: boolean;
+};
+
+export type CareerPlatformRegistryPayload = {
+  platforms: CareerPlatformRegistryItem[];
+};
+
+export type ExternalCareerLink = {
+  url: string;
+  label: string;
+  platform: CareerPlatform;
+  risk_posture: CareerPlatformRiskPosture;
+  manual_only: boolean;
+  automation_performed: boolean;
+  ats_state_created: boolean;
+};
+
+export type CareerPlatformReference = {
+  reference_id: string;
+  platform: CareerPlatform;
+  risk_posture: CareerPlatformRiskPosture;
+  subject_type: string;
+  subject_id: string;
+  url: string;
+  label: string;
+  organization_id: string | null;
+  submitted_by_user_id: string;
+  manual_only: boolean;
+  created_at: string;
+};
+
+export type CareerPlatformReferenceCreateRequest = {
+  platform: CareerPlatform;
+  subject_type: string;
+  subject_id: string;
+  url: string;
+  label?: string | null;
+  organization_id?: string | null;
+};
+
+export type CareerPlatformReferencePayload = {
+  reference: CareerPlatformReference;
+};
+
+export type CareerPlatformReferenceListPayload = {
+  references: CareerPlatformReference[];
+};
+
+export type CareerPlatformExportRequest = {
+  platform: CareerPlatform;
+  company_ids?: string[];
+  employer_names?: string[];
+  organization_id?: string | null;
+};
+
+export type CareerPlatformExportPayload = {
+  export: {
+    career_platform_export_id: string;
+    platform: CareerPlatform;
+    risk_posture: CareerPlatformRiskPosture;
+    export_mode: string;
+    rows: Array<Record<string, unknown>>;
+    manual_only: boolean;
+    automation_performed: boolean;
+    ats_state_created: boolean;
+    application_status_created: boolean;
+    recruiter_outreach_created: boolean;
+    created_at: string;
+  };
 };
 
 export type InstitutionDataRequestType =

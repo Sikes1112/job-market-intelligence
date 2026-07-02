@@ -1,6 +1,12 @@
 import type {
   ApiEnvelope,
   AccountDeactivationResult,
+  ApiClientCreatePayload,
+  ApiClientCreateRequest,
+  ApiClientListPayload,
+  ApiClientUpdateRequest,
+  ApiKeyCreatePayload,
+  ApiUsageListPayload,
   BillingCheckoutSessionPayload,
   BillingPortalSessionPayload,
   BillingStatusPayload,
@@ -8,6 +14,12 @@ import type {
   CompanyGeographyResponse,
   CompanySearchResponse,
   ComparisonDetail,
+  CareerPlatformExportPayload,
+  CareerPlatformExportRequest,
+  CareerPlatformReferenceCreateRequest,
+  CareerPlatformReferenceListPayload,
+  CareerPlatformReferencePayload,
+  CareerPlatformRegistryPayload,
   CurrentUserProfile,
   ExplanationRequest,
   ExplanationResult,
@@ -20,6 +32,10 @@ import type {
   InstitutionDataRequestCreateRequest,
   InstitutionDataRequestListPayload,
   InstitutionDashboardPayload,
+  IntegrationExportCreatePayload,
+  IntegrationExportCreateRequest,
+  IntegrationReminderCreatePayload,
+  IntegrationReminderCreateRequest,
   InstitutionReportCreateRequest,
   InstitutionReportGeneratePayload,
   InstitutionReportListPayload,
@@ -35,10 +51,20 @@ import type {
   MonetizationReportProductKey,
   MonetizationReportsPayload,
   MonetizationUsagePayload,
+  PartnerImportActionRequest,
+  PartnerImportCreatePayload,
+  PartnerImportCreateRequest,
+  PartnerImportListPayload,
+  PartnerImportReceiptPayload,
   PersonalizedRecommendationSnapshot,
   PersonalizedRecommendationSnapshotInput,
   PersonalizedRequest,
   PersonalizedResult,
+  PlatformEmbedAccessPayload,
+  PublicBenchmark,
+  PublicBenchmarkListPayload,
+  PublicReport,
+  PublicReportListPayload,
   RecommendationGoalModesPayload,
   RecommendationSnapshotList,
   RecommendationStrategyPayload,
@@ -242,9 +268,10 @@ async function protectedRequest<T>(
     && !path.startsWith("/monetization/")
     && !path.startsWith("/billing/")
     && !path.startsWith("/api/institutions/")
+    && !path.startsWith("/api/integrations/")
   ) {
     throw new ApiError(
-      "Protected requests are restricted to /me, /monetization, /billing, and /api/institutions routes",
+      "Protected requests are restricted to /me, /monetization, /billing, /api/institutions, and /api/integrations routes",
     );
   }
 
@@ -324,6 +351,31 @@ export function getCompanySources(companyId: string) {
 export function getComparison(regionA: string, regionB: string) {
   const params = new URLSearchParams({ region_a: regionA, region_b: regionB });
   return request<ComparisonDetail>(`/compare?${params.toString()}`);
+}
+
+export function getPublicReports() {
+  return request<PublicReportListPayload>("/public/reports");
+}
+
+export function getPublicReport(slug: string) {
+  return request<PublicReport>(`/public/reports/${encodeURIComponent(slug)}`);
+}
+
+export function getPublicBenchmarks() {
+  return request<PublicBenchmarkListPayload>("/public/benchmarks");
+}
+
+export function getPublicBenchmark(slug: string) {
+  return request<PublicBenchmark>(`/public/benchmarks/${encodeURIComponent(slug)}`);
+}
+
+export function getPlatformEmbed(embedSlug: string, origin?: string | null) {
+  const params = new URLSearchParams();
+  appendOptionalParam(params, "origin", origin);
+  const query = params.toString();
+  return request<PlatformEmbedAccessPayload>(
+    `/api/v1/platform/embeds/${encodeURIComponent(embedSlug)}${query ? `?${query}` : ""}`,
+  );
 }
 
 export function discoverPersonalized(body: PersonalizedRequest) {
@@ -486,6 +538,228 @@ export function listInstitutionDataRequests(
   return protectedRequest<InstitutionDataRequestListPayload>(
     `/api/institutions/organizations/${encodeURIComponent(organizationId)}/data-requests`,
     auth,
+  );
+}
+
+export function createIntegrationExport(
+  body: IntegrationExportCreateRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<IntegrationExportCreatePayload>("/api/integrations/exports", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function createIntegrationReminder(
+  body: IntegrationReminderCreateRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<IntegrationReminderCreatePayload>("/api/integrations/reminders", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function createPartnerImport(
+  body: PartnerImportCreateRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<PartnerImportCreatePayload>("/api/integrations/partner-imports", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function listPartnerImports(
+  organizationId: string,
+  auth: ProtectedRequestOptions,
+) {
+  const params = new URLSearchParams({ organization_id: organizationId });
+  return protectedRequest<PartnerImportListPayload>(
+    `/api/integrations/partner-imports?${params.toString()}`,
+    auth,
+  );
+}
+
+export function getPartnerImport(
+  importBatchId: string,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<PartnerImportCreatePayload>(
+    `/api/integrations/partner-imports/${encodeURIComponent(importBatchId)}`,
+    auth,
+  );
+}
+
+export function validatePartnerImport(
+  importBatchId: string,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<PartnerImportCreatePayload>(
+    `/api/integrations/partner-imports/${encodeURIComponent(importBatchId)}/validate`,
+    auth,
+    { method: "POST" },
+  );
+}
+
+export function acceptPartnerImport(
+  importBatchId: string,
+  body: PartnerImportActionRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<PartnerImportCreatePayload>(
+    `/api/integrations/partner-imports/${encodeURIComponent(importBatchId)}/accept`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function rejectPartnerImport(
+  importBatchId: string,
+  body: PartnerImportActionRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<PartnerImportCreatePayload>(
+    `/api/integrations/partner-imports/${encodeURIComponent(importBatchId)}/reject`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function archivePartnerImport(
+  importBatchId: string,
+  body: PartnerImportActionRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<PartnerImportCreatePayload>(
+    `/api/integrations/partner-imports/${encodeURIComponent(importBatchId)}/archive`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function getPartnerImportReceipt(
+  importBatchId: string,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<PartnerImportReceiptPayload>(
+    `/api/integrations/partner-imports/${encodeURIComponent(importBatchId)}/receipt`,
+    auth,
+  );
+}
+
+export function createApiClient(
+  body: ApiClientCreateRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<ApiClientCreatePayload>("/api/integrations/api-clients", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function listApiClients(auth: ProtectedRequestOptions) {
+  return protectedRequest<ApiClientListPayload>("/api/integrations/api-clients", auth);
+}
+
+export function updateApiClient(
+  apiClientId: string,
+  body: ApiClientUpdateRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<ApiClientCreatePayload>(
+    `/api/integrations/api-clients/${encodeURIComponent(apiClientId)}`,
+    auth,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function createApiKey(apiClientId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<ApiKeyCreatePayload>(
+    `/api/integrations/api-clients/${encodeURIComponent(apiClientId)}/keys`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+export function revokeApiKey(apiKeyId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<ApiKeyCreatePayload>(
+    `/api/integrations/api-keys/${encodeURIComponent(apiKeyId)}/revoke`,
+    auth,
+    { method: "POST" },
+  );
+}
+
+export function listApiUsage(apiClientId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<ApiUsageListPayload>(
+    `/api/integrations/api-clients/${encodeURIComponent(apiClientId)}/usage`,
+    auth,
+  );
+}
+
+export function getCareerPlatformRegistry(auth: ProtectedRequestOptions) {
+  return protectedRequest<CareerPlatformRegistryPayload>(
+    "/api/integrations/career-platforms",
+    auth,
+  );
+}
+
+export function createCareerPlatformReference(
+  body: CareerPlatformReferenceCreateRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerPlatformReferencePayload>(
+    "/api/integrations/career-platform-references",
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function listCareerPlatformReferences(
+  auth: ProtectedRequestOptions,
+  params?: { organizationId?: string | null; subjectType?: string | null; subjectId?: string | null },
+) {
+  const query = new URLSearchParams();
+  appendOptionalParam(query, "organization_id", params?.organizationId ?? undefined);
+  appendOptionalParam(query, "subject_type", params?.subjectType ?? undefined);
+  appendOptionalParam(query, "subject_id", params?.subjectId ?? undefined);
+  const suffix = query.toString();
+  return protectedRequest<CareerPlatformReferenceListPayload>(
+    `/api/integrations/career-platform-references${suffix ? `?${suffix}` : ""}`,
+    auth,
+  );
+}
+
+export function createCareerPlatformExport(
+  body: CareerPlatformExportRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerPlatformExportPayload>(
+    "/api/integrations/career-platform-exports",
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
   );
 }
 

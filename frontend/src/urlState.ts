@@ -16,9 +16,38 @@ export type ProductPage =
   | "plans"
   | "institution"
   | "account";
-export type PublicPage = "landing" | "data-limitations" | "privacy" | "terms" | "sources";
+export type PublicPage =
+  | "landing"
+  | "benchmarks"
+  | "data-licensing"
+  | "developers"
+  | "developer-docs"
+  | "developer-doc-authentication"
+  | "developer-doc-errors"
+  | "developer-doc-rate-limits"
+  | "developer-doc-freshness-confidence"
+  | "developer-doc-region-scores"
+  | "developer-doc-company-geography"
+  | "developer-doc-early-career-access"
+  | "developer-doc-hiring-concentration"
+  | "developer-doc-market-comparisons"
+  | "embed-region-comparison"
+  | "embed-market-score-card"
+  | "guides"
+  | "reports"
+  | "glossary"
+  | "methodology"
+  | "data-limitations"
+  | "privacy"
+  | "terms"
+  | "sources";
 export type AppPage = ProductPage | PublicPage;
-export type InstitutionView = "dashboard" | "advisor" | "reports" | "data-requests";
+export type InstitutionView =
+  | "dashboard"
+  | "advisor"
+  | "reports"
+  | "data-requests"
+  | "imports";
 
 export type ComparisonUrlState = {
   regionA: string;
@@ -39,6 +68,9 @@ export type RouteState = {
   page: AppPage;
   regionId?: string;
   companyId?: string;
+  benchmarkSlug?: string;
+  reportSlug?: string;
+  seoPageSlug?: string;
   organizationId?: string;
   institutionView?: InstitutionView;
   comparison: ComparisonUrlState;
@@ -60,6 +92,25 @@ export const DEFAULT_DISCOVERY_FILTERS: DiscoveryFilters = {
 const PRODUCT_ROOT = "/markets";
 
 export const PUBLIC_PAGE_PATHS: Record<Exclude<PublicPage, "landing">, string> = {
+  benchmarks: "/benchmarks",
+  "data-licensing": "/data-licensing",
+  developers: "/developers",
+  "developer-docs": "/developers/docs",
+  "developer-doc-authentication": "/developers/docs/authentication",
+  "developer-doc-errors": "/developers/docs/errors",
+  "developer-doc-rate-limits": "/developers/docs/rate-limits",
+  "developer-doc-freshness-confidence": "/developers/docs/freshness-confidence",
+  "developer-doc-region-scores": "/developers/docs/region-scores",
+  "developer-doc-company-geography": "/developers/docs/company-geography",
+  "developer-doc-early-career-access": "/developers/docs/early-career-access",
+  "developer-doc-hiring-concentration": "/developers/docs/hiring-concentration",
+  "developer-doc-market-comparisons": "/developers/docs/market-comparisons",
+  "embed-region-comparison": "/embed/region-comparison",
+  "embed-market-score-card": "/embed/market-score-card",
+  guides: "/career-market-guides",
+  reports: "/reports",
+  glossary: "/glossary",
+  methodology: "/methodology",
   "data-limitations": "/data-limitations",
   privacy: "/privacy",
   terms: "/terms",
@@ -187,7 +238,14 @@ function baseRoute(
   params: URLSearchParams,
   extra?: Pick<
     RouteState,
-    "regionId" | "companyId" | "organizationId" | "institutionView" | "unknownPath"
+    | "regionId"
+    | "companyId"
+    | "benchmarkSlug"
+    | "reportSlug"
+    | "seoPageSlug"
+    | "organizationId"
+    | "institutionView"
+    | "unknownPath"
   >,
 ): RouteState {
   return {
@@ -212,6 +270,47 @@ export function parseRoute(pathname: string, search: string): RouteState {
       ([, path]) => path === `/${segments[0]}`,
     )?.[0] as Exclude<PublicPage, "landing"> | undefined;
     if (publicPage) return baseRoute(publicPage, params);
+  }
+
+  if (segments[0] === "benchmarks") {
+    if (segments.length === 1) return baseRoute("benchmarks", params);
+    if (segments.length === 2) {
+      return baseRoute("benchmarks", params, { benchmarkSlug: cleanToken(segments[1]) });
+    }
+  }
+
+  if (segments[0] === "reports") {
+    if (segments.length === 1) return baseRoute("reports", params);
+    if (segments.length === 2) {
+      return baseRoute("reports", params, { reportSlug: cleanToken(segments[1]) });
+    }
+  }
+
+  if (segments[0] === "career-market-guides" && segments.length === 1) {
+    return baseRoute("guides", params);
+  }
+
+  if (segments[0] === "developers") {
+    if (segments.length === 1) return baseRoute("developers", params);
+    if (segments[1] === "docs") {
+      const docRoute = developerDocRoute(segments[2]);
+      return baseRoute(docRoute, params);
+    }
+  }
+
+  if (segments[0] === "embed") {
+    if (segments[1] === "region-comparison") {
+      return baseRoute("embed-region-comparison", params);
+    }
+    if (segments[1] === "market-score-card") {
+      return baseRoute("embed-market-score-card", params);
+    }
+  }
+
+  if (["best-cities", "compare", "career-markets", "roles"].includes(segments[0])) {
+    if (segments.length === 2) {
+      return baseRoute("guides", params, { seoPageSlug: cleanToken(segments[1]) });
+    }
   }
 
   if (segments[0] !== "markets") {
@@ -252,6 +351,12 @@ export function parseRoute(pathname: string, search: string): RouteState {
         organizationId: cleanToken(segments[3]),
       });
     }
+    if (segments[2] === "imports") {
+      return baseRoute("institution", params, {
+        institutionView: "imports",
+        organizationId: cleanToken(segments[3]),
+      });
+    }
     return baseRoute("institution", params, {
       institutionView: "dashboard",
       organizationId: cleanToken(segments[2]),
@@ -280,6 +385,27 @@ export function landingUrl(): string {
 
 export function publicPageUrl(page: Exclude<PublicPage, "landing">): string {
   return PUBLIC_PAGE_PATHS[page];
+}
+
+function developerDocRoute(slug: string | undefined): PublicPage {
+  if (slug === "authentication") return "developer-doc-authentication";
+  if (slug === "errors") return "developer-doc-errors";
+  if (slug === "rate-limits") return "developer-doc-rate-limits";
+  if (slug === "freshness-confidence") return "developer-doc-freshness-confidence";
+  if (slug === "region-scores") return "developer-doc-region-scores";
+  if (slug === "company-geography") return "developer-doc-company-geography";
+  if (slug === "early-career-access") return "developer-doc-early-career-access";
+  if (slug === "hiring-concentration") return "developer-doc-hiring-concentration";
+  if (slug === "market-comparisons") return "developer-doc-market-comparisons";
+  return "developer-docs";
+}
+
+export function publicReportUrl(slug: string): string {
+  return `${PUBLIC_PAGE_PATHS.reports}/${encodePathValue(slug)}`;
+}
+
+export function publicBenchmarkUrl(slug: string): string {
+  return `${PUBLIC_PAGE_PATHS.benchmarks}/${encodePathValue(slug)}`;
 }
 
 export function regionDetailUrl(regionId?: string): string {
@@ -338,6 +464,12 @@ export function institutionDataRequestsUrl(organizationId?: string): string {
   return organizationId
     ? `${PRODUCT_ROOT}/institution/data-requests/${encodePathValue(organizationId)}`
     : `${PRODUCT_ROOT}/institution/data-requests`;
+}
+
+export function institutionImportsUrl(organizationId?: string): string {
+  return organizationId
+    ? `${PRODUCT_ROOT}/institution/imports/${encodePathValue(organizationId)}`
+    : `${PRODUCT_ROOT}/institution/imports`;
 }
 
 export function accountUrl(): string {

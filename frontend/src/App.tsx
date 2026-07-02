@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import {
+  ApiError,
   API_TARGET_LABEL,
+  acceptPartnerImport,
+  archivePartnerImport,
+  createApiClient,
+  createApiKey,
   createBillingCheckoutSession,
   createBillingPortalSession,
+  createCareerPlatformExport,
+  createIntegrationExport,
+  createIntegrationReminder,
   createInstitutionDataRequest,
+  createPartnerImport,
   createRecommendationSnapshot,
   createSavedMarketArtifact,
   deactivateAccount,
@@ -22,9 +31,11 @@ import {
   getComparison,
   getCurrentUser,
   getBillingStatus,
+  getCareerPlatformRegistry,
   getHealth,
   getInstitutionCurrentOrganizations,
   getInstitutionDashboard,
+  getPartnerImportReceipt,
   generateInstitutionReport,
   getMonetizationAccessPreview,
   getMonetizationFeatures,
@@ -34,6 +45,11 @@ import {
   getMyMonetizationEntitlements,
   getMyMonetizationUsage,
   getPreferences,
+  getPlatformEmbed,
+  getPublicBenchmark,
+  getPublicBenchmarks,
+  getPublicReport,
+  getPublicReports,
   getRegion,
   getRecommendationGoalModes,
   getRecommendationStrategy,
@@ -41,14 +57,20 @@ import {
   getRegions,
   listInstitutionDataRequests,
   listInstitutionReports,
+  listApiClients,
+  listApiUsage,
+  listPartnerImports,
   listAlerts,
   listRecommendationSnapshots,
   listSavedMarketArtifacts,
   markAlertRead,
   previewScoringOverlay,
+  rejectPartnerImport,
+  revokeApiKey,
   runInstitutionAdvisorComparison,
   searchCompanies,
   searchRegions,
+  validatePartnerImport,
   updatePreferences,
   type ProtectedRequestOptions,
 } from "./api";
@@ -73,7 +95,17 @@ import {
 import type {
   ApiEnvelope,
   AccountDeactivationResult,
+  ApiClientCreatePayload,
+  ApiClientCreateRequest,
+  ApiClientListPayload,
+  ApiScope,
+  ApiKeyCreatePayload,
+  ApiUsageListPayload,
   BillingStatusPayload,
+  CareerPlatform,
+  CareerPlatformExportPayload,
+  CareerPlatformExportRequest,
+  CareerPlatformRegistryPayload,
   CompanyGeographyResponse,
   CompanyDetail,
   CompanySearchResponse,
@@ -103,6 +135,11 @@ import type {
   InstitutionDataRequestPayload,
   InstitutionDataRequestType,
   InstitutionDashboardPayload,
+  IntegrationExportCreateRequest,
+  IntegrationExportFormat,
+  IntegrationProductObjectType,
+  IntegrationReminderCreateRequest,
+  IntegrationReminderType,
   InstitutionReportCreateRequest,
   InstitutionReportGeneratePayload,
   InstitutionReportListPayload,
@@ -122,11 +159,29 @@ import type {
   MonetizationReportProduct,
   MonetizationReportsPayload,
   MonetizationUsagePayload,
+  PartnerImportBatchPayload,
+  PartnerImportCreatePayload,
+  PartnerImportCreateRequest,
+  PartnerImportFormat,
+  PartnerImportListPayload,
+  PartnerImportReceiptPayload,
+  PartnerImportSourceType,
   PersonalizedRecommendationSnapshot,
   PersonalizedRecommendationSnapshotInput,
   PersonalizedResult,
+  PlatformEmbedPayload,
   PreferenceLevel,
   PriorityMarket,
+  PublicBenchmark,
+  PublicBenchmarkListPayload,
+  PublicBenchmarkMarketResult,
+  PublicCitation,
+  PublicInstitutionalCta,
+  PublicReport,
+  PublicReportListPayload,
+  PublicReportMarketResult,
+  PublicShareSummary,
+  PublicSourceAuthority,
   AppliedRankingPenalty,
   MissingScoreComponent,
   RecommendationEvidenceReference,
@@ -179,13 +234,16 @@ import {
   institutionAdvisorUrl,
   institutionDataRequestsUrl,
   institutionDashboardUrl,
+  institutionImportsUrl,
   institutionReportsUrl,
   isProductPage,
   landingUrl,
   parseRoute,
   personalizedDiscoveryUrl,
   plansUrl,
+  publicBenchmarkUrl,
   publicPageUrl,
+  publicReportUrl,
   recommendationsUrl,
   regionDetailUrl,
   type DiscoveryFilters,
@@ -194,12 +252,25 @@ import {
   type RouteState,
 } from "./urlState";
 import {
+  DATA_LICENSING_COPY,
+  DEVELOPER_DOCS_COPY,
+  DEVELOPER_DOCS_NAV,
   DEMO_DISCLOSURE_COPY,
   LANDING_COPY,
   LEGAL_PAGE_COPY,
   PUBLIC_INFO_LINKS,
+  type DeveloperDocPageKey,
   type LegalPublicPage,
 } from "./publicContent";
+import {
+  PUBLIC_SEO_PAGES,
+  getPublicSeoPageBySlug,
+  publicSeoPageUrl,
+  relatedSeoPages,
+  type PublicSeoConfidence,
+  type PublicSeoLink,
+  type PublicSeoPage,
+} from "./publicSeoContent";
 
 const SCORE_FIELDS: Array<{ key: keyof RegionScores; label: string; short: string }> = [
   {
@@ -307,6 +378,20 @@ type InstitutionDataRequestFormState = {
   subjectUserId: string;
   reason: string;
 };
+type PartnerImportFormState = {
+  sourceType: PartnerImportSourceType;
+  importFormat: PartnerImportFormat;
+  sourceAttribution: string;
+  originalFilename: string;
+  content: string;
+};
+type ApiAccessFormState = {
+  displayName: string;
+  organizationId: string;
+  scopes: ApiScope[];
+  rateLimitCount: number;
+  rateLimitWindowSeconds: number;
+};
 
 const ADVISOR_COMPARISON_OPTIONS: Array<{
   id: InstitutionAdvisorComparisonType;
@@ -352,6 +437,41 @@ const INSTITUTION_DATA_REQUEST_OPTIONS: Array<{
   { id: "student_deletion", label: "Student deletion" },
 ];
 
+const PARTNER_IMPORT_SOURCE_OPTIONS: Array<{
+  id: PartnerImportSourceType;
+  label: string;
+}> = [
+  { id: "local_employer_list", label: "Local employer list" },
+  { id: "internship_partner_list", label: "Internship partner list" },
+  { id: "regional_workforce_data", label: "Regional workforce data" },
+  {
+    id: "aggregated_career_center_outcome_data",
+    label: "Aggregated outcome data",
+  },
+];
+
+const PARTNER_IMPORT_FORMAT_OPTIONS: Array<{
+  id: PartnerImportFormat;
+  label: string;
+}> = [
+  { id: "csv", label: "CSV" },
+  { id: "json", label: "JSON" },
+];
+
+const API_SCOPE_OPTIONS: Array<{ id: ApiScope; label: string }> = [
+  { id: "region:read", label: "Region read" },
+  { id: "company_geography:read", label: "Company geography read" },
+  { id: "market_signal:read", label: "Market signal read" },
+  { id: "institution_dashboard:read", label: "Institution dashboard read" },
+  { id: "exports:create", label: "Create exports" },
+  { id: "imports:create", label: "Create imports" },
+];
+
+const CAREER_PLATFORM_OPTIONS: Array<{ id: CareerPlatform; label: string }> = [
+  { id: "linkedin", label: "LinkedIn manual search" },
+  { id: "handshake", label: "Handshake manual lookup" },
+];
+
 const DEFAULT_REPORT_FORM_STATE: InstitutionReportFormState = {
   reportType: "career_services",
   minimumGroupSize: 5,
@@ -362,6 +482,34 @@ const DEFAULT_DATA_REQUEST_FORM_STATE: InstitutionDataRequestFormState = {
   subjectUserId: "",
   reason: "",
 };
+
+const DEFAULT_PARTNER_IMPORT_FORM_STATE: PartnerImportFormState = {
+  sourceType: "local_employer_list",
+  importFormat: "csv",
+  sourceAttribution: "Career center partner list",
+  originalFilename: "partner-import.csv",
+  content: "employer_name,region,source_attribution,observed_at\nAlpha Systems,Greater Boston,Career center partner list,2026-01-10\n",
+};
+
+const DEFAULT_API_ACCESS_FORM_STATE: ApiAccessFormState = {
+  displayName: "Read-only market intelligence client",
+  organizationId: "",
+  scopes: ["region:read", "company_geography:read", "market_signal:read"],
+  rateLimitCount: 60,
+  rateLimitWindowSeconds: 3600,
+};
+
+const INTEGRATION_EXPORT_OPTIONS: Array<{
+  id: IntegrationExportFormat;
+  label: string;
+  description: string;
+}> = [
+  { id: "csv", label: "CSV", description: "Local file download" },
+  { id: "pdf", label: "PDF", description: "Governance-marked file" },
+  { id: "prepared_google_sheets", label: "Sheets", description: "Prepared manual payload" },
+  { id: "prepared_notion", label: "Notion", description: "Prepared manual payload" },
+  { id: "prepared_airtable", label: "Airtable", description: "Prepared manual payload" },
+];
 
 const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
   { id: "explore", label: "Explore Markets", kicker: "Market map" },
@@ -658,6 +806,34 @@ function dataRequestFromForm(
   };
 }
 
+function partnerImportRequestFromForm(
+  organizationId: string,
+  form: PartnerImportFormState,
+): PartnerImportCreateRequest {
+  return {
+    organization_id: organizationId,
+    source_type: form.sourceType,
+    import_format: form.importFormat,
+    source_attribution: optionalDraftValue(form.sourceAttribution),
+    content: form.content,
+    original_filename: optionalDraftValue(form.originalFilename),
+  };
+}
+
+function apiClientRequestFromForm(form: ApiAccessFormState): ApiClientCreateRequest {
+  return {
+    display_name: form.displayName,
+    scopes: form.scopes,
+    organization_id: optionalDraftValue(form.organizationId),
+    rate_limit_count: Math.max(1, Math.trunc(form.rateLimitCount || 60)),
+    rate_limit_window_seconds: Math.max(
+      60,
+      Math.trunc(form.rateLimitWindowSeconds || 3600),
+    ),
+    allowed_origins: [],
+  };
+}
+
 function formatAdvisorSignalValue(value: unknown): string {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return JSON.stringify(value);
@@ -785,6 +961,13 @@ function formatDateTime(value: string | null | undefined): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
+}
+
+function formatDateOnly(value: string | null | undefined): string {
+  if (!value) return "n/a";
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
 }
 
 function scorePercent(value: number | null | undefined) {
@@ -1786,7 +1969,7 @@ function PublicShell({
           <span className="brand-mark">JM</span>
           <span>
             <strong>Job Market Intelligence</strong>
-            <small>Public demo</small>
+            <small>Opportunity geography intelligence</small>
           </span>
         </a>
         <div className="public-header-actions">
@@ -1826,8 +2009,8 @@ function LandingPage({
           </a>
           <a
             className="secondary-button"
-            href={publicPageUrl("data-limitations")}
-            onClick={(event) => onNavigate(event, publicPageUrl("data-limitations"))}
+            href={publicPageUrl("methodology")}
+            onClick={(event) => onNavigate(event, publicPageUrl("methodology"))}
           >
             {LANDING_COPY.secondaryCtaLabel}
           </a>
@@ -1877,23 +2060,1366 @@ function LegalPage({ page }: { page: LegalPublicPage }) {
   );
 }
 
+function DevelopersPage({ onNavigate }: { onNavigate: LinkClickHandler }) {
+  return (
+    <div className="public-page public-document">
+      <section className="public-intro public-document-intro">
+        <p className="eyebrow">Developer portal</p>
+        <h1>Platform API developer portal</h1>
+        <p className="public-lead">
+          Build against secured, versioned, public-safe market intelligence endpoints with documented authentication,
+          response metadata, limits, and product contracts.
+        </p>
+        <div className="hero-actions">
+          <a
+            className="primary-button"
+            href={publicPageUrl("developer-docs")}
+            onClick={(event) => onNavigate(event, publicPageUrl("developer-docs"))}
+          >
+            Read docs
+          </a>
+          <a
+            className="secondary-button"
+            href="/api/v1/platform/docs/openapi.json"
+          >
+            OpenAPI JSON
+          </a>
+          <a
+            className="secondary-button"
+            href="/api/v1/platform/docs/postman.json"
+          >
+            Postman JSON
+          </a>
+        </div>
+      </section>
+      <section className="public-section-grid" aria-label="Developer documentation areas">
+        {DEVELOPER_DOCS_NAV.slice(0, 5).map((item) => (
+          <article className="public-section" key={item.page}>
+            <h2>{item.label}</h2>
+            <p>{DEVELOPER_DOCS_COPY[item.page].summary}</p>
+            <a href={item.href} onClick={(event) => onNavigate(event, item.href)}>
+              Open {item.label.toLowerCase()}
+            </a>
+          </article>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function DeveloperDocsPage({
+  page,
+  onNavigate,
+}: {
+  page: DeveloperDocPageKey;
+  onNavigate: LinkClickHandler;
+}) {
+  const copy = DEVELOPER_DOCS_COPY[page];
+  return (
+    <div className="public-page public-document">
+      <section className="public-intro public-document-intro">
+        <p className="eyebrow">Platform API docs</p>
+        <h1>{copy.title}</h1>
+        <p className="public-lead">{copy.summary}</p>
+      </section>
+      <nav className="developer-doc-nav" aria-label="Developer docs">
+        {DEVELOPER_DOCS_NAV.map((item) => (
+          <a
+            className={item.page === page ? "public-link-active" : ""}
+            href={item.href}
+            key={item.page}
+            onClick={(event) => onNavigate(event, item.href)}
+          >
+            {item.label}
+          </a>
+        ))}
+      </nav>
+      <section className="public-document-list" aria-label={copy.title}>
+        {copy.sections.map((section) => (
+          <article className="public-section" key={section.title}>
+            <h2>{section.title}</h2>
+            <p>{section.body}</p>
+            {section.bullets?.length ? (
+              <ul>
+                {section.bullets.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : null}
+          </article>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function DataLicensingPage() {
+  return (
+    <div className="public-page public-document">
+      <section className="public-intro public-document-intro">
+        <p className="eyebrow">{DATA_LICENSING_COPY.eyebrow}</p>
+        <h1>{DATA_LICENSING_COPY.title}</h1>
+        <p className="public-lead">{DATA_LICENSING_COPY.intro}</p>
+        <div className="hero-actions">
+          <a className="primary-button" href="mailto:sales@example.com">
+            {DATA_LICENSING_COPY.cta}
+          </a>
+        </div>
+      </section>
+      <section className="public-section-grid" aria-label="Licensed datasets">
+        {DATA_LICENSING_COPY.datasets.map((dataset) => (
+          <article className="public-section" key={dataset.datasetId}>
+            <p className="eyebrow">{dataset.datasetId}</p>
+            <h2>{dataset.title}</h2>
+            <p>{dataset.description}</p>
+            <dl className="authority-detail-list">
+              <div>
+                <dt>Sample fields</dt>
+                <dd>{dataset.sampleFields.join(", ")}</dd>
+              </div>
+              <div>
+                <dt>Source safety</dt>
+                <dd>{dataset.sourceSafety}</dd>
+              </div>
+            </dl>
+            <ul>
+              {dataset.restrictions.map((restriction) => (
+                <li key={restriction}>{restriction}</li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+type PlatformEmbedPage = "embed-region-comparison" | "embed-market-score-card";
+type PlatformEmbedViewState = {
+  loading: boolean;
+  payload: PlatformEmbedPayload | null;
+  denialCode: string | null;
+};
+type LocationWithAncestorOrigins = Location & {
+  ancestorOrigins?: {
+    length: number;
+    [index: number]: string | undefined;
+    item?: (index: number) => string | null;
+  };
+};
+
+const PLATFORM_EMBED_SLUG_BY_PAGE: Record<PlatformEmbedPage, string> = {
+  "embed-region-comparison": "region-comparison",
+  "embed-market-score-card": "market-score-card",
+};
+
+function PlatformEmbedView({ page }: { page: PlatformEmbedPage }) {
+  const productSlug = PLATFORM_EMBED_SLUG_BY_PAGE[page];
+  const [state, setState] = useState<PlatformEmbedViewState>({
+    loading: true,
+    payload: null,
+    denialCode: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ loading: true, payload: null, denialCode: null });
+    getPlatformEmbed(productSlug, readPlatformEmbedOrigin())
+      .then((envelope) => {
+        if (cancelled) return;
+        const payload = envelope.data?.payload ?? null;
+        setState({
+          loading: false,
+          payload,
+          denialCode: payload ? null : "EMBED_POLICY_DENIED",
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const denialCode = error instanceof ApiError
+          ? error.envelope?.error?.code ?? "EMBED_POLICY_DENIED"
+          : "EMBED_POLICY_DENIED";
+        setState({ loading: false, payload: null, denialCode });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [productSlug]);
+
+  if (state.loading) {
+    return (
+      <main className="embed-shell">
+        <section className="embed-card" aria-label="Embed loading">
+          <p className="eyebrow">Partner embed</p>
+          <h1>Checking embed access</h1>
+        </section>
+      </main>
+    );
+  }
+
+  if (!state.payload) {
+    return (
+      <main className="embed-shell">
+        <section className="embed-card embed-denial" aria-label="Embed denied">
+          <p className="eyebrow">Partner embed</p>
+          <h1>Embed unavailable</h1>
+          <p className="meta-copy">{state.denialCode ?? "EMBED_POLICY_DENIED"}</p>
+          <p>This embed is not approved for the requesting domain.</p>
+        </section>
+      </main>
+    );
+  }
+
+  const payload = state.payload;
+  return (
+    <main className="embed-shell">
+      <section className="embed-card" aria-label={`${payload.title} embed`}>
+        <div>
+          <p className="eyebrow">Partner embed</p>
+          <h1>{payload.title}</h1>
+          <p className="meta-copy">{payload.attribution}</p>
+        </div>
+        <div className="embed-metric-grid">
+          {payload.metrics.map((metric, index) => (
+            <article className="public-section" key={`${payload.embed_product_id}-${index}`}>
+              <h2>{String(metric.label ?? "Metric")}</h2>
+              {Object.entries(metric)
+                .filter(([key]) => key !== "label")
+                .map(([key, value]) => (
+                  <p key={key}>
+                    <strong>{formatEmbedMetricKey(key)}:</strong>{" "}
+                    {formatEmbedMetricValue(value)}
+                  </p>
+                ))}
+            </article>
+          ))}
+        </div>
+        <dl className="authority-detail-list">
+          <div>
+            <dt>Freshness</dt>
+            <dd>{formatEmbedFreshness(payload.freshness.status)}</dd>
+          </div>
+          <div>
+            <dt>Confidence</dt>
+            <dd>{payload.confidence.label}</dd>
+          </div>
+          <div>
+            <dt>Source summary</dt>
+            <dd>
+              {payload.source_summary.source_categories.join(", ")}
+              {payload.source_summary.notes.length
+                ? `; ${payload.source_summary.notes.join(" ")}`
+                : ""}
+            </dd>
+          </div>
+        </dl>
+        <div className="warning-list" aria-label="Embed warnings">
+          {payload.warnings.map((warning) => (
+            <div className="warning-item" key={warning}>
+              <div className="warning-header">
+                <span className="warning-code">Embed warning</span>
+              </div>
+              <p>{warning}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function readPlatformEmbedOrigin(): string | null {
+  const locationWithAncestors = window.location as LocationWithAncestorOrigins;
+  const ancestorOrigin = locationWithAncestors.ancestorOrigins?.[0]
+    ?? locationWithAncestors.ancestorOrigins?.item?.(0)
+    ?? null;
+  if (ancestorOrigin) return ancestorOrigin;
+  if (document.referrer) return document.referrer;
+  return null;
+}
+
+function formatEmbedMetricKey(value: string): string {
+  return value.replace(/_/g, " ");
+}
+
+function formatEmbedMetricValue(value: string | number | boolean | null): string {
+  if (typeof value === "number") return value.toFixed(2);
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return value ?? "Unknown";
+}
+
+function formatEmbedFreshness(status: string): string {
+  if (status === "partial") return "Partial freshness metadata available";
+  if (status === "fresh") return "Fresh metadata available";
+  if (status === "stale") return "Freshness metadata is stale";
+  return "Freshness metadata unavailable";
+}
+
+function publicConfidenceClass(
+  confidence: PublicReport["confidence"] | PublicBenchmark["confidence"] | PublicSeoConfidence,
+): string {
+  if (confidence === "high") return "badge badge-success";
+  if (confidence === "medium") return "badge badge-real";
+  if (confidence === "low") return "badge badge-warning";
+  return "badge badge-unknown";
+}
+
+function PublicReportBadgeRow({
+  confidence,
+  freshnessDate,
+  freshnessStatus,
+  warningCount,
+}: {
+  confidence: PublicReport["confidence"];
+  freshnessDate: string;
+  freshnessStatus?: FreshnessStatus;
+  warningCount: number;
+}) {
+  return (
+    <div className="metadata-row">
+      <span className={publicConfidenceClass(confidence)}>
+        Confidence: {segmentLabel(confidence)}
+      </span>
+      <span className="badge badge-unknown">
+        Freshness: {freshnessStatus ? segmentLabel(freshnessStatus) : "Unknown"}
+      </span>
+      <span className="badge badge-unknown">Freshness date: {formatDateOnly(freshnessDate)}</span>
+      {warningCount ? <span className="badge badge-warning">{warningCount} warning(s)</span> : null}
+    </div>
+  );
+}
+
+function PublicBenchmarkBadgeRow({
+  confidence,
+  freshnessDate,
+  freshnessStatus,
+  warningCount,
+}: {
+  confidence: PublicBenchmark["confidence"];
+  freshnessDate: string;
+  freshnessStatus?: FreshnessStatus;
+  warningCount: number;
+}) {
+  return (
+    <div className="metadata-row">
+      <span className={publicConfidenceClass(confidence)}>
+        Confidence: {segmentLabel(confidence)}
+      </span>
+      <span className="badge badge-unknown">
+        Freshness: {freshnessStatus ? segmentLabel(freshnessStatus) : "Unknown"}
+      </span>
+      <span className="badge badge-unknown">Freshness date: {formatDateOnly(freshnessDate)}</span>
+      {warningCount ? <span className="badge badge-warning">{warningCount} warning(s)</span> : null}
+    </div>
+  );
+}
+
+type CitationView = {
+  sourceName: string;
+  title: string;
+  period: string;
+  productAttribution: string;
+  publicPath: string;
+  accessedOrFreshnessDate: string;
+};
+
+type ShareSummaryView = {
+  title: string;
+  categoryClaim: string;
+  confidenceLabel: string;
+  freshnessLabel: string;
+  takeaway: string;
+  publicPath: string;
+  warning: string;
+};
+
+type SourceAuthorityView = {
+  labels: string[];
+  summary: string;
+};
+
+type InstitutionalCtaView = {
+  label: string;
+  body: string;
+  href: string;
+};
+
+function publicCitationView(citation: PublicCitation): CitationView {
+  return {
+    sourceName: citation.source_name,
+    title: citation.title,
+    period: citation.period,
+    productAttribution: citation.product_attribution,
+    publicPath: citation.public_path,
+    accessedOrFreshnessDate: citation.accessed_or_freshness_date,
+  };
+}
+
+function publicShareSummaryView(summary: PublicShareSummary): ShareSummaryView {
+  return {
+    title: summary.title,
+    categoryClaim: summary.category_claim,
+    confidenceLabel: summary.confidence_label,
+    freshnessLabel: summary.freshness_label,
+    takeaway: summary.takeaway,
+    publicPath: summary.public_path,
+    warning: summary.warning,
+  };
+}
+
+function publicAuthorityView(authority: PublicSourceAuthority): SourceAuthorityView {
+  return {
+    labels: authority.labels,
+    summary: authority.summary,
+  };
+}
+
+function publicInstitutionalCtaView(cta: PublicInstitutionalCta): InstitutionalCtaView {
+  return {
+    label: cta.label,
+    body: cta.body,
+    href: cta.href,
+  };
+}
+
+function CitationBlock({ citation }: { citation: CitationView }) {
+  return (
+    <article className="public-section authority-section">
+      <h2>Suggested citation</h2>
+      <p className="citation-copy">
+        {citation.sourceName}. {citation.title}. {citation.period}.{" "}
+        {citation.productAttribution}. {citation.publicPath}. Freshness date{" "}
+        {formatDateOnly(citation.accessedOrFreshnessDate)}.
+      </p>
+      <dl className="authority-detail-list">
+        <div>
+          <dt>Source</dt>
+          <dd>{citation.sourceName}</dd>
+        </div>
+        <div>
+          <dt>Public path</dt>
+          <dd>{citation.publicPath}</dd>
+        </div>
+        <div>
+          <dt>Period</dt>
+          <dd>{citation.period}</dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
+function ShareSummaryCard({ summary }: { summary: ShareSummaryView }) {
+  return (
+    <article className="public-section share-summary-card">
+      <h2>Share summary</h2>
+      <p className="eyebrow">{summary.categoryClaim}</p>
+      <strong className="share-summary-title">{summary.title}</strong>
+      <div className="metadata-row">
+        <span className="badge badge-warning">{summary.confidenceLabel}</span>
+        <span className="badge badge-unknown">{summary.freshnessLabel}</span>
+      </div>
+      <p>{summary.takeaway}</p>
+      <small>{summary.publicPath}</small>
+      <div className="warning-list" aria-label="Share summary warning">
+        <div className="warning-item">
+          <div className="warning-header">
+            <span className="warning-code">Share warning</span>
+          </div>
+          <p>{summary.warning}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function SourceAuthorityLabel({ authority }: { authority: SourceAuthorityView }) {
+  return (
+    <article className="public-section authority-section">
+      <h2>Source authority</h2>
+      <div className="metadata-row">
+        {authority.labels.map((label) => (
+          <span className="badge badge-unknown" key={label}>{label}</span>
+        ))}
+      </div>
+      <p>{authority.summary}</p>
+    </article>
+  );
+}
+
+function InstitutionalCtaBlock({
+  cta,
+  onNavigate,
+}: {
+  cta: InstitutionalCtaView;
+  onNavigate: LinkClickHandler;
+}) {
+  return (
+    <article className="public-section institutional-cta-block">
+      <h2>Institutional use</h2>
+      <p>{cta.body}</p>
+      <a className="secondary-button" href={cta.href} onClick={(event) => onNavigate(event, cta.href)}>
+        {cta.label}
+      </a>
+    </article>
+  );
+}
+
+function PublicBenchmarksPage({
+  benchmarksState,
+  onNavigate,
+}: {
+  benchmarksState: LoadState<PublicBenchmarkListPayload>;
+  onNavigate: LinkClickHandler;
+}) {
+  const benchmarks = benchmarksState.envelope?.data?.benchmarks ?? [];
+  return (
+    <div className="public-page public-document">
+      <section className="public-intro public-document-intro">
+        <p className="eyebrow">Public benchmarks</p>
+        <h1>Career market indices</h1>
+        <p className="public-lead">
+          Category-defining benchmark templates for opportunity geography and career market
+          intelligence. Current Layer 19C indices are demo-safe, low-confidence display artifacts
+          with explicit methodology, limitations, freshness, warnings, and public provenance.
+        </p>
+      </section>
+      <DemoDisclosure compact />
+      {benchmarksState.loading ? <LoadingBlock label="Loading public benchmarks" /> : null}
+      {benchmarksState.error ? <ErrorState message={benchmarksState.error} /> : null}
+      {benchmarks.length ? (
+        <section className="public-section-grid" aria-label="Public benchmark list">
+          {benchmarks.map((benchmark) => (
+            <article className="public-section public-report-card" key={benchmark.slug}>
+              <div className="metadata-row">
+                <span className="badge badge-real">{segmentLabel(benchmark.category)}</span>
+                <span className="badge badge-unknown">{benchmark.period}</span>
+              </div>
+              <h2>{benchmark.name}</h2>
+              <p>{benchmark.summary}</p>
+              <PublicBenchmarkBadgeRow
+                confidence={benchmark.confidence}
+                freshnessDate={benchmark.freshness_date}
+                warningCount={benchmark.warnings.length}
+              />
+              <a
+                className="secondary-button"
+                href={publicBenchmarkUrl(benchmark.slug)}
+                onClick={(event) => onNavigate(event, publicBenchmarkUrl(benchmark.slug))}
+              >
+                View index
+              </a>
+            </article>
+          ))}
+        </section>
+      ) : !benchmarksState.loading && !benchmarksState.error ? (
+        <EmptyState
+          title="No public benchmarks"
+          body="The public benchmark registry did not return benchmark templates."
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PublicBenchmarkResultCard({ result }: { result: PublicBenchmarkMarketResult }) {
+  return (
+    <article className="public-section public-report-result">
+      <div className="metadata-row">
+        <span className="badge badge-real">
+          {result.result_type === "ranked" ? `Rank ${result.rank}` : "Featured"}
+        </span>
+        <span className={publicConfidenceClass(result.confidence)}>
+          Confidence: {segmentLabel(result.confidence)}
+        </span>
+        <span className="badge badge-unknown">Freshness date: {formatDateOnly(result.freshness_date)}</span>
+      </div>
+      <h3>{result.market_label}</h3>
+      <div className="score-display-row">
+        <strong>{result.score_display.label}</strong>
+        <span>{result.score_display.display_value}</span>
+        <small>{result.score_display.caveat}</small>
+      </div>
+      <p>{result.explanation}</p>
+      <h4>Subscores</h4>
+      <table className="benchmark-table">
+        <thead>
+          <tr>
+            <th>Subscore</th>
+            <th>Display</th>
+            <th>Explanation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {result.subscores.map((subscore) => (
+            <tr key={subscore.key}>
+              <td>{subscore.label}</td>
+              <td>{subscore.display_value}</td>
+              <td>{subscore.explanation}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {result.warnings.length ? (
+        <div className="warning-list" aria-label={`${result.market_label} benchmark warnings`}>
+          {result.warnings.map((warning) => (
+            <div className="warning-item" key={warning}>
+              <div className="warning-header">
+                <span className="warning-code">Benchmark warning</span>
+              </div>
+              <p>{warning}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function PublicBenchmarkDetailPage({
+  detailState,
+  slug,
+  onNavigate,
+}: {
+  detailState: LoadState<PublicBenchmark>;
+  slug: string;
+  onNavigate: LinkClickHandler;
+}) {
+  const benchmark = detailState.envelope?.data ?? null;
+  if (detailState.loading) {
+    return <LoadingBlock label="Loading public benchmark" />;
+  }
+  if (detailState.error) {
+    return (
+      <div className="public-page public-document">
+        <section className="public-intro public-document-intro">
+          <p className="eyebrow">Public benchmark</p>
+          <h1>Benchmark not found</h1>
+          <p className="public-lead">
+            No public benchmark is registered for {slug}. Use the benchmark index to choose a
+            published template.
+          </p>
+          <a
+            className="secondary-button"
+            href={publicPageUrl("benchmarks")}
+            onClick={(event) => onNavigate(event, publicPageUrl("benchmarks"))}
+          >
+            Back to benchmarks
+          </a>
+        </section>
+        <ErrorState message={detailState.error} />
+      </div>
+    );
+  }
+  if (!benchmark) {
+    return <EmptyState title="No benchmark loaded" body="The public benchmark detail has not loaded yet." />;
+  }
+
+  return (
+    <div className="public-page public-document">
+      <section className="public-intro public-document-intro">
+        <p className="eyebrow">Public benchmark · {segmentLabel(benchmark.category)}</p>
+        <h1>{benchmark.name}</h1>
+        <p className="public-lead">{benchmark.summary}</p>
+        <PublicBenchmarkBadgeRow
+          confidence={benchmark.confidence}
+          freshnessDate={benchmark.freshness_date}
+          freshnessStatus={benchmark.freshness_status}
+          warningCount={benchmark.warnings.length}
+        />
+      </section>
+      <DemoDisclosure compact />
+      <section className="public-document-list" aria-label={`${benchmark.name} detail`}>
+        <SourceAuthorityLabel authority={publicAuthorityView(benchmark.source_authority)} />
+        <ShareSummaryCard summary={publicShareSummaryView(benchmark.share_summary)} />
+        <CitationBlock citation={publicCitationView(benchmark.suggested_citation)} />
+        <InstitutionalCtaBlock
+          cta={publicInstitutionalCtaView(benchmark.institutional_cta)}
+          onNavigate={onNavigate}
+        />
+        <article className="public-section">
+          <h2>Methodology</h2>
+          <p>{benchmark.methodology_summary}</p>
+        </article>
+        <article className="public-section">
+          <h2>Score display</h2>
+          <table className="benchmark-table">
+            <thead>
+              <tr>
+                <th>Market</th>
+                <th>Result</th>
+                <th>Score display</th>
+                <th>Caveat</th>
+              </tr>
+            </thead>
+            <tbody>
+              {benchmark.market_results.map((result) => (
+                <tr key={result.market_id}>
+                  <td>{result.market_label}</td>
+                  <td>{result.result_type === "ranked" ? `Rank ${result.rank}` : "Featured"}</td>
+                  <td>{result.score_display.display_value}</td>
+                  <td>{result.score_display.caveat}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+        <article className="public-section">
+          <h2>Featured market table</h2>
+          <div className="public-report-result-list">
+            {benchmark.market_results.map((result) => (
+              <PublicBenchmarkResultCard key={result.market_id} result={result} />
+            ))}
+          </div>
+        </article>
+        <article className="public-section">
+          <h2>Limitations</h2>
+          <ul>
+            {benchmark.limitations.map((limitation) => (
+              <li key={limitation}>{limitation}</li>
+            ))}
+          </ul>
+        </article>
+        <article className="public-section">
+          <h2>Warnings</h2>
+          <div className="warning-list" aria-label="Benchmark warnings">
+            {benchmark.warnings.map((warning) => (
+              <div className="warning-item" key={warning}>
+                <div className="warning-header">
+                  <span className="warning-code">Benchmark warning</span>
+                </div>
+                <p>{warning}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+        <article className="public-section">
+          <h2>Source and provenance summary</h2>
+          <p>
+            {segmentLabel(benchmark.source_provenance_summary.data_basis)} ·{" "}
+            {benchmark.source_provenance_summary.source_count} public source category reference(s)
+          </p>
+          <ul>
+            {[
+              ...benchmark.source_provenance_summary.source_categories,
+              ...benchmark.source_provenance_summary.provenance_notes,
+            ].map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </article>
+        {benchmark.related_links.length ? (
+          <article className="public-section">
+            <h2>Related links</h2>
+            <div className="public-link-list">
+              {benchmark.related_links.map((link) => (
+                <a href={link.href} key={`${link.link_type}:${link.href}`} onClick={(event) => onNavigate(event, link.href)}>
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          </article>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+function usePublicSeoMetadata(page: PublicSeoPage | null) {
+  useEffect(() => {
+    if (!page || typeof document === "undefined") return;
+    const previousTitle = document.title;
+    const previousDescription = document
+      .querySelector('meta[name="description"]')
+      ?.getAttribute("content") ?? null;
+    const previousCanonical = document
+      .querySelector('link[rel="canonical"]')
+      ?.getAttribute("href") ?? null;
+    const description = ensureHeadElement("meta", "name", "description");
+    description.setAttribute("content", page.seo.description);
+    const canonical = ensureHeadElement("link", "rel", "canonical");
+    canonical.setAttribute("href", page.seo.canonicalPath);
+    document.title = page.seo.title;
+    return () => {
+      document.title = previousTitle;
+      if (previousDescription === null) {
+        description.remove();
+      } else {
+        description.setAttribute("content", previousDescription);
+      }
+      if (previousCanonical === null) {
+        canonical.remove();
+      } else {
+        canonical.setAttribute("href", previousCanonical);
+      }
+    };
+  }, [page]);
+}
+
+function ensureHeadElement<K extends keyof HTMLElementTagNameMap>(
+  tagName: K,
+  attr: string,
+  value: string,
+): HTMLElementTagNameMap[K] {
+  const existing = document.querySelector(`${tagName}[${attr}="${value}"]`);
+  if (existing) return existing as HTMLElementTagNameMap[K];
+  const element = document.createElement(tagName);
+  element.setAttribute(attr, value);
+  document.head.appendChild(element);
+  return element;
+}
+
+function PublicSeoBadgeRow({ page }: { page: PublicSeoPage }) {
+  return (
+    <div className="metadata-row">
+      <span className={publicConfidenceClass(page.confidence)}>
+        Confidence: {segmentLabel(page.confidence)}
+      </span>
+      <span className="badge badge-unknown">Content period: {page.contentPeriod}</span>
+      <span className="badge badge-unknown">Freshness date: {formatDateOnly(page.freshnessDate)}</span>
+      <span className="badge badge-warning">{page.warnings.length} warning(s)</span>
+    </div>
+  );
+}
+
+function PublicSeoLinkList({
+  links,
+  onNavigate,
+}: {
+  links: PublicSeoLink[];
+  onNavigate: LinkClickHandler;
+}) {
+  if (!links.length) return null;
+  return (
+    <div className="public-link-list">
+      {links.map((link) => (
+        <a href={link.href} key={`${link.linkType}:${link.href}`} onClick={(event) => onNavigate(event, link.href)}>
+          {link.label}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function PublicSeoMarketList({ page }: { page: PublicSeoPage }) {
+  if (!page.featuredMarkets.length) return null;
+  return (
+    <article className="public-section">
+      <h2>{page.pageFamily === "best_cities" ? "Featured cities" : "Market examples"}</h2>
+      <div className="seo-market-grid">
+        {page.featuredMarkets.map((market) => (
+          <section className="seo-market-card" key={`${page.slug}:${market.marketLabel}`}>
+            <div className="metadata-row">
+              <span className="badge badge-real">
+                {market.resultType === "ranked" ? `Rank ${market.rank}` : "Featured"}
+              </span>
+              {market.marketId ? <span className="badge badge-unknown">{market.marketId}</span> : null}
+            </div>
+            <h3>{market.marketLabel}</h3>
+            <strong>{market.headline}</strong>
+            <p>{market.explanation}</p>
+            <div className="metadata-row">
+              {market.signals.map((signal) => (
+                <span className="badge badge-unknown" key={signal}>{signal}</span>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function PublicSeoComparisonBlocks({ page }: { page: PublicSeoPage }) {
+  if (page.pageFamily !== "city_comparison") return null;
+  return (
+    <>
+      <article className="public-section">
+        <h2>Market-by-market sections</h2>
+        <div className="seo-market-grid">
+          {(page.comparisonMarkets ?? []).map((market) => (
+            <section className="seo-market-card" key={market.marketLabel}>
+              <h3>{market.marketLabel}</h3>
+              <p>{market.summary}</p>
+              <strong>Best for</strong>
+              <ul>
+                {market.bestFor.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+              <strong>Tradeoffs</strong>
+              <ul>
+                {market.tradeoffs.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </article>
+      <article className="public-section">
+        <h2>Best-for guidance</h2>
+        <ul>
+          {(page.bestFor ?? []).map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      </article>
+      <article className="public-section">
+        <h2>Tradeoffs</h2>
+        <ul>
+          {(page.tradeoffs ?? []).map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      </article>
+    </>
+  );
+}
+
+function PublicSeoListingPage({ onNavigate }: { onNavigate: LinkClickHandler }) {
+  return (
+    <div className="public-page public-document">
+      <section className="public-intro public-document-intro">
+        <p className="eyebrow">Career market guides</p>
+        <h1>Opportunity geography guides</h1>
+        <p className="public-lead">
+          Public SEO/content pages for career market intelligence. These guides use Layer 19
+          language, public report links, and public benchmark links without creating production
+          rankings or hidden scoring authority.
+        </p>
+      </section>
+      <DemoDisclosure compact />
+      <section className="public-section-grid" aria-label="Career market guide list">
+        {PUBLIC_SEO_PAGES.map((page) => (
+          <article className="public-section public-report-card" key={page.slug}>
+            <div className="metadata-row">
+              <span className="badge badge-real">{segmentLabel(page.pageFamily)}</span>
+              <span className="badge badge-warning">Confidence: {segmentLabel(page.confidence)}</span>
+            </div>
+            <h2>{page.title}</h2>
+            <p>{page.summary}</p>
+            <a
+              className="secondary-button"
+              href={publicSeoPageUrl(page)}
+              onClick={(event) => onNavigate(event, publicSeoPageUrl(page))}
+            >
+              Read guide
+            </a>
+          </article>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function PublicSeoDetailPage({
+  page,
+  slug,
+  onNavigate,
+}: {
+  page: PublicSeoPage | null;
+  slug: string;
+  onNavigate: LinkClickHandler;
+}) {
+  usePublicSeoMetadata(page);
+  if (!page) {
+    return (
+      <div className="public-page public-document">
+        <section className="public-intro public-document-intro">
+          <p className="eyebrow">Career market guide</p>
+          <h1>Guide not found</h1>
+          <p className="public-lead">
+            No public career market guide is registered for {slug}. Use the guide index to choose
+            a published public page.
+          </p>
+          <a
+            className="secondary-button"
+            href={publicPageUrl("guides")}
+            onClick={(event) => onNavigate(event, publicPageUrl("guides"))}
+          >
+            Back to guides
+          </a>
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="public-page public-document">
+      <section className="public-intro public-document-intro">
+        <p className="eyebrow">Career market guide · {segmentLabel(page.pageFamily)}</p>
+        <h1>{page.title}</h1>
+        <p className="public-lead">{page.summary}</p>
+        <PublicSeoBadgeRow page={page} />
+      </section>
+      <DemoDisclosure compact />
+      <section className="public-document-list" aria-label={`${page.title} detail`}>
+        <SourceAuthorityLabel authority={page.sourceAuthority} />
+        <ShareSummaryCard summary={page.shareSummary} />
+        <CitationBlock citation={page.suggestedCitation} />
+        <InstitutionalCtaBlock cta={page.institutionalCta} onNavigate={onNavigate} />
+        <article className="public-section">
+          <h2>{page.pageFamily === "city_comparison" ? "Comparison summary" : page.primarySections[0]?.title ?? "Overview"}</h2>
+          <p>{page.primarySections[0]?.body ?? page.summary}</p>
+        </article>
+        {page.primarySections.slice(1).map((section) => (
+          <article className="public-section" key={section.title}>
+            <h2>{section.title}</h2>
+            <p>{section.body}</p>
+            {section.bullets?.length ? (
+              <ul>
+                {section.bullets.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            ) : null}
+          </article>
+        ))}
+        <PublicSeoMarketList page={page} />
+        <PublicSeoComparisonBlocks page={page} />
+        <article className="public-section">
+          <h2>Methodology</h2>
+          <p>{page.methodologySummary}</p>
+          <PublicSeoLinkList links={[page.methodologyLink]} onNavigate={onNavigate} />
+        </article>
+        <article className="public-section">
+          <h2>Limitations</h2>
+          <ul>
+            {page.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}
+          </ul>
+        </article>
+        <article className="public-section">
+          <h2>Warnings</h2>
+          <div className="warning-list" aria-label="SEO page warnings">
+            {page.warnings.map((warning) => (
+              <div className="warning-item" key={warning}>
+                <div className="warning-header">
+                  <span className="warning-code">Guide warning</span>
+                </div>
+                <p>{warning}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+        <article className="public-section">
+          <h2>Category language</h2>
+          <div className="metadata-row">
+            {page.canonicalCategoryLanguage.map((term) => (
+              <span className="badge badge-unknown" key={term}>{term}</span>
+            ))}
+          </div>
+        </article>
+        <article className="public-section">
+          <h2>Related reports</h2>
+          <PublicSeoLinkList links={page.relatedReports} onNavigate={onNavigate} />
+        </article>
+        <article className="public-section">
+          <h2>Related benchmarks</h2>
+          <PublicSeoLinkList links={page.relatedBenchmarks} onNavigate={onNavigate} />
+        </article>
+        <article className="public-section">
+          <h2>Related methodology and glossary</h2>
+          <PublicSeoLinkList
+            links={[...page.relatedLinks, ...relatedSeoPages(page.slug)]}
+            onNavigate={onNavigate}
+          />
+        </article>
+      </section>
+    </div>
+  );
+}
+
+function PublicReportsPage({
+  reportsState,
+  onNavigate,
+}: {
+  reportsState: LoadState<PublicReportListPayload>;
+  onNavigate: LinkClickHandler;
+}) {
+  const reports = reportsState.envelope?.data?.reports ?? [];
+  return (
+    <div className="public-page public-document">
+      <section className="public-intro public-document-intro">
+        <p className="eyebrow">Public reports</p>
+        <h1>Market intelligence reports</h1>
+        <p className="public-lead">
+          Recurring public report templates for opportunity geography and career market intelligence.
+          Current Layer 19B reports are demo-safe artifacts with explicit methodology, limitations,
+          freshness, confidence, warnings, and public provenance summaries.
+        </p>
+      </section>
+      <DemoDisclosure compact />
+      {reportsState.loading ? <LoadingBlock label="Loading public reports" /> : null}
+      {reportsState.error ? <ErrorState message={reportsState.error} /> : null}
+      {reports.length ? (
+        <section className="public-section-grid" aria-label="Public report list">
+          {reports.map((report) => (
+            <article className="public-section public-report-card" key={report.slug}>
+              <div className="metadata-row">
+                <span className="badge badge-real">{segmentLabel(report.category)}</span>
+                <span className="badge badge-unknown">{report.report_period}</span>
+              </div>
+              <h2>{report.title}</h2>
+              <p>{report.summary}</p>
+              <PublicReportBadgeRow
+                confidence={report.confidence}
+                freshnessDate={report.freshness_date}
+                warningCount={report.warnings.length}
+              />
+              <a
+                className="secondary-button"
+                href={publicReportUrl(report.slug)}
+                onClick={(event) => onNavigate(event, publicReportUrl(report.slug))}
+              >
+                Read report
+              </a>
+            </article>
+          ))}
+        </section>
+      ) : !reportsState.loading && !reportsState.error ? (
+        <EmptyState
+          title="No public reports"
+          body="The public report registry did not return report templates."
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PublicReportResultCard({ result }: { result: PublicReportMarketResult }) {
+  return (
+    <article className="public-section public-report-result">
+      <div className="metadata-row">
+        <span className="badge badge-real">{result.result_type === "ranked" ? `Rank ${result.rank}` : "Featured"}</span>
+        <span className={publicConfidenceClass(result.confidence)}>
+          Confidence: {segmentLabel(result.confidence)}
+        </span>
+        <span className="badge badge-unknown">Freshness date: {formatDateOnly(result.freshness_date)}</span>
+      </div>
+      <h2>{result.market_label}</h2>
+      <strong>{result.headline}</strong>
+      <p>{result.rationale}</p>
+      <div className="metadata-row">
+        {result.evidence_signals.map((signal) => (
+          <span className="badge badge-unknown" key={signal}>{signal}</span>
+        ))}
+      </div>
+      {result.warnings.length ? (
+        <div className="warning-list" aria-label={`${result.market_label} warnings`}>
+          {result.warnings.map((warning) => (
+            <div className="warning-item" key={warning}>
+              <div className="warning-header">
+                <span className="warning-code">Warning</span>
+              </div>
+              <p>{warning}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function PublicReportDetailPage({
+  detailState,
+  slug,
+  onNavigate,
+}: {
+  detailState: LoadState<PublicReport>;
+  slug: string;
+  onNavigate: LinkClickHandler;
+}) {
+  const report = detailState.envelope?.data ?? null;
+  if (detailState.loading) {
+    return <LoadingBlock label="Loading public report" />;
+  }
+  if (detailState.error) {
+    return (
+      <div className="public-page public-document">
+        <section className="public-intro public-document-intro">
+          <p className="eyebrow">Public report</p>
+          <h1>Report not found</h1>
+          <p className="public-lead">
+            No public report is registered for {slug}. Use the report index to choose a published template.
+          </p>
+          <a className="secondary-button" href={publicPageUrl("reports")} onClick={(event) => onNavigate(event, publicPageUrl("reports"))}>
+            Back to reports
+          </a>
+        </section>
+        <ErrorState message={detailState.error} />
+      </div>
+    );
+  }
+  if (!report) {
+    return <EmptyState title="No report loaded" body="The public report detail has not loaded yet." />;
+  }
+
+  return (
+    <div className="public-page public-document">
+      <section className="public-intro public-document-intro">
+        <p className="eyebrow">Public report · {segmentLabel(report.category)}</p>
+        <h1>{report.title}</h1>
+        <p className="public-lead">{report.summary}</p>
+        <PublicReportBadgeRow
+          confidence={report.confidence}
+          freshnessDate={report.freshness_date}
+          freshnessStatus={report.freshness_status}
+          warningCount={report.warnings.length}
+        />
+      </section>
+      <DemoDisclosure compact />
+      <section className="public-document-list" aria-label={`${report.title} detail`}>
+        <SourceAuthorityLabel authority={publicAuthorityView(report.source_authority)} />
+        <ShareSummaryCard summary={publicShareSummaryView(report.share_summary)} />
+        <CitationBlock citation={publicCitationView(report.suggested_citation)} />
+        <InstitutionalCtaBlock
+          cta={publicInstitutionalCtaView(report.institutional_cta)}
+          onNavigate={onNavigate}
+        />
+        <article className="public-section">
+          <h2>Methodology</h2>
+          <p>{report.methodology_summary}</p>
+        </article>
+        <article className="public-section">
+          <h2>Markets covered</h2>
+          <ul>
+            {report.markets_covered.map((market) => (
+              <li key={market.market_id}>
+                <strong>{market.market_label}</strong>: {market.coverage_note}
+              </li>
+            ))}
+          </ul>
+        </article>
+        <article className="public-section">
+          <h2>Featured market results</h2>
+          <div className="public-report-result-list">
+            {report.market_results.map((result) => (
+              <PublicReportResultCard key={result.market_id} result={result} />
+            ))}
+          </div>
+        </article>
+        <article className="public-section">
+          <h2>Limitations</h2>
+          <ul>
+            {report.limitations.map((limitation) => (
+              <li key={limitation}>{limitation}</li>
+            ))}
+          </ul>
+        </article>
+        <article className="public-section">
+          <h2>Warnings</h2>
+          {report.warnings.length ? (
+            <div className="warning-list" aria-label="Report warnings">
+              {report.warnings.map((warning) => (
+                <div className="warning-item" key={warning}>
+                  <div className="warning-header">
+                    <span className="warning-code">Report warning</span>
+                  </div>
+                  <p>{warning}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p>No report warnings were returned.</p>
+          )}
+        </article>
+        <article className="public-section">
+          <h2>Source and provenance summary</h2>
+          <p>
+            {segmentLabel(report.source_provenance_summary.data_basis)} ·{" "}
+            {report.source_provenance_summary.source_count} public source category reference(s)
+          </p>
+          <ul>
+            {[
+              ...report.source_provenance_summary.source_categories,
+              ...report.source_provenance_summary.provenance_notes,
+            ].map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </article>
+        {report.related_links.length ? (
+          <article className="public-section">
+            <h2>Related links</h2>
+            <div className="public-link-list">
+              {report.related_links.map((link) => (
+                <a href={link.href} key={`${link.link_type}:${link.href}`} onClick={(event) => onNavigate(event, link.href)}>
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          </article>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 function PublicRouteView({
   route,
   onNavigate,
+  publicBenchmarkListState,
+  publicBenchmarkDetailState,
+  publicReportListState,
+  publicReportDetailState,
 }: {
   route: RouteState;
   onNavigate: LinkClickHandler;
+  publicBenchmarkListState: LoadState<PublicBenchmarkListPayload>;
+  publicBenchmarkDetailState: LoadState<PublicBenchmark>;
+  publicReportListState: LoadState<PublicReportListPayload>;
+  publicReportDetailState: LoadState<PublicReport>;
 }) {
+  if (route.page === "embed-region-comparison" || route.page === "embed-market-score-card") {
+    return <PlatformEmbedView page={route.page} />;
+  }
   const activePage = route.page as PublicPage;
   return (
     <PublicShell activePage={activePage} onNavigate={onNavigate}>
       {activePage === "landing" ? (
         <LandingPage onNavigate={onNavigate} unknownPath={route.unknownPath} />
+      ) : activePage === "developers" ? (
+        <DevelopersPage onNavigate={onNavigate} />
+      ) : activePage === "data-licensing" ? (
+        <DataLicensingPage />
+      ) : isDeveloperDocPage(activePage) ? (
+        <DeveloperDocsPage page={activePage} onNavigate={onNavigate} />
+      ) : activePage === "guides" ? (
+        route.seoPageSlug ? (
+          <PublicSeoDetailPage
+            onNavigate={onNavigate}
+            page={getPublicSeoPageBySlug(route.seoPageSlug)}
+            slug={route.seoPageSlug}
+          />
+        ) : (
+          <PublicSeoListingPage onNavigate={onNavigate} />
+        )
+      ) : activePage === "benchmarks" ? (
+        route.benchmarkSlug ? (
+          <PublicBenchmarkDetailPage
+            detailState={publicBenchmarkDetailState}
+            onNavigate={onNavigate}
+            slug={route.benchmarkSlug}
+          />
+        ) : (
+          <PublicBenchmarksPage
+            benchmarksState={publicBenchmarkListState}
+            onNavigate={onNavigate}
+          />
+        )
+      ) : activePage === "reports" ? (
+        route.reportSlug ? (
+          <PublicReportDetailPage
+            detailState={publicReportDetailState}
+            onNavigate={onNavigate}
+            slug={route.reportSlug}
+          />
+        ) : (
+          <PublicReportsPage
+            onNavigate={onNavigate}
+            reportsState={publicReportListState}
+          />
+        )
       ) : (
         <LegalPage page={activePage as LegalPublicPage} />
       )}
     </PublicShell>
   );
+}
+
+function isDeveloperDocPage(page: PublicPage): page is DeveloperDocPageKey {
+  return page.startsWith("developer-doc");
 }
 
 function JsonBlock({ value }: { value: unknown }) {
@@ -1932,6 +3458,269 @@ function alertChangeText(alert: UserAlert): string {
   return changed ? `Changed fields: ${changed}` : "Structured change metadata only.";
 }
 
+function ApiAccessAndCareerPlatformPanel({
+  apiClientCreateState,
+  apiClientListState,
+  apiKeyCreateState,
+  apiUsageState,
+  careerPlatformRegistryState,
+  careerPlatformExportState,
+  onCreateApiClient,
+  onCreateApiKey,
+  onRevokeApiKey,
+  onLoadApiUsage,
+  onRefreshApiClients,
+  onRefreshCareerPlatforms,
+  onCreateCareerPlatformExport,
+}: {
+  apiClientCreateState: LoadState<ApiClientCreatePayload>;
+  apiClientListState: LoadState<ApiClientListPayload>;
+  apiKeyCreateState: LoadState<ApiKeyCreatePayload>;
+  apiUsageState: LoadState<ApiUsageListPayload>;
+  careerPlatformRegistryState: LoadState<CareerPlatformRegistryPayload>;
+  careerPlatformExportState: LoadState<CareerPlatformExportPayload>;
+  onCreateApiClient: (request: ApiClientCreateRequest) => void;
+  onCreateApiKey: (apiClientId: string) => void;
+  onRevokeApiKey: (apiKeyId: string) => void;
+  onLoadApiUsage: (apiClientId: string) => void;
+  onRefreshApiClients: () => void;
+  onRefreshCareerPlatforms: () => void;
+  onCreateCareerPlatformExport: (request: CareerPlatformExportRequest) => void;
+}) {
+  const [formState, setFormState] = useState<ApiAccessFormState>({
+    ...DEFAULT_API_ACCESS_FORM_STATE,
+  });
+  const clients = apiClientListState.envelope?.data?.api_clients ?? [];
+  const registry = careerPlatformRegistryState.envelope?.data?.platforms ?? [];
+  const createdClient = apiClientCreateState.envelope?.data?.api_client ?? null;
+  const revealedKey = apiKeyCreateState.envelope?.data?.api_key ?? null;
+  const latestPlatformExport = careerPlatformExportState.envelope?.data?.export ?? null;
+
+  function toggleScope(scope: ApiScope, checked: boolean) {
+    setFormState((current) => {
+      const next = checked
+        ? Array.from(new Set([...current.scopes, scope]))
+        : current.scopes.filter((item) => item !== scope);
+      return { ...current, scopes: next };
+    });
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onCreateApiClient(apiClientRequestFromForm(formState));
+  }
+
+  return (
+    <div className="split-grid">
+      <ShellCard
+        title="Controlled API Access"
+        eyebrow="Layer 17C"
+        action={<button className="secondary-button compact-button" type="button" onClick={onRefreshApiClients}>Refresh</button>}
+      >
+        <p className="meta-copy">
+          API clients are scoped, rate-limited read/access surfaces. Raw API keys are shown only once.
+        </p>
+        <form className="account-form-grid" onSubmit={handleSubmit}>
+          <label>
+            Client name
+            <input
+              aria-label="API client name"
+              onChange={(event) =>
+                setFormState((current) => ({ ...current, displayName: event.target.value }))
+              }
+              value={formState.displayName}
+            />
+          </label>
+          <label>
+            Institution scope
+            <input
+              aria-label="API client institution scope"
+              onChange={(event) =>
+                setFormState((current) => ({ ...current, organizationId: event.target.value }))
+              }
+              placeholder="Optional organization id"
+              value={formState.organizationId}
+            />
+          </label>
+          <label>
+            Request limit
+            <input
+              aria-label="API client request limit"
+              min={1}
+              onChange={(event) =>
+                setFormState((current) => ({
+                  ...current,
+                  rateLimitCount: Number(event.target.value),
+                }))
+              }
+              type="number"
+              value={formState.rateLimitCount}
+            />
+          </label>
+          <label>
+            Window seconds
+            <input
+              aria-label="API client window seconds"
+              min={60}
+              onChange={(event) =>
+                setFormState((current) => ({
+                  ...current,
+                  rateLimitWindowSeconds: Number(event.target.value),
+                }))
+              }
+              type="number"
+              value={formState.rateLimitWindowSeconds}
+            />
+          </label>
+          <div className="wide-field checkbox-grid">
+            {API_SCOPE_OPTIONS.map((option) => (
+              <label className="checkbox-label" key={option.id}>
+                <input
+                  checked={formState.scopes.includes(option.id)}
+                  onChange={(event) => toggleScope(option.id, event.target.checked)}
+                  type="checkbox"
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+          <button className="primary-button" disabled={apiClientCreateState.loading} type="submit">
+            Create API client
+          </button>
+        </form>
+        {apiClientCreateState.loading ? <LoadingBlock label="Creating API client" /> : null}
+        {apiClientCreateState.error ? <ErrorState message={apiClientCreateState.error} /> : null}
+        {createdClient ? (
+          <div className="notice-state">
+            <strong>{createdClient.display_name}</strong>
+            <p>{createdClient.policy.scopes.join(", ")}</p>
+          </div>
+        ) : null}
+        {revealedKey?.raw_key ? (
+          <div className="notice-state">
+            <strong>One-time API key reveal</strong>
+            <p>{revealedKey.raw_key}</p>
+          </div>
+        ) : null}
+        {apiKeyCreateState.error ? <ErrorState message={apiKeyCreateState.error} /> : null}
+        {apiClientListState.loading ? <LoadingBlock label="Loading API clients" /> : null}
+        {apiClientListState.error ? <ErrorState message={apiClientListState.error} /> : null}
+        {clients.length ? (
+          <div className="account-list">
+            {clients.map((client) => (
+              <div className="account-list-row" key={client.api_client_id}>
+                <div>
+                  <div className="metadata-row">
+                    <span className={client.status === "active" ? "badge badge-success" : "badge badge-unknown"}>
+                      {client.status}
+                    </span>
+                    <span className="badge badge-unknown">
+                      {client.policy.rate_limit_count}/{client.policy.rate_limit_window_seconds}s
+                    </span>
+                    {client.organization_id ? (
+                      <span className="badge badge-real">{client.organization_id}</span>
+                    ) : null}
+                  </div>
+                  <strong>{client.display_name}</strong>
+                  <small>{client.policy.scopes.join(", ") || "No scopes"}</small>
+                  {client.keys.length ? (
+                    <p className="meta-copy">
+                      Keys: {client.keys.map((key) => key.display_key).join(", ")}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="account-button-row">
+                  <button className="secondary-button compact-button" type="button" onClick={() => onCreateApiKey(client.api_client_id)}>
+                    Create key
+                  </button>
+                  <button className="secondary-button compact-button" type="button" onClick={() => onLoadApiUsage(client.api_client_id)}>
+                    Usage
+                  </button>
+                  {client.keys[0] ? (
+                    <button className="secondary-button compact-button" type="button" onClick={() => onRevokeApiKey(client.keys[0].api_key_id)}>
+                      Revoke key
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="meta-copy">No API clients loaded.</p>
+        )}
+        {apiUsageState.envelope?.data?.usage.length ? (
+          <JsonBlock value={apiUsageState.envelope.data.usage.slice(0, 5)} />
+        ) : null}
+        {apiUsageState.error ? <ErrorState message={apiUsageState.error} /> : null}
+      </ShellCard>
+
+      <ShellCard
+        title="Career Platform Registry"
+        eyebrow="Manual integration posture"
+        action={<button className="secondary-button compact-button" type="button" onClick={onRefreshCareerPlatforms}>Refresh</button>}
+      >
+        <p className="meta-copy">
+          LinkedIn, Handshake, job boards, and career pages remain manual/export/deep-link workflows only.
+        </p>
+        <div className="metadata-row">
+          <span className="badge badge-success">No scraping</span>
+          <span className="badge badge-success">No application submission</span>
+          <span className="badge badge-success">No ATS pipeline</span>
+          <span className="badge badge-unknown">Deferred automation blocked</span>
+        </div>
+        <div className="integration-action-grid">
+          {CAREER_PLATFORM_OPTIONS.map((option) => (
+            <button
+              className="secondary-button compact-button"
+              key={option.id}
+              onClick={() =>
+                onCreateCareerPlatformExport({
+                  platform: option.id,
+                  employer_names: ["Alpha Systems"],
+                  company_ids: [],
+                })
+              }
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {careerPlatformRegistryState.loading ? <LoadingBlock label="Loading platform registry" /> : null}
+        {careerPlatformRegistryState.error ? <ErrorState message={careerPlatformRegistryState.error} /> : null}
+        {registry.length ? (
+          <div className="stack-list">
+            {registry.map((platform) => (
+              <div className="account-list-row" key={platform.platform}>
+                <div>
+                  <div className="metadata-row">
+                    <span className="badge badge-real">{platform.risk_posture}</span>
+                    <span className="badge badge-success">Manual only {String(platform.manual_only)}</span>
+                  </div>
+                  <strong>{platform.display_name}</strong>
+                  <small>Allowed: {platform.allowed_capabilities.join(", ") || "none"}</small>
+                  <p className="meta-copy">Blocked: {platform.blocked_capabilities.join(", ")}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {latestPlatformExport ? (
+          <div className="notice-state">
+            <strong>{latestPlatformExport.platform} export prepared</strong>
+            <p>
+              Manual only {String(latestPlatformExport.manual_only)} · automation{" "}
+              {String(latestPlatformExport.automation_performed)} · ATS{" "}
+              {String(latestPlatformExport.ats_state_created)}
+            </p>
+          </div>
+        ) : null}
+        {careerPlatformExportState.error ? <ErrorState message={careerPlatformExportState.error} /> : null}
+      </ShellCard>
+    </div>
+  );
+}
+
 function AccountView({
   auth,
   currentUserState,
@@ -1941,6 +3730,12 @@ function AccountView({
   alertsState,
   snapshotsState,
   scoringPreviewState,
+  apiClientCreateState,
+  apiClientListState,
+  apiKeyCreateState,
+  apiUsageState,
+  careerPlatformRegistryState,
+  careerPlatformExportState,
   alertExplanationStates,
   exportState,
   deactivationResult,
@@ -1957,6 +3752,13 @@ function AccountView({
   onDismissAlert,
   onExplainAlert,
   onExport,
+  onCreateApiClient,
+  onCreateApiKey,
+  onRevokeApiKey,
+  onLoadApiUsage,
+  onRefreshApiClients,
+  onRefreshCareerPlatforms,
+  onCreateCareerPlatformExport,
   onDeactivate,
   onDeactivateConfirmed,
 }: {
@@ -1968,6 +3770,12 @@ function AccountView({
   alertsState: LoadState<UserAlertList>;
   snapshotsState: LoadState<{ personalized_recommendation_snapshots: PersonalizedRecommendationSnapshot[] }>;
   scoringPreviewState: LoadState<ScoringPreviewResult>;
+  apiClientCreateState: LoadState<ApiClientCreatePayload>;
+  apiClientListState: LoadState<ApiClientListPayload>;
+  apiKeyCreateState: LoadState<ApiKeyCreatePayload>;
+  apiUsageState: LoadState<ApiUsageListPayload>;
+  careerPlatformRegistryState: LoadState<CareerPlatformRegistryPayload>;
+  careerPlatformExportState: LoadState<CareerPlatformExportPayload>;
   alertExplanationStates: Record<string, LoadState<ExplanationResult>>;
   exportState: LoadState<UserDataExport>;
   deactivationResult: AccountDeactivationResult | null;
@@ -1984,6 +3792,13 @@ function AccountView({
   onDismissAlert: (userAlertId: string) => void;
   onExplainAlert: (alert: UserAlert) => void;
   onExport: () => void;
+  onCreateApiClient: (request: ApiClientCreateRequest) => void;
+  onCreateApiKey: (apiClientId: string) => void;
+  onRevokeApiKey: (apiKeyId: string) => void;
+  onLoadApiUsage: (apiClientId: string) => void;
+  onRefreshApiClients: () => void;
+  onRefreshCareerPlatforms: () => void;
+  onCreateCareerPlatformExport: (request: CareerPlatformExportRequest) => void;
   onDeactivate: () => void;
   onDeactivateConfirmed: (confirmed: boolean) => void;
 }) {
@@ -2095,6 +3910,22 @@ function AccountView({
           {deactivationResult ? <JsonBlock value={deactivationResult} /> : null}
         </ShellCard>
       </div>
+
+      <ApiAccessAndCareerPlatformPanel
+        apiClientCreateState={apiClientCreateState}
+        apiClientListState={apiClientListState}
+        apiKeyCreateState={apiKeyCreateState}
+        apiUsageState={apiUsageState}
+        careerPlatformExportState={careerPlatformExportState}
+        careerPlatformRegistryState={careerPlatformRegistryState}
+        onCreateApiClient={onCreateApiClient}
+        onCreateApiKey={onCreateApiKey}
+        onCreateCareerPlatformExport={onCreateCareerPlatformExport}
+        onLoadApiUsage={onLoadApiUsage}
+        onRefreshApiClients={onRefreshApiClients}
+        onRefreshCareerPlatforms={onRefreshCareerPlatforms}
+        onRevokeApiKey={onRevokeApiKey}
+      />
 
       <ShellCard title="Alerts" eyebrow="In-app change feed">
         {alertsState.loading ? <LoadingBlock label="Loading alerts" /> : null}
@@ -3014,6 +4845,7 @@ function RegionExplorer({
   roleFamilyState,
   canSavePersonalOverlays,
   canExplainGuidance,
+  canUseIntegrations,
   savedArtifactsByKey,
   explanationState,
   onSelectRegion,
@@ -3023,6 +4855,8 @@ function RegionExplorer({
   onSaveRoleFamily,
   onRemoveSavedArtifact,
   onExplainRegion,
+  onCreateIntegrationExport,
+  onCreateIntegrationReminder,
 }: {
   regions: RegionListItem[];
   selectedRegionId: string;
@@ -3031,6 +4865,7 @@ function RegionExplorer({
   roleFamilyState: LoadState<CompanySearchResponse>;
   canSavePersonalOverlays: boolean;
   canExplainGuidance: boolean;
+  canUseIntegrations: boolean;
   savedArtifactsByKey: Map<string, SavedMarketArtifact>;
   explanationState?: LoadState<ExplanationResult>;
   onSelectRegion: (regionId: string) => void;
@@ -3040,6 +4875,8 @@ function RegionExplorer({
   onSaveRoleFamily: (roleFamily: string) => void;
   onRemoveSavedArtifact: (savedArtifactId: string) => void;
   onExplainRegion: (region: RegionDetail) => void;
+  onCreateIntegrationExport: (request: IntegrationExportCreateRequest) => void;
+  onCreateIntegrationReminder: (request: IntegrationReminderCreateRequest) => void;
 }) {
   const region = regionState.envelope?.data;
   const hasSelectedRegion = regions.some((item) => item.region_id === selectedRegionId);
@@ -3119,6 +4956,18 @@ function RegionExplorer({
           body="Watchlists add persistence and follow-up workflow value while keeping the region facts and basic guidance available in the free experience."
         />
       </ShellCard>
+
+      {region ? (
+        <IntegrationActionPanel
+          canUseIntegrations={canUseIntegrations}
+          label={region.display_name}
+          objectId={region.region_id}
+          objectType="region"
+          onCreateExport={onCreateIntegrationExport}
+          onCreateReminder={onCreateIntegrationReminder}
+          reminderType="market_refresh_alert"
+        />
+      ) : null}
 
       {region ? (
         <>
@@ -3281,12 +5130,16 @@ function CompanyExplorer({
   sourceState,
   canSavePersonalOverlays,
   canExplainGuidance,
+  canUseIntegrations,
   savedCompanyArtifact,
   explanationState,
   onSelectCompany,
   onSaveCompany,
   onRemoveSavedArtifact,
   onExplainCompany,
+  onCreateIntegrationExport,
+  onCreateIntegrationReminder,
+  onCreateCareerPlatformExport,
 }: {
   companyOptions: CompanyOption[];
   selectedCompanyId: string;
@@ -3295,12 +5148,16 @@ function CompanyExplorer({
   sourceState: LoadState<SourceExplanation>;
   canSavePersonalOverlays: boolean;
   canExplainGuidance: boolean;
+  canUseIntegrations: boolean;
   savedCompanyArtifact?: SavedMarketArtifact;
   explanationState?: LoadState<ExplanationResult>;
   onSelectCompany: (companyId: string) => void;
   onSaveCompany: (company: CompanyDetail) => void;
   onRemoveSavedArtifact: (savedArtifactId: string) => void;
   onExplainCompany: (company: CompanyDetail) => void;
+  onCreateIntegrationExport: (request: IntegrationExportCreateRequest) => void;
+  onCreateIntegrationReminder: (request: IntegrationReminderCreateRequest) => void;
+  onCreateCareerPlatformExport: (request: CareerPlatformExportRequest) => void;
 }) {
   const company = companyState.envelope?.data;
   const hasSelectedCompany = companyOptions.some((item) => item.company_id === selectedCompanyId);
@@ -3376,6 +5233,19 @@ function CompanyExplorer({
           body="Paid company geography adds maintained depth around company-region coverage; it does not bias market recommendations."
         />
       </ShellCard>
+
+      {company ? (
+        <IntegrationActionPanel
+          canUseIntegrations={canUseIntegrations}
+          label={company.company_name}
+          objectId={company.company_id}
+          objectType="company"
+          onCreateCareerPlatformExport={onCreateCareerPlatformExport}
+          onCreateExport={onCreateIntegrationExport}
+          onCreateReminder={onCreateIntegrationReminder}
+          reminderType="follow_up"
+        />
+      ) : null}
 
       {company ? (
         <>
@@ -3566,6 +5436,7 @@ function ComparisonView({
   validationError,
   canSavePersonalOverlays,
   canExplainGuidance,
+  canUseIntegrations,
   savedComparisonArtifact,
   explanationState,
   onRegionA,
@@ -3573,6 +5444,8 @@ function ComparisonView({
   onSaveComparison,
   onRemoveSavedArtifact,
   onExplainComparison,
+  onCreateIntegrationExport,
+  onCreateIntegrationReminder,
 }: {
   regions: RegionListItem[];
   regionA: string;
@@ -3583,6 +5456,7 @@ function ComparisonView({
   validationError?: string | null;
   canSavePersonalOverlays: boolean;
   canExplainGuidance: boolean;
+  canUseIntegrations: boolean;
   savedComparisonArtifact?: SavedMarketArtifact;
   explanationState?: LoadState<ExplanationResult>;
   onRegionA: (regionId: string) => void;
@@ -3590,6 +5464,8 @@ function ComparisonView({
   onSaveComparison: (comparison: ComparisonDetail, label: string) => void;
   onRemoveSavedArtifact: (savedArtifactId: string) => void;
   onExplainComparison: (comparison: ComparisonDetail) => void;
+  onCreateIntegrationExport: (request: IntegrationExportCreateRequest) => void;
+  onCreateIntegrationReminder: (request: IntegrationReminderCreateRequest) => void;
 }) {
   const comparison = validationError ? null : comparisonState.envelope?.data;
   const hasRegionA = regions.some((region) => region.region_id === regionA);
@@ -3685,6 +5561,19 @@ function ComparisonView({
         />
         <CoverageWarningList warnings={pickEnvelopeWarnings(comparisonState.envelope)} />
       </ShellCard>
+
+      {comparison ? (
+        <IntegrationActionPanel
+          canUseIntegrations={canUseIntegrations}
+          label={`${regionALabel} vs ${regionBLabel}`}
+          objectId={comparison.comparison_id ?? canonicalComparisonRef(regionA, regionB)}
+          objectType="comparison"
+          onCreateExport={onCreateIntegrationExport}
+          onCreateReminder={onCreateIntegrationReminder}
+          reminderType="application_window"
+          sourceContext={{ region_ids: [regionA, regionB] }}
+        />
+      ) : null}
 
       {comparison ? (
         <>
@@ -4793,6 +6682,151 @@ function UpgradePrompt({
   );
 }
 
+function IntegrationActionPanel({
+  objectType,
+  objectId,
+  label,
+  organizationId,
+  sourceContext,
+  canUseIntegrations,
+  reminderType,
+  showExports = true,
+  onCreateExport,
+  onCreateReminder,
+  onCreateCareerPlatformExport,
+}: {
+  objectType: IntegrationProductObjectType;
+  objectId: string;
+  label: string;
+  organizationId?: string | null;
+  sourceContext?: Record<string, unknown>;
+  canUseIntegrations: boolean;
+  reminderType: IntegrationReminderType;
+  showExports?: boolean;
+  onCreateExport: (request: IntegrationExportCreateRequest) => void;
+  onCreateReminder: (request: IntegrationReminderCreateRequest) => void;
+  onCreateCareerPlatformExport?: (request: CareerPlatformExportRequest) => void;
+}) {
+  const disabled = !objectId || !canUseIntegrations;
+  const reminderDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const organizationScope = organizationId || null;
+  const showCareerPlatforms = objectType === "company" && Boolean(onCreateCareerPlatformExport);
+
+  return (
+    <ShellCard title="Export and reminder actions" eyebrow="Layer 17A integrations">
+      <p className="meta-copy">
+        Exports are local files or prepared manual payloads. Calendar support creates an ICS file only.
+      </p>
+      <div className="integration-action-grid">
+        {showExports ? INTEGRATION_EXPORT_OPTIONS.map((option) => (
+          <button
+            className="secondary-button compact-button"
+            disabled={disabled}
+            key={option.id}
+            onClick={() =>
+              onCreateExport({
+                product_object_type: objectType,
+                product_object_id: objectId,
+                export_format: option.id,
+                organization_id: organizationScope,
+                source_context: sourceContext,
+              })
+            }
+            title={option.description}
+            type="button"
+          >
+            {option.label}
+          </button>
+        )) : null}
+        <button
+          className="secondary-button compact-button"
+          disabled={disabled}
+          onClick={() =>
+            onCreateReminder({
+              reminder_type: reminderType,
+              product_object_type: objectType,
+              product_object_id: objectId,
+              title: `Review ${label}`,
+              due_at: reminderDate,
+              organization_id: organizationScope,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+              description: `Review ${label} in Job Market Intelligence.`,
+            })
+          }
+          title="Downloadable ICS file only"
+          type="button"
+        >
+          ICS reminder
+        </button>
+      </div>
+      <div className="metadata-row">
+        <span className="badge badge-success">No OAuth</span>
+        <span className="badge badge-success">No live sync</span>
+        <span className="badge badge-success">No external writes</span>
+        <span className="badge badge-unknown">Product authority retained</span>
+      </div>
+      {showCareerPlatforms ? (
+        <>
+          <div className="integration-action-grid">
+            <button
+              className="secondary-button compact-button"
+              disabled={disabled}
+              onClick={() =>
+                onCreateCareerPlatformExport?.({
+                  platform: "linkedin",
+                  company_ids: [objectId],
+                  employer_names: [],
+                  organization_id: organizationScope,
+                })
+              }
+              title="Manual LinkedIn company search export only"
+              type="button"
+            >
+              LinkedIn manual search
+            </button>
+            <button
+              className="secondary-button compact-button"
+              disabled={disabled}
+              onClick={() =>
+                onCreateCareerPlatformExport?.({
+                  platform: "handshake",
+                  company_ids: [objectId],
+                  employer_names: [],
+                  organization_id: organizationScope,
+                })
+              }
+              title="Manual Handshake employer lookup export only"
+              type="button"
+            >
+              Handshake manual lookup
+            </button>
+          </div>
+          <div className="metadata-row">
+            <span className="badge badge-real">Deep link only</span>
+            <span className="badge badge-real">Export only</span>
+            <span className="badge badge-success">No scraping</span>
+            <span className="badge badge-success">No ATS state</span>
+          </div>
+        </>
+      ) : null}
+      <div className="warning-list" aria-label="Deferred integration states">
+        <div className="warning-item">
+          <div className="warning-header">
+            <span className="warning-code">Deferred direct integrations</span>
+          </div>
+          <p>
+            Google Sheets, Notion, and Airtable receive prepared payloads only.
+            Google Calendar and Outlook direct writes remain deferred behind the ICS file export.
+          </p>
+        </div>
+      </div>
+      {!canUseIntegrations ? (
+        <p className="meta-copy">Sign in to create user-owned export and reminder records.</p>
+      ) : null}
+    </ShellCard>
+  );
+}
+
 function PlanCard({
   plan,
   features,
@@ -5139,8 +7173,11 @@ function InstitutionDashboardView({
   selectedOrganizationId,
   onLogin,
   onOpenAdvisor,
+  onOpenImports,
   onOpenReports,
   onSelectOrganization,
+  onCreateIntegrationExport,
+  onCreateIntegrationReminder,
 }: {
   auth: FrontendAuthContextValue;
   dashboardState: LoadState<InstitutionDashboardPayload>;
@@ -5148,8 +7185,11 @@ function InstitutionDashboardView({
   selectedOrganizationId: string;
   onLogin: () => void;
   onOpenAdvisor: () => void;
+  onOpenImports: () => void;
   onOpenReports: () => void;
   onSelectOrganization: (organizationId: string) => void;
+  onCreateIntegrationExport: (request: IntegrationExportCreateRequest) => void;
+  onCreateIntegrationReminder: (request: IntegrationReminderCreateRequest) => void;
 }) {
   if (!auth.isConfigured) {
     return (
@@ -5201,6 +7241,9 @@ function InstitutionDashboardView({
               </button>
               <button className="secondary-button compact-button" onClick={onOpenReports} type="button">
                 Reports
+              </button>
+              <button className="secondary-button compact-button" onClick={onOpenImports} type="button">
+                Imports
               </button>
               <span className="badge badge-success">{selectedRow.membership.role}</span>
               <span className="badge">{selectedRow.organization.organization_type}</span>
@@ -5257,6 +7300,19 @@ function InstitutionDashboardView({
           </div>
         ) : null}
       </ShellCard>
+
+      {dashboard && selectedRow ? (
+        <IntegrationActionPanel
+          canUseIntegrations={auth.isAuthenticated}
+          label={`${selectedRow.organization.name} dashboard`}
+          objectId={selectedRow.organization.organization_id}
+          objectType="institutional_dashboard"
+          onCreateExport={onCreateIntegrationExport}
+          onCreateReminder={onCreateIntegrationReminder}
+          organizationId={selectedRow.organization.organization_id}
+          reminderType="institutional_report_review"
+        />
+      ) : null}
 
       {dashboard ? (
         <>
@@ -5347,6 +7403,7 @@ function InstitutionAdvisorWorkspace({
   selectedOrganizationId,
   onLogin,
   onOpenDashboard,
+  onOpenImports,
   onOpenReports,
   onSelectOrganization,
   onSubmit,
@@ -5357,6 +7414,7 @@ function InstitutionAdvisorWorkspace({
   selectedOrganizationId: string;
   onLogin: () => void;
   onOpenDashboard: () => void;
+  onOpenImports: () => void;
   onOpenReports: () => void;
   onSelectOrganization: (organizationId: string) => void;
   onSubmit: (
@@ -5436,6 +7494,9 @@ function InstitutionAdvisorWorkspace({
               </button>
               <button className="secondary-button compact-button" onClick={onOpenReports} type="button">
                 Reports
+              </button>
+              <button className="secondary-button compact-button" onClick={onOpenImports} type="button">
+                Imports
               </button>
               <span className="badge badge-success">{selectedRow.membership.role}</span>
               <span className="badge">{selectedRow.organization.organization_type}</span>
@@ -5821,8 +7882,11 @@ function InstitutionReportsView({
   onLogin,
   onOpenDashboard,
   onOpenDataRequests,
+  onOpenImports,
   onSelectOrganization,
   onGenerate,
+  onCreateIntegrationExport,
+  onCreateIntegrationReminder,
 }: {
   auth: FrontendAuthContextValue;
   reportState: LoadState<InstitutionReportGeneratePayload>;
@@ -5832,8 +7896,11 @@ function InstitutionReportsView({
   onLogin: () => void;
   onOpenDashboard: () => void;
   onOpenDataRequests: () => void;
+  onOpenImports: () => void;
   onSelectOrganization: (organizationId: string) => void;
   onGenerate: (request: InstitutionReportCreateRequest) => void;
+  onCreateIntegrationExport: (request: IntegrationExportCreateRequest) => void;
+  onCreateIntegrationReminder: (request: IntegrationReminderCreateRequest) => void;
 }) {
   const [formState, setFormState] = useState<InstitutionReportFormState>({
     ...DEFAULT_REPORT_FORM_STATE,
@@ -5895,6 +7962,9 @@ function InstitutionReportsView({
               </button>
               <button className="secondary-button compact-button" onClick={onOpenDataRequests} type="button">
                 Data requests
+              </button>
+              <button className="secondary-button compact-button" onClick={onOpenImports} type="button">
+                Imports
               </button>
               <span className="badge badge-success">{selectedRow.membership.role}</span>
             </div>
@@ -5990,7 +8060,14 @@ function InstitutionReportsView({
         </ShellCard>
       </div>
 
-      {report ? <InstitutionReportResult report={report} /> : null}
+      {report ? (
+        <InstitutionReportResult
+          canUseIntegrations={auth.isAuthenticated}
+          onCreateIntegrationExport={onCreateIntegrationExport}
+          onCreateIntegrationReminder={onCreateIntegrationReminder}
+          report={report}
+        />
+      ) : null}
     </div>
   );
 }
@@ -6019,7 +8096,522 @@ function InstitutionReportSummaryRow({ summary }: { summary: InstitutionReportSu
   );
 }
 
-function InstitutionReportResult({ report }: { report: InstitutionReportPayload }) {
+function InstitutionPartnerImportsView({
+  auth,
+  createState,
+  listState,
+  actionState,
+  receiptState,
+  organizationsState,
+  selectedOrganizationId,
+  onLogin,
+  onOpenDashboard,
+  onOpenReports,
+  onOpenDataRequests,
+  onSelectOrganization,
+  onSubmit,
+  onValidate,
+  onAccept,
+  onReject,
+  onArchive,
+  onViewReceipt,
+}: {
+  auth: FrontendAuthContextValue;
+  createState: LoadState<PartnerImportCreatePayload>;
+  listState: LoadState<PartnerImportListPayload>;
+  actionState: LoadState<PartnerImportCreatePayload>;
+  receiptState: LoadState<PartnerImportReceiptPayload>;
+  organizationsState: LoadState<InstitutionCurrentOrganizationsPayload>;
+  selectedOrganizationId: string;
+  onLogin: () => void;
+  onOpenDashboard: () => void;
+  onOpenReports: () => void;
+  onOpenDataRequests: () => void;
+  onSelectOrganization: (organizationId: string) => void;
+  onSubmit: (request: PartnerImportCreateRequest) => void;
+  onValidate: (importBatchId: string) => void;
+  onAccept: (importBatchId: string) => void;
+  onReject: (importBatchId: string) => void;
+  onArchive: (importBatchId: string) => void;
+  onViewReceipt: (importBatchId: string) => void;
+}) {
+  const [formState, setFormState] = useState<PartnerImportFormState>({
+    ...DEFAULT_PARTNER_IMPORT_FORM_STATE,
+  });
+
+  if (!auth.isConfigured) {
+    return (
+      <div className="view-grid">
+        <ShellCard title="Partner Import Center" eyebrow="Authentication required">
+          <EmptyState
+            title="Partner imports are unavailable"
+            body="Auth0 frontend configuration is required for organization-scoped imports."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <div className="view-grid">
+        <ShellCard
+          title="Partner Import Center"
+          eyebrow="Signed out"
+          action={<button type="button" onClick={onLogin}>Sign in</button>}
+        >
+          <EmptyState
+            title="Sign in required"
+            body="Partner imports are institution-scoped and require backend authorization."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
+  const organizationRows = organizationsState.envelope?.data?.organizations ?? [];
+  const selectedRow =
+    organizationRows.find((row) => row.organization.organization_id === selectedOrganizationId)
+    ?? organizationRows[0]
+    ?? null;
+  const createdImport = createState.envelope?.data?.partner_import ?? null;
+  const actionImport = actionState.envelope?.data?.partner_import ?? null;
+  const imports = listState.envelope?.data?.imports ?? [];
+  const activeImport = actionImport ?? createdImport ?? imports[0] ?? null;
+  const receipt = receiptState.envelope?.data?.receipt ?? activeImport?.receipt ?? null;
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedRow) return;
+    onSubmit(partnerImportRequestFromForm(selectedRow.organization.organization_id, formState));
+  }
+
+  function handleFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setFormState((current) => ({
+        ...current,
+        content: typeof reader.result === "string" ? reader.result : current.content,
+        originalFilename: file.name,
+        importFormat: file.name.toLowerCase().endsWith(".json") ? "json" : "csv",
+      }));
+    };
+    reader.readAsText(file);
+  }
+
+  return (
+    <div className="view-grid">
+      <ShellCard
+        title="Partner Import Center"
+        eyebrow={selectedRow?.organization.name ?? "Organization context"}
+        action={
+          selectedRow ? (
+            <div className="badge-stack">
+              <button className="secondary-button compact-button" onClick={onOpenDashboard} type="button">
+                Cohort dashboard
+              </button>
+              <button className="secondary-button compact-button" onClick={onOpenReports} type="button">
+                Reports
+              </button>
+              <button className="secondary-button compact-button" onClick={onOpenDataRequests} type="button">
+                Data requests
+              </button>
+              <span className="badge badge-success">{selectedRow.membership.role}</span>
+            </div>
+          ) : null
+        }
+      >
+        {organizationsState.loading ? <LoadingBlock label="Loading organizations" /> : null}
+        {organizationsState.error ? <ErrorState message={organizationsState.error} /> : null}
+        {organizationRows.length > 1 ? (
+          <div className="metadata-row">
+            {organizationRows.map((row) => (
+              <button
+                className={
+                  row.organization.organization_id === selectedOrganizationId
+                    ? "primary-button compact-button"
+                    : "secondary-button compact-button"
+                }
+                key={row.organization.organization_id}
+                onClick={() => onSelectOrganization(row.organization.organization_id)}
+                type="button"
+              >
+                {row.organization.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <p className="meta-copy">
+          Partner data is partner-contributed evidence, not canonical truth.
+          Accepted rows remain institution-scoped and cannot overwrite company
+          identity, region intelligence, scoring, or governance warnings.
+        </p>
+      </ShellCard>
+
+      <div className="split-grid">
+        <ShellCard title="Upload CSV Or JSON" eyebrow="Validated evidence">
+          <form className="account-form-grid" onSubmit={handleSubmit}>
+            <label>
+              Import type
+              <select
+                aria-label="Partner import type"
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    sourceType: event.target.value as PartnerImportSourceType,
+                  }))
+                }
+                value={formState.sourceType}
+              >
+                {PARTNER_IMPORT_SOURCE_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Format
+              <select
+                aria-label="Partner import format"
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    importFormat: event.target.value as PartnerImportFormat,
+                  }))
+                }
+                value={formState.importFormat}
+              >
+                {PARTNER_IMPORT_FORMAT_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Source attribution
+              <input
+                aria-label="Partner source attribution"
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    sourceAttribution: event.target.value,
+                  }))
+                }
+                value={formState.sourceAttribution}
+              />
+            </label>
+            <label>
+              Upload file
+              <input
+                accept=".csv,.json,text/csv,application/json"
+                aria-label="Partner import file"
+                onChange={handleFile}
+                type="file"
+              />
+            </label>
+            <label>
+              File name
+              <input
+                aria-label="Partner import filename"
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    originalFilename: event.target.value,
+                  }))
+                }
+                value={formState.originalFilename}
+              />
+            </label>
+            <label className="wide-field">
+              Import content
+              <textarea
+                aria-label="Partner import content"
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, content: event.target.value }))
+                }
+                rows={8}
+                value={formState.content}
+              />
+            </label>
+            <div className="metadata-row">
+              <button className="primary-button" disabled={createState.loading || !selectedRow} type="submit">
+                Upload and validate
+              </button>
+              {createState.loading ? <span className="badge badge-partial">Validating</span> : null}
+            </div>
+          </form>
+          {createState.error ? <ErrorState message={createState.error} /> : null}
+        </ShellCard>
+
+        <ShellCard title="Validation Preview" eyebrow="Warnings preserved">
+          {activeImport ? (
+            <PartnerImportSummaryCard
+              partnerImport={activeImport}
+              onAccept={onAccept}
+              onArchive={onArchive}
+              onReject={onReject}
+              onValidate={onValidate}
+              onViewReceipt={onViewReceipt}
+            />
+          ) : (
+            <EmptyState
+              title="No import selected"
+              body="Upload a CSV or JSON partner import to preview validation results."
+            />
+          )}
+          {actionState.loading ? <LoadingBlock label="Applying import action" /> : null}
+          {actionState.error ? <ErrorState message={actionState.error} /> : null}
+        </ShellCard>
+      </div>
+
+      <div className="split-grid">
+        <ShellCard title="Import Batches" eyebrow="Institution scoped">
+          {listState.loading ? <LoadingBlock label="Loading partner imports" /> : null}
+          {listState.error ? <ErrorState message={listState.error} /> : null}
+          {imports.length ? (
+            <div className="stack-list">
+              {imports.map((partnerImport) => (
+                <PartnerImportBatchRow
+                  key={partnerImport.import_batch_id}
+                  partnerImport={partnerImport}
+                  onAccept={onAccept}
+                  onArchive={onArchive}
+                  onReject={onReject}
+                  onValidate={onValidate}
+                  onViewReceipt={onViewReceipt}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No partner imports"
+              body="Validated partner evidence batches will appear here for this institution only."
+            />
+          )}
+        </ShellCard>
+
+        <ShellCard title="Import Receipt" eyebrow="Governance record">
+          {receiptState.loading ? <LoadingBlock label="Loading import receipt" /> : null}
+          {receiptState.error ? <ErrorState message={receiptState.error} /> : null}
+          {receipt ? (
+            <div className="stack-row">
+              <div className="metadata-row">
+                <strong>{segmentLabel(receipt.source_type)}</strong>
+                <span className="badge badge-success">
+                  Partner-contributed evidence
+                </span>
+                <span className="badge badge-unknown">Canonical truth false</span>
+              </div>
+              <small>
+                Source {receipt.source_attribution} · status {segmentLabel(receipt.status)}
+              </small>
+              <ul className="notes-list">
+                {receipt.limitations.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <div className="metadata-row">
+                <span className="badge badge-success">
+                  Identity overwrite {String(receipt.canonical_identity_overwrite_performed)}
+                </span>
+                <span className="badge badge-success">
+                  Region overwrite {String(receipt.canonical_region_overwrite_performed)}
+                </span>
+                <span className="badge badge-success">
+                  Scoring override {String(receipt.product_scoring_override_performed)}
+                </span>
+                <span className="badge badge-success">
+                  Internal fields exposed {String(receipt.internal_only_fields_exposed)}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <EmptyState
+              title="No receipt loaded"
+              body="Open a receipt to inspect source attribution, warnings, and boundary decisions."
+            />
+          )}
+        </ShellCard>
+      </div>
+    </div>
+  );
+}
+
+function PartnerImportSummaryCard({
+  partnerImport,
+  onAccept,
+  onArchive,
+  onReject,
+  onValidate,
+  onViewReceipt,
+}: {
+  partnerImport: PartnerImportBatchPayload;
+  onAccept: (importBatchId: string) => void;
+  onArchive: (importBatchId: string) => void;
+  onReject: (importBatchId: string) => void;
+  onValidate: (importBatchId: string) => void;
+  onViewReceipt: (importBatchId: string) => void;
+}) {
+  const result = partnerImport.validation_result;
+  return (
+    <div className="stack-row">
+      <div className="metadata-row">
+        <strong>{segmentLabel(partnerImport.source_type)}</strong>
+        <span className="badge">{segmentLabel(partnerImport.status)}</span>
+        <span className="badge badge-success">Partner-contributed</span>
+      </div>
+      <small>
+        Records {result.record_count} · accepted {result.accepted_record_count} ·
+        quarantined {result.quarantined_record_count} · rejected {result.rejected_record_count}
+      </small>
+      <p className="meta-copy">
+        Source: {partnerImport.source_attribution || "Missing source attribution"}
+      </p>
+      <div className="metadata-row">
+        <button
+          className="secondary-button compact-button"
+          onClick={() => onValidate(partnerImport.import_batch_id)}
+          type="button"
+        >
+          Revalidate
+        </button>
+        <button
+          className="primary-button compact-button"
+          disabled={!result.can_accept}
+          onClick={() => onAccept(partnerImport.import_batch_id)}
+          type="button"
+        >
+          Accept evidence
+        </button>
+        <button
+          className="secondary-button compact-button"
+          onClick={() => onReject(partnerImport.import_batch_id)}
+          type="button"
+        >
+          Reject
+        </button>
+        <button
+          className="secondary-button compact-button"
+          onClick={() => onArchive(partnerImport.import_batch_id)}
+          type="button"
+        >
+          Archive
+        </button>
+        <button
+          className="secondary-button compact-button"
+          onClick={() => onViewReceipt(partnerImport.import_batch_id)}
+          type="button"
+        >
+          Receipt
+        </button>
+      </div>
+      <PartnerImportWarnings warnings={result.warnings} />
+      {partnerImport.preview_records.length ? (
+        <div className="stack-list">
+          {partnerImport.preview_records.slice(0, 3).map((record, index) => (
+            <div className="stack-row compact-row" key={`${partnerImport.import_batch_id}-${index}`}>
+              <div className="metadata-row">
+                <span className="badge">{formatValue(record.decision)}</span>
+                <span className="badge badge-unknown">Canonical truth false</span>
+              </div>
+              <small>{JSON.stringify(record.partner_payload ?? record).slice(0, 220)}</small>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PartnerImportBatchRow({
+  partnerImport,
+  onAccept,
+  onArchive,
+  onReject,
+  onValidate,
+  onViewReceipt,
+}: {
+  partnerImport: PartnerImportBatchPayload;
+  onAccept: (importBatchId: string) => void;
+  onArchive: (importBatchId: string) => void;
+  onReject: (importBatchId: string) => void;
+  onValidate: (importBatchId: string) => void;
+  onViewReceipt: (importBatchId: string) => void;
+}) {
+  return (
+    <div className="stack-row">
+      <div className="metadata-row">
+        <strong>{segmentLabel(partnerImport.source_type)}</strong>
+        <span className="badge">{segmentLabel(partnerImport.status)}</span>
+        <span className="badge badge-success">Institution scoped</span>
+      </div>
+      <small>
+        Uploaded {formatDateTime(partnerImport.created_at)} ·
+        records {partnerImport.record_count} · warnings {partnerImport.validation_result.warning_count}
+      </small>
+      <div className="metadata-row">
+        <button className="secondary-button compact-button" onClick={() => onValidate(partnerImport.import_batch_id)} type="button">
+          Validate
+        </button>
+        <button
+          className="primary-button compact-button"
+          disabled={!partnerImport.validation_result.can_accept}
+          onClick={() => onAccept(partnerImport.import_batch_id)}
+          type="button"
+        >
+          Accept
+        </button>
+        <button className="secondary-button compact-button" onClick={() => onReject(partnerImport.import_batch_id)} type="button">
+          Reject
+        </button>
+        <button className="secondary-button compact-button" onClick={() => onArchive(partnerImport.import_batch_id)} type="button">
+          Archive
+        </button>
+        <button className="secondary-button compact-button" onClick={() => onViewReceipt(partnerImport.import_batch_id)} type="button">
+          Receipt
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PartnerImportWarnings({
+  warnings,
+}: {
+  warnings: PartnerImportBatchPayload["validation_result"]["warnings"];
+}) {
+  if (!warnings.length) {
+    return <p className="meta-copy">No validation warnings were returned.</p>;
+  }
+  return (
+    <div className="warning-list" aria-label="Partner import validation warnings">
+      {warnings.slice(0, 8).map((warning, index) => (
+        <div className="warning-item" key={`${warning.code}-${warning.field}-${index}`}>
+          <div className="warning-header">
+            <span className="warning-code">{prettyKey(warning.code)}</span>
+            <span className="badge badge-warning">{warning.severity}</span>
+          </div>
+          <p>{warning.message}</p>
+          <small>
+            Record {warning.record_index ?? "batch"} · action {segmentLabel(warning.action)}
+          </small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InstitutionReportResult({
+  report,
+  canUseIntegrations,
+  onCreateIntegrationExport,
+  onCreateIntegrationReminder,
+}: {
+  report: InstitutionReportPayload;
+  canUseIntegrations: boolean;
+  onCreateIntegrationExport: (request: IntegrationExportCreateRequest) => void;
+  onCreateIntegrationReminder: (request: IntegrationReminderCreateRequest) => void;
+}) {
   return (
     <>
       <ShellCard title={report.title} eyebrow={segmentLabel(report.report_type)}>
@@ -6047,6 +8639,17 @@ function InstitutionReportResult({ report }: { report: InstitutionReportPayload 
           ))}
         </ul>
       </ShellCard>
+
+      <IntegrationActionPanel
+        canUseIntegrations={canUseIntegrations}
+        label={report.title}
+        objectId={report.report_id}
+        objectType="institutional_report"
+        onCreateExport={onCreateIntegrationExport}
+        onCreateReminder={onCreateIntegrationReminder}
+        organizationId={report.organization_id}
+        reminderType="institutional_report_review"
+      />
 
       <div className="split-grid">
         {report.sections.map((section) => (
@@ -6142,9 +8745,11 @@ function InstitutionDataRequestsView({
   selectedOrganizationId,
   onLogin,
   onOpenDashboard,
+  onOpenImports,
   onOpenReports,
   onSelectOrganization,
   onSubmit,
+  onCreateIntegrationReminder,
 }: {
   auth: FrontendAuthContextValue;
   createState: LoadState<InstitutionDataRequestCreatePayload>;
@@ -6153,9 +8758,11 @@ function InstitutionDataRequestsView({
   selectedOrganizationId: string;
   onLogin: () => void;
   onOpenDashboard: () => void;
+  onOpenImports: () => void;
   onOpenReports: () => void;
   onSelectOrganization: (organizationId: string) => void;
   onSubmit: (request: InstitutionDataRequestCreateRequest) => void;
+  onCreateIntegrationReminder: (request: IntegrationReminderCreateRequest) => void;
 }) {
   const [formState, setFormState] = useState<InstitutionDataRequestFormState>({
     ...DEFAULT_DATA_REQUEST_FORM_STATE,
@@ -6218,6 +8825,9 @@ function InstitutionDataRequestsView({
               <button className="secondary-button compact-button" onClick={onOpenReports} type="button">
                 Reports
               </button>
+              <button className="secondary-button compact-button" onClick={onOpenImports} type="button">
+                Imports
+              </button>
               <span className="badge badge-success">{selectedRow.membership.role}</span>
             </div>
           ) : null
@@ -6249,6 +8859,20 @@ function InstitutionDataRequestsView({
           export packages in this batch.
         </p>
       </ShellCard>
+
+      {selectedRow ? (
+        <IntegrationActionPanel
+          canUseIntegrations={auth.isAuthenticated}
+          label={`${selectedRow.organization.name} data request follow-up`}
+          objectId={selectedRow.organization.organization_id}
+          objectType="institutional_dashboard"
+          onCreateExport={() => undefined}
+          onCreateReminder={onCreateIntegrationReminder}
+          organizationId={selectedRow.organization.organization_id}
+          reminderType="data_request_due"
+          showExports={false}
+        />
+      ) : null}
 
       <div className="split-grid">
         <ShellCard title="Create Request Record" eyebrow="Auditable request">
@@ -6574,6 +9198,9 @@ function RecommendationsView({
   onSelectGoalMode,
   accessPreviewStates,
   monetizationPlansState,
+  canUseIntegrations,
+  onCreateIntegrationExport,
+  onCreateIntegrationReminder,
 }: {
   goalModesState: LoadState<RecommendationGoalModesPayload>;
   strategyState: LoadState<RecommendationStrategyPayload>;
@@ -6581,6 +9208,9 @@ function RecommendationsView({
   onSelectGoalMode: (goalMode: RecommendationGoalMode) => void;
   accessPreviewStates: Record<string, LoadState<MonetizationAccessPreviewPayload>>;
   monetizationPlansState: LoadState<MonetizationPlansPayload>;
+  canUseIntegrations: boolean;
+  onCreateIntegrationExport: (request: IntegrationExportCreateRequest) => void;
+  onCreateIntegrationReminder: (request: IntegrationReminderCreateRequest) => void;
 }) {
   const strategy = strategyState.envelope?.data;
   const goalModes = goalModesState.envelope?.data?.goal_modes ?? strategy?.available_goal_modes ?? [];
@@ -6633,6 +9263,19 @@ function RecommendationsView({
       </ShellCard>
 
       {strategy ? (
+        <IntegrationActionPanel
+          canUseIntegrations={canUseIntegrations}
+          label={`${segmentLabel(selectedGoalMode)} strategy`}
+          objectId={selectedGoalMode}
+          objectType="recommendation_strategy"
+          onCreateExport={onCreateIntegrationExport}
+          onCreateReminder={onCreateIntegrationReminder}
+          reminderType="follow_up"
+          sourceContext={{ goal_mode: selectedGoalMode }}
+        />
+      ) : null}
+
+      {strategy ? (
         <>
           <RecommendationRankingSection
             title="Ranked region recommendations"
@@ -6679,6 +9322,14 @@ function App() {
     useState<LoadState<RecommendationGoalModesPayload>>(emptyLoadState);
   const [recommendationStrategyState, setRecommendationStrategyState] =
     useState<LoadState<RecommendationStrategyPayload>>(emptyLoadState);
+  const [publicBenchmarkListState, setPublicBenchmarkListState] =
+    useState<LoadState<PublicBenchmarkListPayload>>(emptyLoadState);
+  const [publicBenchmarkDetailStates, setPublicBenchmarkDetailStates] =
+    useState<Record<string, LoadState<PublicBenchmark>>>({});
+  const [publicReportListState, setPublicReportListState] =
+    useState<LoadState<PublicReportListPayload>>(emptyLoadState);
+  const [publicReportDetailStates, setPublicReportDetailStates] =
+    useState<Record<string, LoadState<PublicReport>>>({});
   const [monetizationPlansState, setMonetizationPlansState] =
     useState<LoadState<MonetizationPlansPayload>>(emptyLoadState);
   const [monetizationFeaturesState, setMonetizationFeaturesState] =
@@ -6709,6 +9360,26 @@ function App() {
     useState<LoadState<InstitutionDataRequestCreatePayload>>(emptyLoadState);
   const [institutionDataRequestsListState, setInstitutionDataRequestsListState] =
     useState<LoadState<InstitutionDataRequestListPayload>>(emptyLoadState);
+  const [partnerImportCreateState, setPartnerImportCreateState] =
+    useState<LoadState<PartnerImportCreatePayload>>(emptyLoadState);
+  const [partnerImportListState, setPartnerImportListState] =
+    useState<LoadState<PartnerImportListPayload>>(emptyLoadState);
+  const [partnerImportActionState, setPartnerImportActionState] =
+    useState<LoadState<PartnerImportCreatePayload>>(emptyLoadState);
+  const [partnerImportReceiptState, setPartnerImportReceiptState] =
+    useState<LoadState<PartnerImportReceiptPayload>>(emptyLoadState);
+  const [apiClientCreateState, setApiClientCreateState] =
+    useState<LoadState<ApiClientCreatePayload>>(emptyLoadState);
+  const [apiClientListState, setApiClientListState] =
+    useState<LoadState<ApiClientListPayload>>(emptyLoadState);
+  const [apiKeyCreateState, setApiKeyCreateState] =
+    useState<LoadState<ApiKeyCreatePayload>>(emptyLoadState);
+  const [apiUsageState, setApiUsageState] =
+    useState<LoadState<ApiUsageListPayload>>(emptyLoadState);
+  const [careerPlatformRegistryState, setCareerPlatformRegistryState] =
+    useState<LoadState<CareerPlatformRegistryPayload>>(emptyLoadState);
+  const [careerPlatformExportState, setCareerPlatformExportState] =
+    useState<LoadState<CareerPlatformExportPayload>>(emptyLoadState);
   const [currentUserState, setCurrentUserState] = useState<LoadState<CurrentUserProfile>>(emptyLoadState);
   const [preferenceState, setPreferenceState] = useState<LoadState<UserPreferenceProfile>>(emptyLoadState);
   const [preferenceDraft, setPreferenceDraft] = useState<PreferenceDraft>(() => emptyPreferenceDraft());
@@ -6778,6 +9449,12 @@ function App() {
   const selectedCompanySourceState = companySourceStates[selectedCompanyId] ?? emptyLoadState<SourceExplanation>();
   const selectedCompanyGeographyState =
     companyGeographyStates[selectedCompanyId] ?? emptyLoadState<CompanyGeographyResponse>();
+  const selectedPublicBenchmarkDetailState = route.benchmarkSlug
+    ? publicBenchmarkDetailStates[route.benchmarkSlug] ?? emptyLoadState<PublicBenchmark>()
+    : emptyLoadState<PublicBenchmark>();
+  const selectedPublicReportDetailState = route.reportSlug
+    ? publicReportDetailStates[route.reportSlug] ?? emptyLoadState<PublicReport>()
+    : emptyLoadState<PublicReport>();
   const savedArtifactRefs = useMemo(() => {
     const refs = new Set<string>();
     for (const artifact of artifactsState.envelope?.data?.saved_market_artifacts ?? []) {
@@ -6796,6 +9473,7 @@ function App() {
     ?? canonicalComparisonRef(comparisonA, comparisonB);
   const canSavePersonalOverlays = auth.isConfigured && auth.isAuthenticated && !accountDeactivated;
   const canExplainGuidance = canSavePersonalOverlays;
+  const canUseIntegrations = canSavePersonalOverlays;
   const regionSourceIdsNeeded = useMemo(() => {
     const ids: string[] = [];
     if (isProductRoute && selectedRegionId && selectedRegionIsKnown) ids.push(selectedRegionId);
@@ -6837,6 +9515,80 @@ function App() {
     setRoute(readCurrentRoute());
   }, []);
 
+  const loadPublicBenchmarks = useCallback(async () => {
+    setPublicBenchmarkListState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const envelope = await getPublicBenchmarks();
+      setPublicBenchmarkListState({ loading: false, envelope, error: null });
+    } catch (error) {
+      setPublicBenchmarkListState({
+        loading: false,
+        envelope: null,
+        error: error instanceof Error ? error.message : "Failed to load public benchmarks",
+      });
+    }
+  }, []);
+
+  const loadPublicBenchmark = useCallback(async (slug: string) => {
+    setPublicBenchmarkDetailStates((current) => ({
+      ...current,
+      [slug]: { ...(current[slug] ?? emptyLoadState<PublicBenchmark>()), loading: true, error: null },
+    }));
+    try {
+      const envelope = await getPublicBenchmark(slug);
+      setPublicBenchmarkDetailStates((current) => ({
+        ...current,
+        [slug]: { loading: false, envelope, error: null },
+      }));
+    } catch (error) {
+      setPublicBenchmarkDetailStates((current) => ({
+        ...current,
+        [slug]: {
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to load public benchmark",
+        },
+      }));
+    }
+  }, []);
+
+  const loadPublicReports = useCallback(async () => {
+    setPublicReportListState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const envelope = await getPublicReports();
+      setPublicReportListState({ loading: false, envelope, error: null });
+    } catch (error) {
+      setPublicReportListState({
+        loading: false,
+        envelope: null,
+        error: error instanceof Error ? error.message : "Failed to load public reports",
+      });
+    }
+  }, []);
+
+  const loadPublicReport = useCallback(async (slug: string) => {
+    setPublicReportDetailStates((current) => ({
+      ...current,
+      [slug]: { ...(current[slug] ?? emptyLoadState<PublicReport>()), loading: true, error: null },
+    }));
+    try {
+      const envelope = await getPublicReport(slug);
+      setPublicReportDetailStates((current) => ({
+        ...current,
+        [slug]: { loading: false, envelope, error: null },
+      }));
+    } catch (error) {
+      setPublicReportDetailStates((current) => ({
+        ...current,
+        [slug]: {
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to load public report",
+        },
+      }));
+    }
+  }, []);
+
   const resetAccountState = useCallback(() => {
     setCurrentUserState(emptyLoadState());
     setPreferenceState(emptyLoadState());
@@ -6857,6 +9609,16 @@ function App() {
     setInstitutionReportsListState(emptyLoadState());
     setInstitutionDataRequestState(emptyLoadState());
     setInstitutionDataRequestsListState(emptyLoadState());
+    setPartnerImportCreateState(emptyLoadState());
+    setPartnerImportListState(emptyLoadState());
+    setPartnerImportActionState(emptyLoadState());
+    setPartnerImportReceiptState(emptyLoadState());
+    setApiClientCreateState(emptyLoadState());
+    setApiClientListState(emptyLoadState());
+    setApiKeyCreateState(emptyLoadState());
+    setApiUsageState(emptyLoadState());
+    setCareerPlatformRegistryState(emptyLoadState());
+    setCareerPlatformExportState(emptyLoadState());
     setBillingAction({ loadingPlanKey: null, loadingPortal: false, message: null, error: null });
     setDeactivationResult(null);
     setDeactivateConfirmed(false);
@@ -7080,6 +9842,52 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (route.page !== "benchmarks") return;
+    if (publicBenchmarkListState.loading || publicBenchmarkListState.envelope) return;
+    void loadPublicBenchmarks();
+  }, [
+    loadPublicBenchmarks,
+    publicBenchmarkListState.envelope,
+    publicBenchmarkListState.loading,
+    route.page,
+  ]);
+
+  useEffect(() => {
+    if (route.page !== "benchmarks" || !route.benchmarkSlug) return;
+    const detailState = publicBenchmarkDetailStates[route.benchmarkSlug];
+    if (detailState?.loading || detailState?.envelope || detailState?.error) return;
+    void loadPublicBenchmark(route.benchmarkSlug);
+  }, [
+    loadPublicBenchmark,
+    publicBenchmarkDetailStates,
+    route.benchmarkSlug,
+    route.page,
+  ]);
+
+  useEffect(() => {
+    if (route.page !== "reports") return;
+    if (publicReportListState.loading || publicReportListState.envelope) return;
+    void loadPublicReports();
+  }, [
+    loadPublicReports,
+    publicReportListState.envelope,
+    publicReportListState.loading,
+    route.page,
+  ]);
+
+  useEffect(() => {
+    if (route.page !== "reports" || !route.reportSlug) return;
+    const detailState = publicReportDetailStates[route.reportSlug];
+    if (detailState?.loading || detailState?.envelope || detailState?.error) return;
+    void loadPublicReport(route.reportSlug);
+  }, [
+    loadPublicReport,
+    publicReportDetailStates,
+    route.page,
+    route.reportSlug,
+  ]);
+
+  useEffect(() => {
     if (!auth.isAuthenticated) {
       resetAccountState();
       setAccountDeactivated(false);
@@ -7176,6 +9984,10 @@ function App() {
     setInstitutionReportsListState(emptyLoadState());
     setInstitutionDataRequestState(emptyLoadState());
     setInstitutionDataRequestsListState(emptyLoadState());
+    setPartnerImportCreateState(emptyLoadState());
+    setPartnerImportListState(emptyLoadState());
+    setPartnerImportActionState(emptyLoadState());
+    setPartnerImportReceiptState(emptyLoadState());
   }, [route.page, route.institutionView, selectedInstitutionOrganizationId]);
 
   useEffect(() => {
@@ -7261,6 +10073,90 @@ function App() {
     route.institutionView,
     route.page,
     selectedInstitutionOrganizationId,
+  ]);
+
+  useEffect(() => {
+    if (route.page !== "institution" || route.institutionView !== "imports") return;
+    if (!auth.isAuthenticated || accountDeactivated || !selectedInstitutionOrganizationId) {
+      setPartnerImportListState(emptyLoadState());
+      return;
+    }
+    if (partnerImportListState.loading || partnerImportListState.envelope) return;
+
+    async function loadPartnerImports() {
+      setPartnerImportListState((current) => ({
+        ...current,
+        loading: true,
+        error: null,
+      }));
+      try {
+        const envelope = await listPartnerImports(
+          selectedInstitutionOrganizationId,
+          protectedOptions,
+        );
+        setPartnerImportListState({ loading: false, envelope, error: null });
+      } catch (error) {
+        setPartnerImportListState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error
+            ? error.message
+            : "Failed to load partner imports",
+        });
+      }
+    }
+
+    void loadPartnerImports();
+  }, [
+    accountDeactivated,
+    auth.isAuthenticated,
+    partnerImportListState.envelope,
+    partnerImportListState.loading,
+    protectedOptions,
+    route.institutionView,
+    route.page,
+    selectedInstitutionOrganizationId,
+  ]);
+
+  useEffect(() => {
+    if (!auth.isAuthenticated || accountDeactivated) {
+      setCareerPlatformRegistryState(emptyLoadState());
+      return;
+    }
+    if (
+      careerPlatformRegistryState.loading
+      || careerPlatformRegistryState.envelope
+      || careerPlatformRegistryState.error
+    ) {
+      return;
+    }
+
+    async function loadCareerPlatformRegistry() {
+      setCareerPlatformRegistryState((current) => ({
+        ...current,
+        loading: true,
+        error: null,
+      }));
+      try {
+        const envelope = await getCareerPlatformRegistry(protectedOptions);
+        setCareerPlatformRegistryState({ loading: false, envelope, error: null });
+      } catch (error) {
+        setCareerPlatformRegistryState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to load career platforms",
+        });
+      }
+    }
+
+    void loadCareerPlatformRegistry();
+  }, [
+    accountDeactivated,
+    auth.isAuthenticated,
+    careerPlatformRegistryState.envelope,
+    careerPlatformRegistryState.error,
+    careerPlatformRegistryState.loading,
+    protectedOptions,
   ]);
 
   useEffect(() => {
@@ -7873,6 +10769,314 @@ function App() {
     })();
   }
 
+  async function refreshPartnerImports() {
+    if (!selectedInstitutionOrganizationId) return;
+    const listEnvelope = await listPartnerImports(
+      selectedInstitutionOrganizationId,
+      protectedOptions,
+    );
+    setPartnerImportListState({ loading: false, envelope: listEnvelope, error: null });
+  }
+
+  function handlePartnerImportCreate(request: PartnerImportCreateRequest) {
+    void (async () => {
+      if (!selectedInstitutionOrganizationId) {
+        setPartnerImportCreateState({
+          loading: false,
+          envelope: null,
+          error: "Select an institutional organization before uploading partner data.",
+        });
+        return;
+      }
+      setPartnerImportCreateState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await createPartnerImport(request, protectedOptions);
+        setPartnerImportCreateState({ loading: false, envelope, error: null });
+        await refreshPartnerImports();
+      } catch (error) {
+        setPartnerImportCreateState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to upload partner import",
+        });
+      }
+    })();
+  }
+
+  function handlePartnerImportValidate(importBatchId: string) {
+    void (async () => {
+      setPartnerImportActionState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await validatePartnerImport(importBatchId, protectedOptions);
+        setPartnerImportActionState({ loading: false, envelope, error: null });
+        await refreshPartnerImports();
+      } catch (error) {
+        setPartnerImportActionState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to validate partner import",
+        });
+      }
+    })();
+  }
+
+  function handlePartnerImportAccept(importBatchId: string) {
+    void (async () => {
+      setPartnerImportActionState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await acceptPartnerImport(
+          importBatchId,
+          { reason: "Accepted as partner-contributed evidence." },
+          protectedOptions,
+        );
+        setPartnerImportActionState({ loading: false, envelope, error: null });
+        await refreshPartnerImports();
+      } catch (error) {
+        setPartnerImportActionState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to accept partner import",
+        });
+      }
+    })();
+  }
+
+  function handlePartnerImportReject(importBatchId: string) {
+    void (async () => {
+      setPartnerImportActionState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await rejectPartnerImport(
+          importBatchId,
+          { reason: "Rejected during import governance review." },
+          protectedOptions,
+        );
+        setPartnerImportActionState({ loading: false, envelope, error: null });
+        await refreshPartnerImports();
+      } catch (error) {
+        setPartnerImportActionState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to reject partner import",
+        });
+      }
+    })();
+  }
+
+  function handlePartnerImportArchive(importBatchId: string) {
+    void (async () => {
+      setPartnerImportActionState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await archivePartnerImport(
+          importBatchId,
+          { reason: "Archived from import center." },
+          protectedOptions,
+        );
+        setPartnerImportActionState({ loading: false, envelope, error: null });
+        await refreshPartnerImports();
+      } catch (error) {
+        setPartnerImportActionState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to archive partner import",
+        });
+      }
+    })();
+  }
+
+  function handlePartnerImportReceipt(importBatchId: string) {
+    void (async () => {
+      setPartnerImportReceiptState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await getPartnerImportReceipt(importBatchId, protectedOptions);
+        setPartnerImportReceiptState({ loading: false, envelope, error: null });
+      } catch (error) {
+        setPartnerImportReceiptState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to load import receipt",
+        });
+      }
+    })();
+  }
+
+  async function refreshApiClients() {
+    setApiClientListState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const envelope = await listApiClients(protectedOptions);
+      setApiClientListState({ loading: false, envelope, error: null });
+    } catch (error) {
+      setApiClientListState({
+        loading: false,
+        envelope: null,
+        error: error instanceof Error ? error.message : "Failed to load API clients",
+      });
+    }
+  }
+
+  function handleCreateApiClient(request: ApiClientCreateRequest) {
+    void (async () => {
+      setApiClientCreateState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await createApiClient(request, protectedOptions);
+        setApiClientCreateState({ loading: false, envelope, error: null });
+        await refreshApiClients();
+      } catch (error) {
+        setApiClientCreateState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to create API client",
+        });
+      }
+    })();
+  }
+
+  function handleCreateApiKey(apiClientId: string) {
+    void (async () => {
+      setApiKeyCreateState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await createApiKey(apiClientId, protectedOptions);
+        setApiKeyCreateState({ loading: false, envelope, error: null });
+        await refreshApiClients();
+      } catch (error) {
+        setApiKeyCreateState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to create API key",
+        });
+      }
+    })();
+  }
+
+  function handleRevokeApiKey(apiKeyId: string) {
+    void (async () => {
+      setApiKeyCreateState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await revokeApiKey(apiKeyId, protectedOptions);
+        setApiKeyCreateState({ loading: false, envelope, error: null });
+        await refreshApiClients();
+      } catch (error) {
+        setApiKeyCreateState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to revoke API key",
+        });
+      }
+    })();
+  }
+
+  function handleLoadApiUsage(apiClientId: string) {
+    void (async () => {
+      setApiUsageState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await listApiUsage(apiClientId, protectedOptions);
+        setApiUsageState({ loading: false, envelope, error: null });
+      } catch (error) {
+        setApiUsageState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to load API usage",
+        });
+      }
+    })();
+  }
+
+  function handleRefreshCareerPlatforms() {
+    void (async () => {
+      setCareerPlatformRegistryState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const envelope = await getCareerPlatformRegistry(protectedOptions);
+        setCareerPlatformRegistryState({ loading: false, envelope, error: null });
+      } catch (error) {
+        setCareerPlatformRegistryState({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to load career platforms",
+        });
+      }
+    })();
+  }
+
+  function handleCreateCareerPlatformExport(request: CareerPlatformExportRequest) {
+    void (async () => {
+      setCareerPlatformExportState((current) => ({ ...current, loading: true, error: null }));
+      setAccountAction({ loading: true, message: null, error: null });
+      try {
+        const envelope = await createCareerPlatformExport(request, protectedOptions);
+        setCareerPlatformExportState({ loading: false, envelope, error: null });
+        setAccountAction({
+          loading: false,
+          message: "Career platform manual export prepared. No scraping, application submission, recruiter outreach, or ATS state was created.",
+          error: null,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to create platform export";
+        setCareerPlatformExportState({
+          loading: false,
+          envelope: null,
+          error: message,
+        });
+        setAccountAction({ loading: false, message: null, error: message });
+      }
+    })();
+  }
+
+  function handleCreateIntegrationExport(request: IntegrationExportCreateRequest) {
+    void (async () => {
+      if (!canUseIntegrations) {
+        setAccountAction({ loading: false, message: "Sign in to create integration exports.", error: null });
+        return;
+      }
+      setAccountAction({ loading: true, message: null, error: null });
+      try {
+        const envelope = await createIntegrationExport(request, protectedOptions);
+        const created = envelope.data?.export;
+        const actionLabel = created?.capability === "prepared_payload"
+          ? "Prepared manual payload"
+          : "Downloadable export";
+        setAccountAction({
+          loading: false,
+          message: created
+            ? `${actionLabel} created for ${segmentLabel(created.destination)}. No external write or live sync was performed.`
+            : "Integration export created.",
+          error: null,
+        });
+      } catch (error) {
+        setAccountAction({
+          loading: false,
+          message: null,
+          error: error instanceof Error ? error.message : "Failed to create integration export",
+        });
+      }
+    })();
+  }
+
+  function handleCreateIntegrationReminder(request: IntegrationReminderCreateRequest) {
+    void (async () => {
+      if (!canUseIntegrations) {
+        setAccountAction({ loading: false, message: "Sign in to create calendar reminders.", error: null });
+        return;
+      }
+      setAccountAction({ loading: true, message: null, error: null });
+      try {
+        const envelope = await createIntegrationReminder(request, protectedOptions);
+        const reminder = envelope.data?.reminder;
+        setAccountAction({
+          loading: false,
+          message: reminder
+            ? `ICS reminder created for ${segmentLabel(reminder.reminder_type)}. No ATS application status or calendar write was created.`
+            : "ICS reminder created.",
+          error: null,
+        });
+      } catch (error) {
+        setAccountAction({
+          loading: false,
+          message: null,
+          error: error instanceof Error ? error.message : "Failed to create calendar reminder",
+        });
+      }
+    })();
+  }
+
   function toggleFilterValue(value: string, values: string[]): string[] {
     return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
   }
@@ -8320,6 +11524,16 @@ function App() {
         setInstitutionReportsListState(emptyLoadState());
         setInstitutionDataRequestState(emptyLoadState());
         setInstitutionDataRequestsListState(emptyLoadState());
+        setPartnerImportCreateState(emptyLoadState());
+        setPartnerImportListState(emptyLoadState());
+        setPartnerImportActionState(emptyLoadState());
+        setPartnerImportReceiptState(emptyLoadState());
+        setApiClientCreateState(emptyLoadState());
+        setApiClientListState(emptyLoadState());
+        setApiKeyCreateState(emptyLoadState());
+        setApiUsageState(emptyLoadState());
+        setCareerPlatformRegistryState(emptyLoadState());
+        setCareerPlatformExportState(emptyLoadState());
         setDeactivateConfirmed(false);
         setAccountAction({
           loading: false,
@@ -8337,7 +11551,16 @@ function App() {
   }
 
   if (!isProductRoute) {
-    return <PublicRouteView onNavigate={handleRouteLink} route={route} />;
+    return (
+      <PublicRouteView
+        onNavigate={handleRouteLink}
+        publicBenchmarkDetailState={selectedPublicBenchmarkDetailState}
+        publicBenchmarkListState={publicBenchmarkListState}
+        publicReportDetailState={selectedPublicReportDetailState}
+        publicReportListState={publicReportListState}
+        route={route}
+      />
+    );
   }
 
   return (
@@ -8397,6 +11620,16 @@ function App() {
 
         <DemoDisclosure compact />
 
+        {route.page !== "account" && accountAction.message ? (
+          <div className="notice-state">
+            <strong>Integration update</strong>
+            <p>{accountAction.message}</p>
+          </div>
+        ) : null}
+        {route.page !== "account" && accountAction.error ? (
+          <ErrorState message={accountAction.error} />
+        ) : null}
+
         {route.page === "explore" ? (
           <ExploreMarkets
             health={health}
@@ -8413,7 +11646,10 @@ function App() {
           <RegionExplorer
             canExplainGuidance={canExplainGuidance}
             canSavePersonalOverlays={canSavePersonalOverlays}
+            canUseIntegrations={canUseIntegrations}
             explanationState={explanationStates[`region:${selectedRegionId}`]}
+            onCreateIntegrationExport={handleCreateIntegrationExport}
+            onCreateIntegrationReminder={handleCreateIntegrationReminder}
             onExplainRegion={handleExplainRegion}
             onCompareRegion={compareRegion}
             onRemoveSavedArtifact={handleDeleteArtifact}
@@ -8434,10 +11670,14 @@ function App() {
           <CompanyExplorer
             canExplainGuidance={canExplainGuidance}
             canSavePersonalOverlays={canSavePersonalOverlays}
+            canUseIntegrations={canUseIntegrations}
             companyOptions={companyOptions}
             companyState={companyState}
             explanationState={explanationStates[`company:${selectedCompanyId}`]}
             geographyState={selectedCompanyGeographyState}
+            onCreateCareerPlatformExport={handleCreateCareerPlatformExport}
+            onCreateIntegrationExport={handleCreateIntegrationExport}
+            onCreateIntegrationReminder={handleCreateIntegrationReminder}
             onExplainCompany={handleExplainCompany}
             onRemoveSavedArtifact={handleDeleteArtifact}
             onSaveCompany={handleSaveCompany}
@@ -8452,8 +11692,11 @@ function App() {
           <ComparisonView
             canExplainGuidance={canExplainGuidance}
             canSavePersonalOverlays={canSavePersonalOverlays}
+            canUseIntegrations={canUseIntegrations}
             comparisonState={comparisonState}
             explanationState={explanationStates[`comparison:${comparisonArtifactRef}`]}
+            onCreateIntegrationExport={handleCreateIntegrationExport}
+            onCreateIntegrationReminder={handleCreateIntegrationReminder}
             onExplainComparison={handleExplainComparison}
             savedComparisonArtifact={savedArtifactByKey.get(savedArtifactKey("comparison", comparisonArtifactRef))}
             onRemoveSavedArtifact={handleDeleteArtifact}
@@ -8524,8 +11767,11 @@ function App() {
         {route.page === "recommendations" ? (
           <RecommendationsView
             accessPreviewStates={monetizationAccessPreviewStates}
+            canUseIntegrations={canUseIntegrations}
             goalModesState={recommendationGoalModesState}
             monetizationPlansState={monetizationPlansState}
+            onCreateIntegrationExport={handleCreateIntegrationExport}
+            onCreateIntegrationReminder={handleCreateIntegrationReminder}
             onSelectGoalMode={updateRecommendationGoalMode}
             selectedGoalMode={selectedRecommendationGoalMode}
             strategyState={recommendationStrategyState}
@@ -8558,6 +11804,9 @@ function App() {
             onOpenDashboard={() =>
               navigateTo(institutionDashboardUrl(selectedInstitutionOrganizationId))
             }
+            onOpenImports={() =>
+              navigateTo(institutionImportsUrl(selectedInstitutionOrganizationId))
+            }
             onOpenReports={() =>
               navigateTo(institutionReportsUrl(selectedInstitutionOrganizationId))
             }
@@ -8573,6 +11822,8 @@ function App() {
           <InstitutionReportsView
             auth={auth}
             organizationsState={institutionOrganizationsState}
+            onCreateIntegrationExport={handleCreateIntegrationExport}
+            onCreateIntegrationReminder={handleCreateIntegrationReminder}
             onGenerate={handleInstitutionReportGenerate}
             onLogin={() => void auth.login()}
             onOpenDashboard={() =>
@@ -8580,6 +11831,9 @@ function App() {
             }
             onOpenDataRequests={() =>
               navigateTo(institutionDataRequestsUrl(selectedInstitutionOrganizationId))
+            }
+            onOpenImports={() =>
+              navigateTo(institutionImportsUrl(selectedInstitutionOrganizationId))
             }
             onSelectOrganization={(organizationId) =>
               navigateTo(institutionReportsUrl(organizationId))
@@ -8596,9 +11850,13 @@ function App() {
             createState={institutionDataRequestState}
             listState={institutionDataRequestsListState}
             organizationsState={institutionOrganizationsState}
+            onCreateIntegrationReminder={handleCreateIntegrationReminder}
             onLogin={() => void auth.login()}
             onOpenDashboard={() =>
               navigateTo(institutionDashboardUrl(selectedInstitutionOrganizationId))
+            }
+            onOpenImports={() =>
+              navigateTo(institutionImportsUrl(selectedInstitutionOrganizationId))
             }
             onOpenReports={() =>
               navigateTo(institutionReportsUrl(selectedInstitutionOrganizationId))
@@ -8611,14 +11869,50 @@ function App() {
           />
         ) : null}
 
+        {route.page === "institution" && route.institutionView === "imports" ? (
+          <InstitutionPartnerImportsView
+            actionState={partnerImportActionState}
+            auth={auth}
+            createState={partnerImportCreateState}
+            listState={partnerImportListState}
+            organizationsState={institutionOrganizationsState}
+            receiptState={partnerImportReceiptState}
+            onAccept={handlePartnerImportAccept}
+            onArchive={handlePartnerImportArchive}
+            onLogin={() => void auth.login()}
+            onOpenDashboard={() =>
+              navigateTo(institutionDashboardUrl(selectedInstitutionOrganizationId))
+            }
+            onOpenDataRequests={() =>
+              navigateTo(institutionDataRequestsUrl(selectedInstitutionOrganizationId))
+            }
+            onOpenReports={() =>
+              navigateTo(institutionReportsUrl(selectedInstitutionOrganizationId))
+            }
+            onReject={handlePartnerImportReject}
+            onSelectOrganization={(organizationId) =>
+              navigateTo(institutionImportsUrl(organizationId))
+            }
+            onSubmit={handlePartnerImportCreate}
+            onValidate={handlePartnerImportValidate}
+            onViewReceipt={handlePartnerImportReceipt}
+            selectedOrganizationId={selectedInstitutionOrganizationId}
+          />
+        ) : null}
+
         {route.page === "institution" && (!route.institutionView || route.institutionView === "dashboard") ? (
           <InstitutionDashboardView
             auth={auth}
             dashboardState={institutionDashboardState}
             organizationsState={institutionOrganizationsState}
+            onCreateIntegrationExport={handleCreateIntegrationExport}
+            onCreateIntegrationReminder={handleCreateIntegrationReminder}
             onLogin={() => void auth.login()}
             onOpenAdvisor={() =>
               navigateTo(institutionAdvisorUrl(selectedInstitutionOrganizationId))
+            }
+            onOpenImports={() =>
+              navigateTo(institutionImportsUrl(selectedInstitutionOrganizationId))
             }
             onOpenReports={() =>
               navigateTo(institutionReportsUrl(selectedInstitutionOrganizationId))
@@ -8639,24 +11933,37 @@ function App() {
                 .map(([key, value]) => [key.slice("alert:".length), value]),
             )}
             alertsState={alertsState}
+            apiClientCreateState={apiClientCreateState}
+            apiClientListState={apiClientListState}
+            apiKeyCreateState={apiKeyCreateState}
+            apiUsageState={apiUsageState}
             artifactsState={artifactsState}
             auth={auth}
+            careerPlatformExportState={careerPlatformExportState}
+            careerPlatformRegistryState={careerPlatformRegistryState}
             currentUserState={currentUserState}
             deactivateConfirmed={deactivateConfirmed}
             deactivationResult={deactivationResult}
             exportState={exportState}
             onDeactivate={handleDeactivateAccount}
             onDeactivateConfirmed={setDeactivateConfirmed}
+            onCreateApiClient={handleCreateApiClient}
+            onCreateApiKey={handleCreateApiKey}
+            onCreateCareerPlatformExport={handleCreateCareerPlatformExport}
             onDeleteArtifact={handleDeleteArtifact}
             onDeletePreferences={handleDeletePreferences}
             onDismissAlert={handleDismissAlert}
             onExplainAlert={handleExplainAlert}
             onExport={handleExportUserData}
+            onLoadApiUsage={handleLoadApiUsage}
             onLogin={() => void auth.login()}
             onMarkAlertRead={handleMarkAlertRead}
             onPreferenceDraft={setPreferenceDraft}
             onPreviewScoring={handlePreviewScoring}
+            onRefreshApiClients={() => void refreshApiClients()}
+            onRefreshCareerPlatforms={handleRefreshCareerPlatforms}
             onRefresh={() => void loadAccountData()}
+            onRevokeApiKey={handleRevokeApiKey}
             onSavePreferences={handleSavePreferences}
             preferenceDraft={preferenceDraft}
             preferenceState={preferenceState}

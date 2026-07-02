@@ -1,9 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   ApiError,
+  acceptPartnerImport,
+  archivePartnerImport,
+  createApiClient,
+  createApiKey,
   createBillingCheckoutSession,
   createBillingPortalSession,
+  createCareerPlatformExport,
+  createCareerPlatformReference,
+  createIntegrationExport,
+  createIntegrationReminder,
   createInstitutionDataRequest,
+  createPartnerImport,
   createSavedMarketArtifact,
   deleteSavedMarketArtifact,
   dismissAlert,
@@ -13,8 +22,11 @@ import {
   explainRegion,
   getCurrentUser,
   getBillingStatus,
+  getCareerPlatformRegistry,
   getInstitutionCurrentOrganizations,
   getInstitutionDashboard,
+  getPartnerImport,
+  getPartnerImportReceipt,
   generateInstitutionReport,
   getMonetizationAccessPreview,
   getMonetizationFeatures,
@@ -23,16 +35,27 @@ import {
   getMyMonetization,
   getMyMonetizationEntitlements,
   getMyMonetizationUsage,
+  getPublicBenchmark,
+  getPublicBenchmarks,
+  getPublicReport,
+  getPublicReports,
   getRecommendationGoalModes,
   getRecommendationStrategy,
   getRegions,
   listInstitutionDataRequests,
   listInstitutionReports,
+  listApiClients,
+  listApiUsage,
+  listCareerPlatformReferences,
+  listPartnerImports,
   listAlerts,
   listSavedMarketArtifacts,
   markAlertRead,
   previewScoringOverlay,
+  rejectPartnerImport,
+  revokeApiKey,
   runInstitutionAdvisorComparison,
+  validatePartnerImport,
 } from "./api";
 import { configureFrontendErrorReporter } from "./errorMonitoring";
 
@@ -128,6 +151,33 @@ describe("frontend API client auth boundary", () => {
       "/billing/status",
       "/monetization/access-preview?feature_key=full_report_generation&plan_key=free&used=2",
       "/monetization/access-preview?feature_key=saved_watchlists",
+    ]);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
+    }
+  });
+
+  test("public report and benchmark requests stay unauthenticated", async () => {
+    const fetchMock = mockFetch({
+      reports: [],
+      benchmarks: [],
+      report_id: "public_report:test",
+      benchmark_id: "public_benchmark:test",
+      slug: "test",
+      title: "Test",
+      name: "Test",
+    });
+
+    await getPublicReports();
+    await getPublicReport("best-cities-early-career-ai-careers");
+    await getPublicBenchmarks();
+    await getPublicBenchmark("early-career-tech-access-index");
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/public/reports",
+      "/public/reports/best-cities-early-career-ai-careers",
+      "/public/benchmarks",
+      "/public/benchmarks/early-career-tech-access-index",
     ]);
     for (const [, init] of fetchMock.mock.calls) {
       expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
@@ -262,6 +312,149 @@ describe("frontend API client auth boundary", () => {
     for (const [, init] of fetchMock.mock.calls) {
       expect((init as RequestInit).headers).toMatchObject({
         "Authorization": "Bearer institution-token",
+        "Content-Type": "application/json",
+      });
+    }
+  });
+
+  test("protected integration requests attach bearer tokens", async () => {
+    const fetchMock = mockFetch({
+      export: { export_id: "intexp_1" },
+      reminder: { reminder_id: "intrem_1" },
+      partner_import: { import_batch_id: "pib_1" },
+      imports: [],
+      receipt: { import_batch_id: "pib_1" },
+      api_client: { api_client_id: "apic_1" },
+      api_clients: [],
+      api_key: { api_key_id: "apikey_1", raw_key: "jmi_live_secret" },
+      usage: [],
+      platforms: [],
+      reference: { reference_id: "cpr_1" },
+    });
+    const auth = { getAccessToken: async () => "integration-token" };
+
+    await createIntegrationExport(
+      {
+        product_object_type: "region",
+        product_object_id: "greater_boston",
+        export_format: "prepared_google_sheets",
+      },
+      auth,
+    );
+    await createIntegrationReminder(
+      {
+        reminder_type: "market_refresh_alert",
+        product_object_type: "region",
+        product_object_id: "greater_boston",
+        title: "Review Greater Boston",
+        due_at: "2026-06-23T12:00:00.000Z",
+      },
+      auth,
+    );
+    await createPartnerImport(
+      {
+        organization_id: "org_demo",
+        source_type: "local_employer_list",
+        import_format: "csv",
+        source_attribution: "Career center partner list",
+        content: "employer_name,region\nAlpha Systems,Greater Boston\n",
+      },
+      auth,
+    );
+    await listPartnerImports("org_demo", auth);
+    await getPartnerImport("pib_1", auth);
+    await validatePartnerImport("pib_1", auth);
+    await acceptPartnerImport("pib_1", { reason: "ok" }, auth);
+    await rejectPartnerImport("pib_1", { reason: "bad source" }, auth);
+    await archivePartnerImport("pib_1", { reason: "closed" }, auth);
+    await getPartnerImportReceipt("pib_1", auth);
+    await createApiClient(
+      {
+        display_name: "Read client",
+        scopes: ["region:read", "market_signal:read"],
+        rate_limit_count: 60,
+        rate_limit_window_seconds: 3600,
+      },
+      auth,
+    );
+    await listApiClients(auth);
+    await createApiKey("apic_1", auth);
+    await revokeApiKey("apikey_1", auth);
+    await listApiUsage("apic_1", auth);
+    await getCareerPlatformRegistry(auth);
+    await createCareerPlatformReference(
+      {
+        platform: "company_career_page",
+        subject_type: "company",
+        subject_id: "comp_alpha",
+        url: "https://example.com/careers",
+      },
+      auth,
+    );
+    await listCareerPlatformReferences(auth, {
+      subjectType: "company",
+      subjectId: "comp_alpha",
+    });
+    await createCareerPlatformExport(
+      {
+        platform: "linkedin",
+        company_ids: ["comp_alpha"],
+        employer_names: [],
+      },
+      auth,
+    );
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/integrations/exports",
+      "/api/integrations/reminders",
+      "/api/integrations/partner-imports",
+      "/api/integrations/partner-imports?organization_id=org_demo",
+      "/api/integrations/partner-imports/pib_1",
+      "/api/integrations/partner-imports/pib_1/validate",
+      "/api/integrations/partner-imports/pib_1/accept",
+      "/api/integrations/partner-imports/pib_1/reject",
+      "/api/integrations/partner-imports/pib_1/archive",
+      "/api/integrations/partner-imports/pib_1/receipt",
+      "/api/integrations/api-clients",
+      "/api/integrations/api-clients",
+      "/api/integrations/api-clients/apic_1/keys",
+      "/api/integrations/api-keys/apikey_1/revoke",
+      "/api/integrations/api-clients/apic_1/usage",
+      "/api/integrations/career-platforms",
+      "/api/integrations/career-platform-references",
+      "/api/integrations/career-platform-references?subject_type=company&subject_id=comp_alpha",
+      "/api/integrations/career-platform-exports",
+    ]);
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      product_object_type: "region",
+      product_object_id: "greater_boston",
+      export_format: "prepared_google_sheets",
+    });
+    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toMatchObject({
+      reminder_type: "market_refresh_alert",
+      product_object_type: "region",
+      product_object_id: "greater_boston",
+    });
+    expect(JSON.parse(String((fetchMock.mock.calls[2][1] as RequestInit).body))).toMatchObject({
+      organization_id: "org_demo",
+      source_type: "local_employer_list",
+      import_format: "csv",
+    });
+    expect(JSON.parse(String((fetchMock.mock.calls[6][1] as RequestInit).body))).toEqual({
+      reason: "ok",
+    });
+    expect(JSON.parse(String((fetchMock.mock.calls[10][1] as RequestInit).body))).toMatchObject({
+      scopes: ["region:read", "market_signal:read"],
+      rate_limit_count: 60,
+    });
+    expect(JSON.parse(String((fetchMock.mock.calls[18][1] as RequestInit).body))).toEqual({
+      platform: "linkedin",
+      company_ids: ["comp_alpha"],
+      employer_names: [],
+    });
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toMatchObject({
+        "Authorization": "Bearer integration-token",
         "Content-Type": "application/json",
       });
     }

@@ -27,7 +27,7 @@ from backend.shared.provenance import (
     SourceType,
 )
 
-NOW = datetime(2026, 5, 21, 12, 0, tzinfo=UTC)
+NOW = datetime.now(UTC).replace(microsecond=0)
 
 
 def _seed_region(
