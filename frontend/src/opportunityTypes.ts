@@ -1,3 +1,9 @@
+import type {
+  ExceptionSubjectStatus,
+  ReportRecheckStatus,
+  TrustExplanation,
+} from "./types";
+
 export type OpportunityProgramType =
   | "internship"
   | "co-op"
@@ -79,6 +85,16 @@ export type MatchedOpportunity = {
   fit_score: number;
   fit_explanation: string;
   warnings: string[];
+  trust_tier?: string | null;
+  risk_level?: string | null;
+  routing_outcome?: string | null;
+  ranking_influence_allowed?: boolean;
+  ranking_influence_decision?: string | null;
+  ranking_influence_reason?: string | null;
+  ranking_influence_reason_codes?: string[];
+  trust_explanation?: TrustExplanation | null;
+  report_recheck_status?: ReportRecheckStatus | null;
+  exception_status?: ExceptionSubjectStatus | null;
 };
 
 export type OpportunityRoute = {

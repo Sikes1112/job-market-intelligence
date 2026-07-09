@@ -6,6 +6,8 @@ import {
   getDataStandardsPartners,
   getDataStandardsQualityLabels,
 } from "./api";
+import { TrustExplanationPanel } from "./TrustExplanation";
+import UserReportControl from "./UserReportControl";
 import type {
   ApiEnvelope,
   DataQualityLabelListPayload,
@@ -215,6 +217,17 @@ export default function DataStandardsPage() {
                 <h3>{label.display_name}</h3>
                 <p>{label.description}</p>
                 <p className="meta-copy">{label.warning_copy}</p>
+                <TrustExplanationPanel
+                  compact
+                  explanation={label.trust_explanation ?? null}
+                />
+                <UserReportControl
+                  exceptionStatus={label.exception_status ?? null}
+                  initialStatus={label.report_recheck_status ?? null}
+                  sourceSurface="data_standards_quality_labels"
+                  subjectId={`quality_label:${label.label}`}
+                  subjectType="data_standard_fact"
+                />
               </div>
             ))}
           </div>

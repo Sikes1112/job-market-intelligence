@@ -91,6 +91,7 @@ function qualityLabelsPayload() {
         ranking_influence_allowed: false,
         public_display_allowed: true,
         warning_copy: "Low-confidence signals are not ranking inputs and require review before any downstream use.",
+        trust_explanation: trustExplanation("quality_label:low_confidence_signal"),
       },
       {
         label: "self_reported_employer_data",
@@ -103,8 +104,39 @@ function qualityLabelsPayload() {
         ranking_influence_allowed: false,
         public_display_allowed: true,
         warning_copy: "This is self-reported employer data and should be reviewed before being used as canonical market evidence.",
+        trust_explanation: trustExplanation("quality_label:self_reported_employer_data"),
       },
     ],
+  };
+}
+
+function trustExplanation(subjectId: string) {
+  return {
+    subject_type: "data_standard_fact",
+    subject_id: subjectId,
+    trust_tier: "ranking_ineligible",
+    trust_label: "Excluded from rankings",
+    trust_summary: "This quality label is visible data-standard metadata.",
+    risk_level: "low",
+    risk_label: "Low risk",
+    risk_summary: "This label is safe to display, but it is not ranking evidence.",
+    routing_outcome: "auto_accept_non_ranking",
+    routing_label: "Visible, not used in rankings",
+    routing_summary: "This label can be shown to users.",
+    ranking_influence_allowed: false,
+    ranking_influence_decision: "denied",
+    ranking_influence_label: "Excluded from rankings",
+    ranking_influence_reason:
+      "Data-standard quality labels are informational metadata and do not affect rankings.",
+    evidence_requirements_met: [],
+    evidence_requirements_missing: [],
+    evidence_requirements_failed: [],
+    trust_warnings: [],
+    user_facing_warnings: [],
+    last_checked_at: null,
+    decided_at: null,
+    next_recheck_at: null,
+    explanation_version: "30C",
   };
 }
 
@@ -189,6 +221,10 @@ describe("Layer 27 data standards page", () => {
     expect(screen.getByText(/quality labels do not currently alter rankings, recommendations, forecasts, policy outputs, career-agent outputs, public reports, or market scores/i)).toBeTruthy();
     expect(screen.getAllByText(/Low-confidence signals are not ranking inputs/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/self-reported employer data/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Trust: Excluded from rankings").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Risk: Low risk").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Visible, not used in rankings").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Report information issue").length).toBeGreaterThan(0);
     expect(screen.getByText(/Governance is currently a framework, not an active governance board/i)).toBeTruthy();
     expect(document.body.textContent ?? "").not.toMatch(/board_active|board_approved|externally_governed/);
 

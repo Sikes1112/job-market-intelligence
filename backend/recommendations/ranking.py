@@ -288,6 +288,8 @@ def rank_region_recommendations(
     profile = goal_mode_weight_profile(goal)
     items: list[RecommendationRankingItem] = []
     for payload in region_payloads:
+        if not _allows_ranking_influence(payload):
+            continue
         target_id = _target_id(payload, RecommendationTargetType.REGION)
         source_summary = (source_summaries or {}).get(target_id)
         explanation = assemble_region_recommendation_explanation(
@@ -318,6 +320,8 @@ def rank_company_recommendations(
     profile = goal_mode_weight_profile(goal)
     items: list[RecommendationRankingItem] = []
     for payload in company_payloads:
+        if not _allows_ranking_influence(payload):
+            continue
         target_id = _target_id(payload, RecommendationTargetType.COMPANY)
         source_summary = (source_summaries or {}).get(target_id)
         explanation = assemble_company_recommendation_explanation(
@@ -679,6 +683,19 @@ def _rank_result(
         profile=profile,
         ranked_recommendations=ranked,
     )
+
+
+def _allows_ranking_influence(payload: Any) -> bool:
+    """Reject explicit non-ranking payloads while preserving legacy output reads."""
+
+    allowed = _field(payload, "ranking_influence_allowed")
+    if allowed is False:
+        return False
+    decision = _field(payload, "ranking_influence_decision")
+    decision_value = getattr(decision, "value", decision)
+    if decision_value == "denied":
+        return False
+    return True
 
 
 def _apply_penalties(

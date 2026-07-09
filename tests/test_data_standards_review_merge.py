@@ -260,6 +260,13 @@ def test_validation_to_candidate_creation_isolated_from_canonical_tables(
     assert company_candidate.provenance.source_refs[0].source_ref_id == "src_acme"
     assert company_candidate.provenance.provenance_complete is True
     assert company_candidate.provenance.ranking_influence_allowed is False
+    assert company_candidate.trust_tier in {"trusted", "verified"}
+    assert company_candidate.ranking_influence_allowed is False
+    assert company_candidate.ranking_influence_decision == "denied"
+    assert "partner_submitted_not_verified" in tuple(
+        company_candidate.ranking_influence_reason_codes
+    )
+    assert company_candidate.evidence_requirements_met
     assert session.query(DataStandardCandidateFactRecord).count() == 2
 
 
@@ -993,6 +1000,19 @@ def test_layer_28_api_executes_review_preview_merge_path(
 
     assert create.status_code == 200
     assert candidates.status_code == 200
+    company_candidate = next(
+        candidate
+        for candidate in candidates.json()["data"]["candidates"]
+        if candidate["record_id"] == "rec_company"
+    )
+    assert company_candidate["trust_tier"] in {"trusted", "verified"}
+    assert company_candidate["evidence_requirements_met"]
+    assert company_candidate["trust_explanation"]["trust_label"] in {
+        "Trusted source",
+        "Verified",
+    }
+    assert "ranking_influence_label" in company_candidate["trust_explanation"]
+    assert company_candidate["ranking_influence_allowed"] is False
     assert review.status_code == 200
     assert review.json()["data"]["ranking_influence_allowed"] is False
     assert preview.status_code == 200

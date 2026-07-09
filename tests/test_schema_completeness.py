@@ -88,6 +88,11 @@ REQUIRED_TABLES = {
     "data_standard_candidate_facts",
     "data_standard_candidate_reviews",
     "data_standard_canonical_merges",
+    "trust_assessments",
+    "risk_routing_decisions",
+    "user_reports",
+    "automated_recheck_jobs",
+    "exception_cases",
 }
 
 # Every canonical truth/output object must carry these metadata columns
@@ -191,6 +196,13 @@ DATA_STANDARDS_TABLES = {
     "data_standard_candidate_reviews",
     "data_standard_canonical_merges",
 }
+TRUST_SNAPSHOT_TABLES = {
+    "trust_assessments",
+    "risk_routing_decisions",
+    "user_reports",
+    "automated_recheck_jobs",
+    "exception_cases",
+}
 MARKET_CANONICAL_METADATA_TABLES = CANONICAL_METADATA_TABLES - USER_IDENTITY_TABLES
 MARKET_CANONICAL_METADATA_TABLES = (
     MARKET_CANONICAL_METADATA_TABLES - SYSTEM_EVENT_TABLES - OPERATOR_WORKFLOW_TABLES
@@ -204,6 +216,7 @@ MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - INTEGRATIO
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - PLATFORM_API_TABLES
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - OPPORTUNITY_TABLES
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - DATA_STANDARDS_TABLES
+MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - TRUST_SNAPSHOT_TABLES
 
 
 def test_all_required_tables_registered() -> None:

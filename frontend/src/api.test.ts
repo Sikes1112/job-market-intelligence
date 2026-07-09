@@ -58,6 +58,9 @@ import {
   getPublicReports,
   getRecommendationGoalModes,
   getRecommendationStrategy,
+  getTrustExplanation,
+  getUserIntelligenceDashboard,
+  submitUserReport,
   getCareerAgentTool,
   getRegions,
   listInstitutionDataRequests,
@@ -175,6 +178,120 @@ describe("frontend API client auth boundary", () => {
     expect(String((fetchMock.mock.calls[0][1] as RequestInit).body)).not.toContain("keyword");
     expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({
       "Content-Type": "application/json",
+    });
+  });
+
+  test("user intelligence dashboard API call stays read-only and public", async () => {
+    const fetchMock = mockFetch({
+      generated_at: "2026-07-02T12:00:00Z",
+      dashboard_version: "30.1",
+      summary: {
+        headline: "Your current market intelligence",
+        description: "Personalized recommendations, warnings, and next actions.",
+        warning_count: 0,
+        recommendation_count: 0,
+      },
+      recommended_regions: [],
+      recommended_companies: [],
+      recommended_opportunities: [],
+      market_warnings: [],
+      forecast_changes: [],
+      saved_items: [],
+      recommended_next_actions: [],
+      trust_context: {
+        uses_existing_metadata_only: true,
+        layer_30_full_trust_engine_available: false,
+        message: "Existing metadata only.",
+      },
+    });
+
+    await getUserIntelligenceDashboard();
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/user-intelligence/dashboard");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBeUndefined();
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({
+      "Content-Type": "application/json",
+    });
+  });
+
+  test("trust explanation API call stays read-only and public", async () => {
+    const fetchMock = mockFetch({
+      subject_type: "opportunity",
+      subject_id: "opp_1",
+      trust_tier: "partner_submitted",
+      trust_label: "Partner-submitted",
+      trust_summary: "Backend-provided summary.",
+      risk_level: "medium",
+      risk_label: "Use with caution",
+      risk_summary: "Backend-provided risk summary.",
+      routing_outcome: "visible_with_warning",
+      routing_label: "Visible with warning",
+      routing_summary: "Backend-provided routing summary.",
+      ranking_influence_allowed: false,
+      ranking_influence_decision: "denied",
+      ranking_influence_label: "Excluded from rankings",
+      ranking_influence_reason: "Backend-provided ranking reason.",
+      evidence_requirements_met: [],
+      evidence_requirements_missing: [],
+      evidence_requirements_failed: [],
+      trust_warnings: [],
+      user_facing_warnings: [],
+      last_checked_at: null,
+      decided_at: null,
+      next_recheck_at: null,
+      explanation_version: "30C",
+    });
+
+    await getTrustExplanation("opportunity", "opp_1");
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/trust/explanation?subject_type=opportunity&subject_id=opp_1",
+    );
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBeUndefined();
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({
+      "Content-Type": "application/json",
+    });
+  });
+
+  test("user report API call submits append-only report signal", async () => {
+    const fetchMock = mockFetch({
+      report: { user_report_id: "report_1", status: "queued_for_recheck" },
+      recheck_job: { automated_recheck_job_id: "recheck_1", status: "queued" },
+      status: {
+        subject_type: "opportunity",
+        subject_id: "opp_1",
+        latest_report_status: "queued_for_recheck",
+        latest_report_type: "outdated",
+        latest_report_severity: "medium",
+        latest_reported_at: "2026-07-08T12:00:00Z",
+        active_recheck_job_id: "recheck_1",
+        recheck_status: "queued",
+        recheck_priority: "medium",
+        recheck_outcome: null,
+        recheck_status_label: "Recheck queued",
+        message: "Report received. Automated recheck is queued.",
+      },
+      message: "Report received.",
+    });
+
+    await submitUserReport({
+      subject_type: "opportunity",
+      subject_id: "opp_1",
+      report_type: "outdated",
+      severity: "medium",
+      report_reason: "Looks stale.",
+      source_surface: "test",
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/user-reports");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      subject_type: "opportunity",
+      subject_id: "opp_1",
+      report_type: "outdated",
+      severity: "medium",
+      report_reason: "Looks stale.",
+      source_surface: "test",
     });
   });
 

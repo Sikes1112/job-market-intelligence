@@ -133,6 +133,7 @@ class OpportunityRouteService:
             sorted(
                 matches,
                 key=lambda match: (
+                    _ranking_bucket(match.opportunity),
                     -match.fit_score,
                     match.opportunity.employer_name,
                     match.opportunity.program_name,
@@ -230,6 +231,16 @@ class OpportunityRouteService:
             fit_score=match.fit_score,
             fit_explanation=match.explanation,
             warnings=match.warnings,
+            trust_tier=opportunity.trust_tier,
+            risk_level=opportunity.risk_level,
+            routing_outcome=opportunity.routing_outcome,
+            ranking_influence_allowed=opportunity.ranking_influence_allowed,
+            ranking_influence_decision=opportunity.ranking_influence_decision,
+            ranking_influence_reason=opportunity.ranking_influence_reason,
+            ranking_influence_reason_codes=opportunity.ranking_influence_reason_codes,
+            trust_explanation=opportunity.trust_explanation,
+            report_recheck_status=opportunity.report_recheck_status,
+            exception_status=opportunity.exception_status,
         )
 
     def _recommended_company_types(
@@ -334,6 +345,10 @@ def _matched_role_family(
         if _normalize(binding.role_family) == target:
             return binding.role_family
     return opportunity.role_families[0] if opportunity.role_families else target_role_family
+
+
+def _ranking_bucket(opportunity: OpportunityPayload) -> int:
+    return 0 if opportunity.ranking_influence_allowed else 1
 
 
 def _company_type_label(

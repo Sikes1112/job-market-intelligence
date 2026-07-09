@@ -10,6 +10,20 @@ from urllib.parse import parse_qsl, urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from backend.trust.schemas import (
+    EvidenceRequirementResult,
+    ExceptionSubjectStatus,
+    RankingInfluenceDecision,
+    RankingInfluenceReasonCode,
+    ReportRecheckStatus,
+    RiskLevel,
+    RiskRoutingReasonCode,
+    RoutingOutcome,
+    TrustExplanation,
+    TrustTier,
+    TrustWarning,
+)
+
 
 class _Vocabulary(StrEnum):
     @classmethod
@@ -597,6 +611,30 @@ class OpportunityPayload(BaseModel):
         default_factory=tuple,
     )
     employer_influence: EmployerInfluenceMetadataPayload | None = None
+    trust_tier: TrustTier = TrustTier.NOT_ASSESSED
+    evidence_requirements_met: tuple[EvidenceRequirementResult, ...] = Field(
+        default_factory=tuple,
+    )
+    evidence_requirements_missing: tuple[EvidenceRequirementResult, ...] = Field(
+        default_factory=tuple,
+    )
+    evidence_requirements_failed: tuple[EvidenceRequirementResult, ...] = Field(
+        default_factory=tuple,
+    )
+    trust_warnings: tuple[TrustWarning, ...] = Field(default_factory=tuple)
+    risk_level: RiskLevel | None = None
+    routing_outcome: RoutingOutcome | None = None
+    routing_reasons: tuple[RiskRoutingReasonCode, ...] = Field(default_factory=tuple)
+    ranking_influence_decision: RankingInfluenceDecision = (
+        RankingInfluenceDecision.DENIED
+    )
+    ranking_influence_reason: str | None = None
+    ranking_influence_reason_codes: tuple[RankingInfluenceReasonCode, ...] = Field(
+        default_factory=tuple,
+    )
+    trust_explanation: TrustExplanation | None = None
+    report_recheck_status: ReportRecheckStatus | None = None
+    exception_status: ExceptionSubjectStatus | None = None
 
 
 class OpportunityListResponse(BaseModel):

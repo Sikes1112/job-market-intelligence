@@ -145,6 +145,7 @@ def import_all_models() -> None:
     from backend.provenance import models as _provenance  # noqa: F401
     from backend.region_expansion import models as _region_expansion  # noqa: F401
     from backend.scoring import models as _scoring  # noqa: F401
+    from backend.trust import models as _trust  # noqa: F401
     from backend.users import models as _users  # noqa: F401
 
 

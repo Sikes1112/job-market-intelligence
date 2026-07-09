@@ -162,6 +162,8 @@ def test_public_demo_allows_frontend_public_read_and_metadata_routes(
         "/companies/comp_a/sources",
         "/compare?region_a=greater_boston&region_b=greater_sf",
         "/recommendations/goal-modes",
+        "/trust/explanation?subject_type=opportunity&subject_id=missing",
+        "/user-intelligence/dashboard",
         "/monetization/plans",
         "/monetization/features",
         "/monetization/reports",

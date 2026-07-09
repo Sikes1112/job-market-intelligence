@@ -15,6 +15,16 @@ from backend.opportunities.schemas import (
     OpportunitySeniorityLevel,
     OpportunityTrustLabel,
 )
+from backend.trust.schemas import (
+    ExceptionSubjectStatus,
+    RankingInfluenceDecision,
+    RankingInfluenceReasonCode,
+    ReportRecheckStatus,
+    RiskLevel,
+    RoutingOutcome,
+    TrustExplanation,
+    TrustTier,
+)
 
 
 class OpportunityRouteConfidence(StrEnum):
@@ -113,6 +123,18 @@ class MatchedOpportunity(BaseModel):
     fit_score: float = Field(ge=0.0, le=1.0)
     fit_explanation: str
     warnings: tuple[str, ...] = Field(default_factory=tuple)
+    trust_tier: TrustTier | None = None
+    risk_level: RiskLevel | None = None
+    routing_outcome: RoutingOutcome | None = None
+    ranking_influence_allowed: bool = False
+    ranking_influence_decision: RankingInfluenceDecision | None = None
+    ranking_influence_reason: str | None = None
+    ranking_influence_reason_codes: tuple[RankingInfluenceReasonCode, ...] = Field(
+        default_factory=tuple,
+    )
+    trust_explanation: TrustExplanation | None = None
+    report_recheck_status: ReportRecheckStatus | None = None
+    exception_status: ExceptionSubjectStatus | None = None
 
 
 class OpportunityRoute(BaseModel):

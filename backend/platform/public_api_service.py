@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.data_standards.ranking_gate import ranking_eligible_fact_ids
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
 from backend.outputs.models import OutputMetadata
@@ -202,6 +203,12 @@ class PlatformPublicApiService:
                 )
             ).scalars()
         )
+        eligible_hiring_ids = ranking_eligible_fact_ids(
+            self._session,
+            "company_region_hiring",
+            [row.hiring_id for row in rows],
+        )
+        rows = [row for row in rows if row.hiring_id in eligible_hiring_ids]
         regions_by_id = {
             region.region_id: region
             for region in self._session.execute(

@@ -119,6 +119,21 @@ def test_opportunity_api_lists_gets_filters_and_hides_internal_fields(
     assert detail["partner_submitted"] is True
     assert detail["paid_partner"] is True
     assert detail["ranking_influence_allowed"] is False
+    assert detail["trust_tier"] == "partner_submitted"
+    assert detail["risk_level"] == "medium"
+    assert detail["routing_outcome"] == "visible_with_warning"
+    assert detail["ranking_influence_decision"] == "denied"
+    assert "partner_submitted_not_verified" in detail["ranking_influence_reason_codes"]
+    assert detail["trust_explanation"]["trust_label"] == "Partner-submitted"
+    assert detail["trust_explanation"]["risk_label"] == "Use with caution"
+    assert detail["trust_explanation"]["routing_label"] == "Visible with warning"
+    assert detail["trust_explanation"]["ranking_influence_label"] == (
+        "Excluded from rankings"
+    )
+    assert detail["trust_explanation"]["ranking_influence_allowed"] is False
+    assert detail["trust_explanation"]["explanation_version"] == "30C"
+    assert detail["evidence_requirements_met"]
+    assert detail["evidence_requirements_failed"]
     assert detail["expiration_state"] == "active"
     assert "internal_review_notes" not in detail_response.text
 

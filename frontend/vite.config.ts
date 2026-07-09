@@ -11,6 +11,7 @@ export default defineConfig({
       "/compare": "http://127.0.0.1:8000",
       "/discover": "http://127.0.0.1:8000",
       "/recommendations": "http://127.0.0.1:8000",
+      "/user-intelligence": "http://127.0.0.1:8000",
       "/monetization": "http://127.0.0.1:8000",
       "/me": "http://127.0.0.1:8000",
     },

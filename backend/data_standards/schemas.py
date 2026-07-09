@@ -9,6 +9,19 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.shared.confidence import Confidence
+from backend.trust.schemas import (
+    EvidenceRequirementResult,
+    ExceptionSubjectStatus,
+    RankingInfluenceDecision,
+    RankingInfluenceReasonCode,
+    ReportRecheckStatus,
+    RiskLevel,
+    RiskRoutingReasonCode,
+    RoutingOutcome,
+    TrustExplanation,
+    TrustTier,
+    TrustWarning,
+)
 
 
 class _Vocabulary(StrEnum):
@@ -501,6 +514,31 @@ class CandidateFactPayload(BaseModel):
     provenance: CandidateProvenanceSnapshot
     created_at: datetime
     updated_at: datetime
+    ranking_influence_allowed: Literal[False] = False
+    trust_tier: TrustTier = TrustTier.NOT_ASSESSED
+    evidence_requirements_met: tuple[EvidenceRequirementResult, ...] = Field(
+        default_factory=tuple,
+    )
+    evidence_requirements_missing: tuple[EvidenceRequirementResult, ...] = Field(
+        default_factory=tuple,
+    )
+    evidence_requirements_failed: tuple[EvidenceRequirementResult, ...] = Field(
+        default_factory=tuple,
+    )
+    trust_warnings: tuple[TrustWarning, ...] = Field(default_factory=tuple)
+    risk_level: RiskLevel | None = None
+    routing_outcome: RoutingOutcome | None = None
+    routing_reasons: tuple[RiskRoutingReasonCode, ...] = Field(default_factory=tuple)
+    ranking_influence_decision: RankingInfluenceDecision = (
+        RankingInfluenceDecision.DENIED
+    )
+    ranking_influence_reason: str | None = None
+    ranking_influence_reason_codes: tuple[RankingInfluenceReasonCode, ...] = Field(
+        default_factory=tuple,
+    )
+    trust_explanation: TrustExplanation | None = None
+    report_recheck_status: ReportRecheckStatus | None = None
+    exception_status: ExceptionSubjectStatus | None = None
 
 
 class CandidateFactListResponse(BaseModel):
@@ -663,6 +701,9 @@ class DataQualityLabel(BaseModel):
     ranking_influence_allowed: Literal[False] = False
     public_display_allowed: bool
     warning_copy: str = Field(min_length=1, max_length=1024)
+    trust_explanation: TrustExplanation | None = None
+    report_recheck_status: ReportRecheckStatus | None = None
+    exception_status: ExceptionSubjectStatus | None = None
 
     @field_validator("display_name", "description", "warning_copy")
     @classmethod

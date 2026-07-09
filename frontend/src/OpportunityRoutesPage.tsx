@@ -8,6 +8,8 @@ import {
   toggleValue,
 } from "./opportunityRoutes";
 import { isPublicDemoMode } from "./demoMode";
+import { TrustExplanationPanel } from "./TrustExplanation";
+import UserReportControl from "./UserReportControl";
 import type {
   OpportunityLocationMode,
   OpportunityProgramType,
@@ -396,6 +398,17 @@ function OpportunityRouteCard({ route }: { route: OpportunityRoute }) {
                     ))}
                   </ul>
                 ) : null}
+                <TrustExplanationPanel
+                  compact
+                  explanation={opportunity.trust_explanation ?? null}
+                />
+                <UserReportControl
+                  exceptionStatus={opportunity.exception_status ?? null}
+                  initialStatus={opportunity.report_recheck_status ?? null}
+                  sourceSurface="opportunity_routes"
+                  subjectId={opportunity.opportunity_id}
+                  subjectType="opportunity"
+                />
               </div>
               <div className="route-program-actions">
                 <span>{formatPercent(opportunity.fit_score)} fit</span>

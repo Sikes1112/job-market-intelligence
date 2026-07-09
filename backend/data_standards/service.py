@@ -78,6 +78,21 @@ from backend.orchestration.invalidation.service import InvalidationApplyResult, 
 from backend.presence.models import CompanyRegionPresence
 from backend.provenance.models import FactSourceLink, SourceObservation, SourceRef
 from backend.shared.confidence import Confidence
+from backend.trust.adapters import DataStandardsTrustAdapter
+from backend.trust.exceptions import ExceptionWorkflowService
+from backend.trust.explanations import TrustExplanationService
+from backend.trust.reports import latest_report_recheck_status
+from backend.trust.risk import RiskRoutingService
+from backend.trust.schemas import (
+    PublicExceptionStatus,
+    RankingInfluenceDecision,
+    RiskLevel,
+    RoutingOutcome,
+    TrustAssessmentSubjectType,
+    TrustExplanation,
+    TrustTier,
+)
+from backend.trust.service import TrustAssessmentService
 
 STANDARDS_VERSION = "27.1.0"
 PARTNER_NETWORK_VERSION = "27.3.0"
@@ -196,7 +211,7 @@ class DataStandardsService:
     def quality_labels(self) -> DataQualityLabelList:
         return DataQualityLabelList(
             version=QUALITY_LABEL_VERSION,
-            labels=QUALITY_LABELS,
+            labels=tuple(_quality_label_payload(label) for label in QUALITY_LABELS),
         )
 
     def governance_framework(self) -> GovernanceFramework:
@@ -215,7 +230,7 @@ class DataStandardsService:
             if isinstance(payload, DataQualityCertificationRequest)
             else DataQualityCertificationRequest.model_validate(dict(payload))
         )
-        label = QUALITY_LABELS_BY_VALUE[request.label]
+        label = _quality_label_payload(QUALITY_LABELS_BY_VALUE[request.label])
         partner = (
             PARTNER_REGISTRY_BY_ID.get(request.partner_id)
             if request.partner_id is not None
@@ -884,7 +899,7 @@ class DataStandardsService:
         self,
         row: DataStandardCandidateFactRecord,
     ) -> CandidateFactPayload:
-        return CandidateFactPayload(
+        payload = CandidateFactPayload(
             candidate_fact_id=row.candidate_fact_id,
             partner_submission_id=row.partner_submission_id,
             record_id=row.record_id,
@@ -902,6 +917,53 @@ class DataStandardsService:
             provenance=self._provenance_snapshot(row),
             created_at=row.created_at,
             updated_at=row.updated_at,
+        )
+        subject = DataStandardsTrustAdapter.from_candidate_payload(payload)
+        assessment = TrustAssessmentService().assess(subject)
+        routing = RiskRoutingService().decide(assessment, subject)
+        report_status = latest_report_recheck_status(
+            self._require_session("_candidate_payload"),
+            subject_type=TrustAssessmentSubjectType.DATA_STANDARD_FACT,
+            subject_id=row.candidate_fact_id,
+        )
+        exception_status = ExceptionWorkflowService(
+            self._require_session("_candidate_payload")
+        ).get_exception_status_for_subject(
+            subject_type=TrustAssessmentSubjectType.DATA_STANDARD_FACT,
+            subject_id=row.candidate_fact_id,
+        )
+        safe_exception_status = (
+            None
+            if exception_status.public_safe_status is PublicExceptionStatus.NO_EXCEPTION
+            else exception_status
+        )
+        explanation = TrustExplanationService().explain(
+            assessment=assessment,
+            routing=routing,
+            subject_type=subject.subject_type,
+            subject_id=subject.subject_id,
+            report_recheck_status=report_status,
+            exception_status=safe_exception_status,
+        )
+        return payload.model_copy(
+            update={
+                "trust_tier": assessment.trust_tier,
+                "evidence_requirements_met": assessment.evidence_requirements_met,
+                "evidence_requirements_missing": assessment.evidence_requirements_missing,
+                "evidence_requirements_failed": assessment.evidence_requirements_failed,
+                "trust_warnings": assessment.warnings,
+                "risk_level": routing.risk_level,
+                "routing_outcome": routing.routing_outcome,
+                "routing_reasons": routing.routing_reasons,
+                "ranking_influence_decision": routing.ranking_influence_decision,
+                "ranking_influence_reason": routing.ranking_influence_reason,
+                "ranking_influence_reason_codes": (
+                    routing.ranking_influence_reason_codes
+                ),
+                "trust_explanation": explanation,
+                "report_recheck_status": report_status,
+                "exception_status": safe_exception_status,
+            }
         )
 
     def _review_payload(
@@ -2266,6 +2328,44 @@ def _partner_trust_rank(trust_tier: str) -> int:
         PartnerTrustTier.TIER_1_VERIFIED_INSTITUTIONAL.value: 4,
     }
     return ranks.get(trust_tier, 0)
+
+
+def _quality_label_payload(label: DataQualityLabel) -> DataQualityLabel:
+    if label.trust_explanation is not None:
+        return label
+    return label.model_copy(
+        update={
+            "trust_explanation": TrustExplanation(
+                subject_type=TrustAssessmentSubjectType.DATA_STANDARD_FACT,
+                subject_id=f"quality_label:{label.label.value}",
+                trust_tier=TrustTier.RANKING_INELIGIBLE,
+                trust_label="Excluded from rankings",
+                trust_summary=(
+                    "This quality label is visible data-standard metadata. It does "
+                    "not grant ranking influence."
+                ),
+                risk_level=RiskLevel.LOW,
+                risk_label="Low risk",
+                risk_summary=(
+                    "This label is safe to display, but it is not ranking evidence."
+                ),
+                routing_outcome=RoutingOutcome.AUTO_ACCEPT_NON_RANKING,
+                routing_label="Visible, not used in rankings",
+                routing_summary=(
+                    "This label can be shown to users while remaining separate from "
+                    "ranking influence."
+                ),
+                ranking_influence_allowed=False,
+                ranking_influence_decision=RankingInfluenceDecision.DENIED,
+                ranking_influence_label="Excluded from rankings",
+                ranking_influence_reason=(
+                    "Data-standard quality labels are informational metadata and do "
+                    "not affect rankings unless a later deterministic ranking decision "
+                    "explicitly allows it."
+                ),
+            )
+        }
+    )
 
 
 def _has_higher_trust_existing_source(

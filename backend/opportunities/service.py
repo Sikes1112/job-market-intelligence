@@ -35,6 +35,13 @@ from backend.opportunities.verification import (
     is_opportunity_expired,
     opportunity_expiration_state,
 )
+from backend.trust.adapters import OpportunityTrustAdapter
+from backend.trust.exceptions import ExceptionWorkflowService
+from backend.trust.explanations import TrustExplanationService
+from backend.trust.reports import latest_report_recheck_status
+from backend.trust.risk import RiskRoutingService
+from backend.trust.schemas import PublicExceptionStatus, TrustAssessmentSubjectType
+from backend.trust.service import TrustAssessmentService
 
 
 class OpportunityNotFound(Exception):
@@ -284,7 +291,7 @@ class OpportunityService:
         ranking_influence_allowed = (
             influence.ranking_influence_allowed if influence is not None else False
         )
-        return OpportunityPayload(
+        payload = OpportunityPayload(
             id=opportunity.opportunity_id,
             employer_program=_program_payload(program) if program is not None else None,
             employer_id=opportunity.employer_id,
@@ -326,6 +333,54 @@ class OpportunityService:
             employer_influence=(
                 _employer_influence_payload(influence) if influence is not None else None
             ),
+        )
+        subject = OpportunityTrustAdapter.from_payload(payload)
+        assessment = TrustAssessmentService().assess(subject)
+        routing = RiskRoutingService().decide(assessment, subject)
+        report_status = latest_report_recheck_status(
+            self._repo.session,
+            subject_type=TrustAssessmentSubjectType.OPPORTUNITY,
+            subject_id=opportunity.opportunity_id,
+        )
+        exception_status = ExceptionWorkflowService(
+            self._repo.session
+        ).get_exception_status_for_subject(
+            subject_type=TrustAssessmentSubjectType.OPPORTUNITY,
+            subject_id=opportunity.opportunity_id,
+        )
+        safe_exception_status = (
+            None
+            if exception_status.public_safe_status is PublicExceptionStatus.NO_EXCEPTION
+            else exception_status
+        )
+        explanation = TrustExplanationService().explain(
+            assessment=assessment,
+            routing=routing,
+            subject_type=subject.subject_type,
+            subject_id=subject.subject_id,
+            report_recheck_status=report_status,
+            exception_status=safe_exception_status,
+        )
+        return payload.model_copy(
+            update={
+                "trust_tier": assessment.trust_tier,
+                "evidence_requirements_met": assessment.evidence_requirements_met,
+                "evidence_requirements_missing": assessment.evidence_requirements_missing,
+                "evidence_requirements_failed": assessment.evidence_requirements_failed,
+                "trust_warnings": assessment.warnings,
+                "ranking_influence_allowed": routing.ranking_influence_allowed,
+                "risk_level": routing.risk_level,
+                "routing_outcome": routing.routing_outcome,
+                "routing_reasons": routing.routing_reasons,
+                "ranking_influence_decision": routing.ranking_influence_decision,
+                "ranking_influence_reason": routing.ranking_influence_reason,
+                "ranking_influence_reason_codes": (
+                    routing.ranking_influence_reason_codes
+                ),
+                "trust_explanation": explanation,
+                "report_recheck_status": report_status,
+                "exception_status": safe_exception_status,
+            }
         )
 
 

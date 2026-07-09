@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.companies.repository import CompanyRepository
+from backend.data_standards.ranking_gate import ranking_eligible_fact_ids
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.entry_level.repository import EntryLevelRepository
 from backend.geography.market_coverage import (
@@ -196,7 +197,13 @@ class OutputAssemblyService:
             )
             .order_by(CompanyRegionPresence.company_id)
         )
-        return list(self._session.execute(stmt).scalars())
+        rows = list(self._session.execute(stmt).scalars())
+        eligible_presence_ids = ranking_eligible_fact_ids(
+            self._session,
+            "company_region_presence",
+            [row.presence_id for row in rows],
+        )
+        return [row for row in rows if row.presence_id in eligible_presence_ids]
 
     # --- company output --------------------------------------------------
 
@@ -270,7 +277,13 @@ class OutputAssemblyService:
             .where(CompanyRegionPresence.company_id == company_id)
             .order_by(CompanyRegionPresence.region_id)
         )
-        return list(self._session.execute(stmt).scalars())
+        rows = list(self._session.execute(stmt).scalars())
+        eligible_ids = ranking_eligible_fact_ids(
+            self._session,
+            "company_region_presence",
+            [row.presence_id for row in rows],
+        )
+        return [row for row in rows if row.presence_id in eligible_ids]
 
     def _hiring_for_company(self, company_id: str) -> list[CompanyRegionHiring]:
         stmt = (
@@ -278,7 +291,13 @@ class OutputAssemblyService:
             .where(CompanyRegionHiring.company_id == company_id)
             .order_by(CompanyRegionHiring.region_id)
         )
-        return list(self._session.execute(stmt).scalars())
+        rows = list(self._session.execute(stmt).scalars())
+        eligible_ids = ranking_eligible_fact_ids(
+            self._session,
+            "company_region_hiring",
+            [row.hiring_id for row in rows],
+        )
+        return [row for row in rows if row.hiring_id in eligible_ids]
 
     def _entry_level_for_company(
         self, company_id: str
@@ -288,7 +307,13 @@ class OutputAssemblyService:
             .where(CompanyRegionEntryLevel.company_id == company_id)
             .order_by(CompanyRegionEntryLevel.region_id)
         )
-        return list(self._session.execute(stmt).scalars())
+        rows = list(self._session.execute(stmt).scalars())
+        eligible_ids = ranking_eligible_fact_ids(
+            self._session,
+            "company_region_entry_level",
+            [row.entry_level_id for row in rows],
+        )
+        return [row for row in rows if row.entry_level_id in eligible_ids]
 
     def _regions_for_pairs(
         self,

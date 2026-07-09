@@ -43,6 +43,7 @@ When `VITE_API_BASE_URL` is not set, local development uses Vite's dev proxy for
 - `POST /discover/personalized`
 - `GET /recommendations/goal-modes`
 - `POST /recommendations/strategy`
+- `GET /user-intelligence/dashboard`
 - `GET /monetization/plans`
 - `GET /monetization/features`
 - `GET /monetization/reports`

@@ -94,9 +94,13 @@ import type {
   ScoringPreviewRequest,
   ScoringPreviewResult,
   SourceExplanation,
+  TrustExplanation,
+  UserReportCreateRequest,
+  UserReportSubmissionResult,
   UserAlert,
   UserAlertList,
   UserDataExport,
+  UserIntelligenceDashboardPayload,
   UserPreferenceProfile,
   UserPreferenceProfileInput,
   WarningItem,
@@ -496,6 +500,25 @@ export function getRecommendationGoalModes() {
 
 export function getRecommendationStrategy(body: RecommendationStrategyRequest) {
   return request<RecommendationStrategyPayload>("/recommendations/strategy", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getUserIntelligenceDashboard() {
+  return request<UserIntelligenceDashboardPayload>("/user-intelligence/dashboard");
+}
+
+export function getTrustExplanation(subjectType: string, subjectId: string) {
+  const params = new URLSearchParams({
+    subject_type: subjectType,
+    subject_id: subjectId,
+  });
+  return request<TrustExplanation>(`/trust/explanation?${params.toString()}`);
+}
+
+export function submitUserReport(body: UserReportCreateRequest) {
+  return request<UserReportSubmissionResult>("/user-reports", {
     method: "POST",
     body: JSON.stringify(body),
   });

@@ -68,11 +68,13 @@ class RegionScoreRepository:
             self._session,
             "company_region_presence",
             [presence.presence_id for _company, presence in rows],
+            allow_legacy_unassessed=True,
         )
         eligible_company_ids = ranking_eligible_fact_ids(
             self._session,
             "company",
             [company.company_id for company, _presence in rows],
+            allow_legacy_unassessed=True,
         )
         return [
             company
@@ -92,6 +94,7 @@ class RegionScoreRepository:
             self._session,
             "company_region_hiring",
             [row.hiring_id for row in rows],
+            allow_legacy_unassessed=True,
         )
         return [row for row in rows if row.hiring_id in eligible_ids]
 
@@ -108,5 +111,6 @@ class RegionScoreRepository:
             self._session,
             "company_region_entry_level",
             [row.entry_level_id for row in rows],
+            allow_legacy_unassessed=True,
         )
         return [row for row in rows if row.entry_level_id in eligible_ids]

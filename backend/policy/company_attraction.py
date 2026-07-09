@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.companies.models import Company
+from backend.data_standards.ranking_gate import ranking_eligible_fact_ids
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.policy.metrics import bounded
 from backend.policy.schemas import CompanyAttractionFit, SectorGapFinding, band_for_score
@@ -31,30 +32,33 @@ def build_company_attraction_fits(
     }
     present_in_target = {
         row.company_id
-        for row in session.execute(
+        for row in _eligible_presence_rows(
+            session,
             select(CompanyRegionPresence)
             .where(
                 CompanyRegionPresence.region_id == region_id,
                 CompanyRegionPresence.presence_status == "present",
             )
             .order_by(CompanyRegionPresence.company_id)
-        ).scalars()
+        )
     }
     presence_by_company: dict[str, set[str]] = defaultdict(set)
-    for row in session.execute(
+    for row in _eligible_presence_rows(
+        session,
         select(CompanyRegionPresence)
         .where(CompanyRegionPresence.presence_status == "present")
         .order_by(CompanyRegionPresence.company_id, CompanyRegionPresence.region_id)
-    ).scalars():
+    ):
         presence_by_company[row.company_id].add(row.region_id)
 
     entry_relevance: dict[str, int] = defaultdict(int)
-    for row in session.execute(
+    for row in _eligible_entry_level_rows(
+        session,
         select(CompanyRegionEntryLevel).order_by(
             CompanyRegionEntryLevel.company_id,
             CompanyRegionEntryLevel.region_id,
         )
-    ).scalars():
+    ):
         if row.company_id in present_in_target:
             continue
         entry_relevance[row.company_id] += (
@@ -112,3 +116,35 @@ def build_company_attraction_fits(
             key=lambda item: (-(item.fit_score or 0.0), item.company_name, item.company_id),
         )[:limit]
     )
+
+
+def _eligible_presence_rows(session: Session, stmt) -> tuple[CompanyRegionPresence, ...]:
+    rows = tuple(session.execute(stmt).scalars())
+    eligible_ids = ranking_eligible_fact_ids(
+        session,
+        "company_region_presence",
+        [row.presence_id for row in rows],
+    )
+    eligible_company_ids = ranking_eligible_fact_ids(
+        session,
+        "company",
+        [row.company_id for row in rows],
+    )
+    return tuple(
+        row
+        for row in rows
+        if row.presence_id in eligible_ids and row.company_id in eligible_company_ids
+    )
+
+
+def _eligible_entry_level_rows(
+    session: Session,
+    stmt,
+) -> tuple[CompanyRegionEntryLevel, ...]:
+    rows = tuple(session.execute(stmt).scalars())
+    eligible_ids = ranking_eligible_fact_ids(
+        session,
+        "company_region_entry_level",
+        [row.entry_level_id for row in rows],
+    )
+    return tuple(row for row in rows if row.entry_level_id in eligible_ids)

@@ -268,6 +268,7 @@ import {
   publicReportUrl,
   recommendationsUrl,
   regionDetailUrl,
+  userIntelligenceDashboardUrl,
   type DiscoveryFilters,
   type ProductPage,
   type PublicPage,
@@ -296,6 +297,7 @@ import {
 import OpportunityRoutesPage from "./OpportunityRoutesPage";
 import CareerAgentPage from "./CareerAgentPage";
 import DataStandardsPage from "./DataStandardsPage";
+import UserIntelligenceDashboardPage from "./UserIntelligenceDashboardPage";
 
 const SCORE_FIELDS: Array<{ key: keyof RegionScores; label: string; short: string }> = [
   {
@@ -538,6 +540,7 @@ const INTEGRATION_EXPORT_OPTIONS: Array<{
 ];
 
 const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
+  { id: "dashboard", label: "Dashboard", kicker: "User intelligence" },
   { id: "explore", label: "Explore Markets", kicker: "Market map" },
   { id: "region", label: "Region Detail", kicker: "Regional output" },
   { id: "company", label: "Company Geography", kicker: "Presence and hiring" },
@@ -645,6 +648,7 @@ function getNavigationUrl(
   comparisonB: string,
   discoveryFilters: DiscoveryFilters,
 ): string {
+  if (page === "dashboard") return userIntelligenceDashboardUrl();
   if (page === "region") return regionDetailUrl(selectedRegionId);
   if (page === "company") return companyGeographyUrl(selectedCompanyId);
   if (page === "compare") return compareMarketsUrl(comparisonA, comparisonB);
@@ -12507,6 +12511,10 @@ function App() {
             regionSearch={regionSearchState}
             regions={regions}
           />
+        ) : null}
+
+        {route.page === "dashboard" ? (
+          <UserIntelligenceDashboardPage />
         ) : null}
 
         {route.page === "region" ? (

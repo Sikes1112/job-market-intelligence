@@ -12,6 +12,7 @@ from backend.opportunities.route_schemas import OpportunityRouteRequest
 from backend.opportunities.routing import OpportunityRouteService
 from backend.opportunities.schemas import (
     EmployerInfluenceMetadataCreate,
+    OpportunityBindingConfidence,
     OpportunityCreate,
     OpportunityLocationMode,
     OpportunityProgramType,
@@ -150,10 +151,14 @@ def _create(
                     region_id=region_id,
                     region_label=region_label,
                     metro_area=metro,
+                    binding_confidence=OpportunityBindingConfidence.HIGH,
                 ),
             ),
             role_family_bindings=(
-                OpportunityRoleFamilyBindingCreate(role_family="software_engineering"),
+                OpportunityRoleFamilyBindingCreate(
+                    role_family="software_engineering",
+                    binding_confidence=OpportunityBindingConfidence.HIGH,
+                ),
             ),
             created_at=NOW,
         )
@@ -238,7 +243,18 @@ def test_unverified_expired_and_rejected_trust_behavior(session: Session) -> Non
     ]
     assert unverified_matches
     assert unverified_matches[0].trust_label == OpportunityTrustLabel.UNVERIFIED
+    assert unverified_matches[0].ranking_influence_allowed is False
+    assert unverified_matches[0].ranking_influence_decision is not None
+    assert unverified_matches[0].ranking_influence_decision.value == "denied"
     assert any("Unverified opportunity" in warning for warning in unverified_matches[0].warnings)
+    verified_matches = [
+        match
+        for route in unverified_payload.routes
+        for match in route.matched_opportunities
+        if match.opportunity_id == "opp_verified"
+    ]
+    assert verified_matches
+    assert verified_matches[0].ranking_influence_allowed is True
 
 
 def test_partner_and_paid_metadata_is_preserved_and_disclosed(

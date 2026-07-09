@@ -17,6 +17,162 @@ export type ApiEnvelope<T> = {
 
 export type FreshnessStatus = "fresh" | "stale" | "partial" | "unknown" | "seeded_demo";
 
+export type TrustExplanationWarning = {
+  warning_code: string;
+  severity: "info" | "warning" | "critical";
+  title: string;
+  message: string;
+};
+
+export type EvidenceRequirementResult = {
+  code: string;
+  status: "met" | "missing" | "failed" | "not_applicable" | string;
+  message: string;
+  source: string;
+};
+
+export type TrustWarning = {
+  warning_code: string;
+  severity: "info" | "warning" | "critical";
+  message: string;
+  source: string;
+  evidence_requirement_code: string | null;
+};
+
+export type ReportRecheckStatus = {
+  subject_type: string;
+  subject_id: string;
+  latest_report_status: string | null;
+  latest_report_type: string | null;
+  latest_report_severity: string | null;
+  latest_reported_at: string | null;
+  active_recheck_job_id: string | null;
+  recheck_status: string | null;
+  recheck_priority: string | null;
+  recheck_outcome: string | null;
+  recheck_status_label: string | null;
+  exception_status?: ExceptionSubjectStatus | null;
+  message: string;
+};
+
+export type ExceptionSubjectStatus = {
+  subject_type: string;
+  subject_id: string;
+  has_open_exception: boolean;
+  exception_case_id: string | null;
+  exception_type: string | null;
+  status: string | null;
+  severity: string | null;
+  public_safe_status: string;
+  label: string;
+  message: string;
+  updated_at: string | null;
+  resolved_at: string | null;
+};
+
+export type TrustExplanation = {
+  subject_type: string;
+  subject_id: string;
+  trust_tier: string;
+  trust_label: string;
+  trust_summary: string;
+  risk_level: string | null;
+  risk_label: string | null;
+  risk_summary: string | null;
+  routing_outcome: string | null;
+  routing_label: string | null;
+  routing_summary: string | null;
+  ranking_influence_allowed: boolean;
+  ranking_influence_decision: string;
+  ranking_influence_label: string;
+  ranking_influence_reason: string;
+  evidence_requirements_met: EvidenceRequirementResult[];
+  evidence_requirements_missing: EvidenceRequirementResult[];
+  evidence_requirements_failed: EvidenceRequirementResult[];
+  trust_warnings: TrustWarning[];
+  user_facing_warnings: TrustExplanationWarning[];
+  last_checked_at: string | null;
+  decided_at: string | null;
+  next_recheck_at: string | null;
+  report_recheck_status?: ReportRecheckStatus | null;
+  exception_status?: ExceptionSubjectStatus | null;
+  explanation_version: "30C" | string;
+};
+
+export type UserReportType =
+  | "outdated"
+  | "incorrect"
+  | "duplicate"
+  | "spam"
+  | "misleading"
+  | "expired_opportunity"
+  | "wrong_company"
+  | "wrong_region"
+  | "suspicious_ranking"
+  | "other";
+
+export type UserReportSeverity = "low" | "medium" | "high" | "critical";
+
+export type UserReportCreateRequest = {
+  subject_type: string;
+  subject_id: string;
+  report_type: UserReportType;
+  report_reason?: string | null;
+  severity?: UserReportSeverity;
+  reporter_session_id?: string | null;
+  source_surface?: string | null;
+};
+
+export type UserReportPayload = {
+  user_report_id: string;
+  subject_type: string;
+  subject_id: string;
+  report_type: string;
+  report_reason?: string | null;
+  reporter_user_id?: string | null;
+  reporter_session_id?: string | null;
+  severity: string;
+  status: string;
+  source_surface: string | null;
+  related_trust_assessment_id: string | null;
+  related_risk_routing_decision_id: string | null;
+  created_recheck_job_id: string | null;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+};
+
+export type AutomatedRecheckJobPayload = {
+  automated_recheck_job_id: string;
+  subject_type: string;
+  subject_id: string;
+  trigger_type: string;
+  trigger_source: string;
+  status: string;
+  priority: string;
+  reason_codes: string[];
+  related_user_report_id: string | null;
+  related_trust_assessment_id: string | null;
+  related_risk_routing_decision_id: string | null;
+  scheduled_for: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  outcome: string | null;
+  outcome_reason: string | null;
+  attempts: number;
+  max_attempts: number;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserReportSubmissionResult = {
+  report: UserReportPayload;
+  recheck_job: AutomatedRecheckJobPayload | null;
+  status: ReportRecheckStatus;
+  message: string;
+};
+
 export type DataStandardDefinition = {
   term: string;
   canonical_name: string;
@@ -83,6 +239,9 @@ export type DataQualityLabel = {
   ranking_influence_allowed: boolean;
   public_display_allowed: boolean;
   warning_copy: string;
+  trust_explanation?: TrustExplanation | null;
+  report_recheck_status?: ReportRecheckStatus | null;
+  exception_status?: ExceptionSubjectStatus | null;
 };
 
 export type DataQualityLabelListPayload = {
@@ -1878,6 +2037,137 @@ export type RecommendationStrategyPayload = {
   ranked_company_recommendations: RecommendationRankingItem[];
   market_strategy_plan: MarketStrategyPlan;
   warnings: string[];
+};
+
+export type UserDashboardWarningSeverity = "info" | "warning" | "critical";
+export type UserDashboardNextActionPriority = "low" | "medium" | "high";
+
+export type UserDashboardSummary = {
+  headline: string;
+  description: string;
+  warning_count: number;
+  recommendation_count: number;
+};
+
+export type UserDashboardRecommendedRegion = {
+  region_id: string;
+  region_name: string;
+  score: number | null;
+  confidence: string | null;
+  freshness: string | null;
+  warnings: string[];
+  why_recommended: string;
+  ranking_influence_allowed: boolean | null;
+  trust_tier?: string | null;
+  risk_level?: string | null;
+  routing_outcome?: string | null;
+  ranking_influence_decision?: string | null;
+  ranking_influence_reason?: string | null;
+  ranking_influence_reason_codes?: string[];
+  trust_explanation?: TrustExplanation | null;
+  report_recheck_status?: ReportRecheckStatus | null;
+  exception_status?: ExceptionSubjectStatus | null;
+};
+
+export type UserDashboardRecommendedCompany = {
+  company_id: string;
+  company_name: string;
+  score: number | null;
+  confidence: string | null;
+  freshness: string | null;
+  warnings: string[];
+  why_recommended: string;
+  ranking_influence_allowed: boolean | null;
+  trust_tier?: string | null;
+  risk_level?: string | null;
+  routing_outcome?: string | null;
+  ranking_influence_decision?: string | null;
+  ranking_influence_reason?: string | null;
+  ranking_influence_reason_codes?: string[];
+  trust_explanation?: TrustExplanation | null;
+  report_recheck_status?: ReportRecheckStatus | null;
+  exception_status?: ExceptionSubjectStatus | null;
+};
+
+export type UserDashboardRecommendedOpportunity = {
+  opportunity_id: string;
+  title: string;
+  company_name: string;
+  region_name: string | null;
+  trust_label: string | null;
+  review_status: string | null;
+  partner_submitted: boolean;
+  ranking_influence_allowed: boolean;
+  expiration_state: string | null;
+  source_type: string | null;
+  warnings: string[];
+  why_recommended: string;
+  trust_tier?: string | null;
+  evidence_summary?: Record<string, string | number> | null;
+  risk_level?: string | null;
+  routing_outcome?: string | null;
+  ranking_influence_decision?: string | null;
+  ranking_influence_reason?: string | null;
+  ranking_influence_reason_codes?: string[];
+  trust_explanation?: TrustExplanation | null;
+  report_recheck_status?: ReportRecheckStatus | null;
+  exception_status?: ExceptionSubjectStatus | null;
+};
+
+export type UserDashboardMarketWarning = {
+  warning_code: string;
+  severity: UserDashboardWarningSeverity;
+  title: string;
+  message: string;
+  subject_type: string;
+  subject_id: string;
+  source: string;
+};
+
+export type UserDashboardForecastChange = {
+  subject_type: string;
+  subject_id: string;
+  title: string;
+  summary: string;
+  confidence: string | null;
+  freshness: string | null;
+  warnings: string[];
+};
+
+export type UserDashboardSavedItem = {
+  item_id: string;
+  item_type: string;
+  label: string;
+  target_route: string | null;
+  metadata: Record<string, string | number | boolean | null>;
+};
+
+export type UserDashboardNextAction = {
+  action_code: string;
+  label: string;
+  description: string;
+  priority: UserDashboardNextActionPriority;
+  target_route: string | null;
+};
+
+export type UserDashboardTrustContext = {
+  uses_existing_metadata_only: boolean;
+  layer_30_full_trust_engine_available: boolean;
+  message: string;
+};
+
+export type UserIntelligenceDashboardPayload = {
+  generated_at: string;
+  dashboard_version: "30.1" | string;
+  summary: UserDashboardSummary;
+  recommended_regions: UserDashboardRecommendedRegion[];
+  recommended_companies: UserDashboardRecommendedCompany[];
+  recommended_opportunities: UserDashboardRecommendedOpportunity[];
+  market_warnings: UserDashboardMarketWarning[];
+  forecast_changes: UserDashboardForecastChange[];
+  saved_items: UserDashboardSavedItem[];
+  recommended_next_actions: UserDashboardNextAction[];
+  trust_context: UserDashboardTrustContext;
 };
 
 export type OrganizationRole = "ORG_ADMIN" | "ADVISOR" | "STUDENT" | "REPORT_VIEWER";

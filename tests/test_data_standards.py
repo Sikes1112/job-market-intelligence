@@ -480,6 +480,11 @@ def test_required_quality_labels_exist_with_metadata_and_no_ranking_influence() 
         assert label.ranking_influence_allowed is False
         assert label.public_display_allowed is True
         assert label.warning_copy
+        assert label.trust_explanation is not None
+        assert label.trust_explanation.ranking_influence_allowed is False
+        assert label.trust_explanation.ranking_influence_label == (
+            "Excluded from rankings"
+        )
 
     assert by_label["low_confidence_signal"].warning_copy
     assert by_label["low_confidence_signal"].ranking_influence_allowed is False
@@ -497,6 +502,12 @@ def test_quality_label_api_route_serializes_required_metadata(
     assert labels["verified_partner_data"]["requires_source_refs"] is True
     assert labels["verified_partner_data"]["minimum_confidence"] == "medium"
     assert labels["low_confidence_signal"]["ranking_influence_allowed"] is False
+    assert labels["low_confidence_signal"]["trust_explanation"]["trust_label"] == (
+        "Excluded from rankings"
+    )
+    assert labels["low_confidence_signal"]["trust_explanation"][
+        "ranking_influence_allowed"
+    ] is False
     assert labels["low_confidence_signal"]["warning_copy"]
 
 
@@ -615,6 +626,9 @@ def test_quality_label_evaluation_serializes_freshness_confidence_and_source_exp
     assert data["eligible"] is True
     assert data["label"]["requires_source_refs"] is True
     assert data["label"]["ranking_influence_allowed"] is False
+    assert data["label"]["trust_explanation"]["ranking_influence_label"] == (
+        "Excluded from rankings"
+    )
     assert data["source_ref_count"] == 1
     assert data["freshness"]["freshness_status"] == "fresh"
     assert data["confidence"]["confidence_label"] == "high"

@@ -12,6 +12,7 @@ from backend.api.billing import router as billing_router
 from backend.api.career_agent import router as career_agent_router
 from backend.api.data_standards import router as data_standards_router
 from backend.api.errors import register_exception_handlers
+from backend.api.exceptions import router as exceptions_router
 from backend.api.external import router as external_router
 from backend.api.institutions import router as institutions_router
 from backend.api.integrations import router as integrations_router
@@ -27,7 +28,10 @@ from backend.api.public_benchmarks import router as public_benchmarks_router
 from backend.api.public_reports import router as public_reports_router
 from backend.api.recommendations import router as recommendations_router
 from backend.api.routes import router as read_router
+from backend.api.trust import router as trust_router
 from backend.api.user import router as user_router
+from backend.api.user_intelligence import router as user_intelligence_router
+from backend.api.user_reports import router as user_reports_router
 from backend.config.settings import Settings, get_settings
 from backend.shared.db import make_engine, make_session_factory
 from backend.shared.logging import configure_logging
@@ -113,6 +117,10 @@ def create_app(
     app.include_router(public_benchmarks_router)
     app.include_router(public_reports_router)
     app.include_router(opportunities_router)
+    app.include_router(trust_router)
+    app.include_router(exceptions_router)
+    app.include_router(user_intelligence_router)
+    app.include_router(user_reports_router)
     app.include_router(policy_router)
     app.include_router(platform_intelligence_router)
     app.include_router(platform_public_router)

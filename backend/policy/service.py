@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.companies.models import Company
+from backend.data_standards.ranking_gate import ranking_eligible_fact_ids
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
@@ -306,8 +307,26 @@ class PolicyIntelligenceService:
                 )
             ).scalars()
         )
+        eligible_presence_ids = ranking_eligible_fact_ids(
+            self._session,
+            "company_region_presence",
+            [row.presence_id for row in presence_rows],
+        )
+        presence_rows = tuple(
+            row for row in presence_rows if row.presence_id in eligible_presence_ids
+        )
         present_company_ids = tuple(
             row.company_id for row in presence_rows if row.presence_status == "present"
+        )
+        eligible_company_ids = ranking_eligible_fact_ids(
+            self._session,
+            "company",
+            present_company_ids,
+        )
+        present_company_ids = tuple(
+            company_id
+            for company_id in present_company_ids
+            if company_id in eligible_company_ids
         )
         present_companies = self._present_companies(present_company_ids)
         hiring_rows = tuple(
@@ -317,6 +336,12 @@ class PolicyIntelligenceService:
                 .order_by(CompanyRegionHiring.company_id, CompanyRegionHiring.hiring_id)
             ).scalars()
         )
+        eligible_hiring_ids = ranking_eligible_fact_ids(
+            self._session,
+            "company_region_hiring",
+            [row.hiring_id for row in hiring_rows],
+        )
+        hiring_rows = tuple(row for row in hiring_rows if row.hiring_id in eligible_hiring_ids)
         entry_level_rows = tuple(
             self._session.execute(
                 select(CompanyRegionEntryLevel)
@@ -326,6 +351,14 @@ class PolicyIntelligenceService:
                     CompanyRegionEntryLevel.entry_level_id,
                 )
             ).scalars()
+        )
+        eligible_entry_level_ids = ranking_eligible_fact_ids(
+            self._session,
+            "company_region_entry_level",
+            [row.entry_level_id for row in entry_level_rows],
+        )
+        entry_level_rows = tuple(
+            row for row in entry_level_rows if row.entry_level_id in eligible_entry_level_ids
         )
         score = self._session.execute(
             select(RegionMarketScore)

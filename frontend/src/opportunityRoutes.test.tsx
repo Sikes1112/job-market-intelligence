@@ -75,6 +75,48 @@ function routePayload() {
               "Partner-submitted metadata is preserved in this route.",
               "Paid partner relationship disclosed; paid status did not affect fit.",
             ],
+            trust_tier: "partner_submitted",
+            risk_level: "medium",
+            routing_outcome: "visible_with_warning",
+            ranking_influence_allowed: false,
+            ranking_influence_decision: "denied",
+            ranking_influence_reason:
+              "Partner-submitted items are visible for awareness but excluded from rankings until stronger independent evidence is available.",
+            ranking_influence_reason_codes: ["partner_submitted_not_verified"],
+            trust_explanation: {
+              subject_type: "opportunity",
+              subject_id: "opp_demo",
+              trust_tier: "partner_submitted",
+              trust_label: "Partner-submitted",
+              trust_summary: "This item was submitted by a partner and has not been independently verified.",
+              risk_level: "medium",
+              risk_label: "Use with caution",
+              risk_summary: "Use this item with caution and review its warnings.",
+              routing_outcome: "visible_with_warning",
+              routing_label: "Visible with warning",
+              routing_summary: "This item can be visible, but warnings should be reviewed first.",
+              ranking_influence_allowed: false,
+              ranking_influence_decision: "denied",
+              ranking_influence_label: "Excluded from rankings",
+              ranking_influence_reason:
+                "Partner-submitted items are visible for awareness but excluded from rankings until stronger independent evidence is available.",
+              evidence_requirements_met: [],
+              evidence_requirements_missing: [],
+              evidence_requirements_failed: [],
+              trust_warnings: [],
+              user_facing_warnings: [
+                {
+                  warning_code: "PARTNER_SUBMITTED_NOT_VERIFIED",
+                  severity: "info",
+                  title: "Partner-submitted",
+                  message: "This item has not been independently verified.",
+                },
+              ],
+              last_checked_at: "2026-07-02T12:00:00Z",
+              decided_at: "2026-07-02T12:00:00Z",
+              next_recheck_at: null,
+              explanation_version: "30C",
+            },
           },
         ],
       },
@@ -111,6 +153,10 @@ describe("OpportunityRoutesPage", () => {
     expect(screen.getByText("Platform Internship")).toBeTruthy();
     expect(screen.getByText("verified")).toBeTruthy();
     expect(screen.getByText("Paid partner disclosed")).toBeTruthy();
+    expect(screen.getByText("Trust: Partner-submitted")).toBeTruthy();
+    expect(screen.getByText("Risk: Use with caution")).toBeTruthy();
+    expect(screen.getByText("Excluded from rankings")).toBeTruthy();
+    expect(screen.getByText("Report information issue")).toBeTruthy();
     expect(screen.getByText("Partner / paid disclosure")).toBeTruthy();
     expect(screen.getByText(/Partner-submitted records remain labeled/i)).toBeTruthy();
     expect(screen.getByText(/Open matched program source pages manually/i)).toBeTruthy();

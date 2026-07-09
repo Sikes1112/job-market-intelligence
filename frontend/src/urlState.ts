@@ -7,6 +7,7 @@ export const PREFERENCE_LEVELS = ["low", "medium", "high"];
 export const CAREER_STAGE_OPTIONS = ["entry_level"];
 
 export type ProductPage =
+  | "dashboard"
   | "explore"
   | "region"
   | "company"
@@ -135,6 +136,7 @@ export const PUBLIC_PAGE_PATHS: Record<Exclude<PublicPage, "landing">, string> =
 };
 
 const PRODUCT_PAGES: ProductPage[] = [
+  "dashboard",
   "explore",
   "region",
   "company",
@@ -351,6 +353,9 @@ export function parseRoute(pathname: string, search: string): RouteState {
   }
 
   if (section === "compare") return baseRoute("compare", params);
+  if (section === "dashboard" || section === "intelligence") {
+    return baseRoute("dashboard", params);
+  }
   if (section === "discovery") return baseRoute("discovery", params);
   if (section === "recommendations") return baseRoute("recommendations", params);
   if (section === "career-agent" || section === "agent") {
@@ -429,6 +434,10 @@ function appendListParam(params: URLSearchParams, key: string, values: string[])
 
 export function exploreUrl(): string {
   return PRODUCT_ROOT;
+}
+
+export function userIntelligenceDashboardUrl(): string {
+  return `${PRODUCT_ROOT}/dashboard`;
 }
 
 export function landingUrl(): string {
