@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from datetime import date
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from backend.geography.market_coverage import (
     COVERAGE_SCORE_DIMENSIONS,
@@ -28,7 +33,29 @@ from backend.geography.market_coverage import (
     suggest_coverage_tier,
     unknown_sector_coverage_metadata,
 )
+from backend.imports.bulk import (
+    import_all_curated_market_datasets,
+    run_all_curated_market_post_imports,
+)
+from backend.imports.coverage import (
+    build_all_market_coverage_summaries,
+    build_market_coverage_summary,
+)
+from backend.imports.post_import import run_curated_market_post_import
+from backend.provenance.models import FactSourceLink
 from backend.region_expansion.service import TARGET_REGION_EXPANSION_PLAN
+
+AS_OF = date(2026, 7, 9)
+ALL_MARKETS = {
+    "nyc",
+    "seattle",
+    "san_francisco_bay_area",
+    "boston",
+    "washington_dc",
+    "austin",
+    "atlanta",
+    "chicago",
+}
 
 
 def _quality(**overrides) -> CoverageQualityScore:
@@ -133,7 +160,6 @@ def test_coverage_tier_semantics_are_explicit_and_conservative() -> None:
     assert tier_3.safe_for_confident_market_comparison is False
     assert tier_3.should_rank_as_confident_recommendation is False
     assert tier_4.directionally_useful_for_comparison is False
-    assert tier_4.should_rank_as_confident_recommendation is False
 
 
 def test_sector_coverage_categories_are_separate_from_region_tiers() -> None:
@@ -389,3 +415,134 @@ def test_region_coverage_metadata_keeps_components_explainable() -> None:
     assert coverage.safe_for_confident_market_comparison is (
         coverage.tier is CoverageTier.TIER_1
     )
+
+
+def test_coverage_summaries_are_computed_for_every_market(
+    session: Session,
+) -> None:
+    assert import_all_curated_market_datasets(session, as_of=AS_OF).ok
+    assert run_all_curated_market_post_imports(session, as_of=AS_OF).ok
+
+    summaries = build_all_market_coverage_summaries(session)
+
+    assert set(summaries) == ALL_MARKETS
+    for market_key, summary in summaries.items():
+        assert summary.market_key == market_key
+        assert summary.company_count == 3
+        assert summary.presence_fact_count == 3
+        assert summary.hiring_fact_count == 3
+        assert summary.entry_level_fact_count == 3
+        assert summary.source_count == 5
+        assert summary.ranking_eligible_fact_count == 13
+        assert summary.ranking_excluded_fact_count == 0
+        assert summary.last_import_status == "imported"
+        assert summary.last_refresh_status == "refreshed"
+        assert summary.source_label == "Source-backed"
+        assert summary.ranking_label == "Ranking-safe"
+
+
+def test_coverage_summaries_include_unknown_and_zero_dimensions(
+    session: Session,
+) -> None:
+    assert import_all_curated_market_datasets(session, as_of=AS_OF).ok
+    assert run_all_curated_market_post_imports(session, as_of=AS_OF).ok
+
+    summaries = build_all_market_coverage_summaries(session)
+
+    for summary in summaries.values():
+        assert summary.unknown_count_dimensions > 0
+        assert summary.observed_zero_count_dimensions > 0
+        breakdown = summary.count_status_breakdown
+        assert breakdown["unknown"] > 0
+        assert breakdown["zero_observed"] > 0
+        assert breakdown["positive_observed"] > 0
+        assert any(
+            breakdown.get(status, 0) > 0
+            for status in ("not_collected", "not_applicable")
+        )
+
+
+def test_coverage_summaries_are_public_safe(session: Session) -> None:
+    assert import_all_curated_market_datasets(session, as_of=AS_OF).ok
+    assert run_all_curated_market_post_imports(session, as_of=AS_OF).ok
+
+    summaries = build_all_market_coverage_summaries(session)
+
+    for summary in summaries.values():
+        payload = summary.as_dict()
+        assert payload["coverage_label"] in {"Seed coverage", "Partial coverage"}
+        assert payload["freshness_label"] == "Current"
+        _assert_public_payload_safe(payload)
+
+
+def test_stale_coverage_and_ranking_exclusion_are_market_specific(
+    session: Session,
+) -> None:
+    assert import_all_curated_market_datasets(session, as_of=AS_OF).ok
+    assert run_all_curated_market_post_imports(session, as_of=AS_OF).ok
+
+    link = _fact_link(
+        session,
+        "company_region_hiring",
+        "hiring_cmp_microsoft_atlanta",
+    )
+    link.freshness_status = "stale"
+    session.flush()
+    assert run_curated_market_post_import(session, "atlanta", as_of=AS_OF).ok
+
+    atlanta = build_market_coverage_summary(session, "atlanta")
+    seattle = build_market_coverage_summary(session, "seattle")
+
+    assert atlanta.freshness_status == "stale"
+    assert atlanta.freshness_label == "Needs refresh"
+    assert atlanta.ranking_excluded_fact_count == 1
+    assert atlanta.ranking_label == "Some data ranking-excluded"
+    assert seattle.freshness_status == "fresh"
+    assert seattle.ranking_excluded_fact_count == 0
+    assert seattle.ranking_label == "Ranking-safe"
+
+
+def _fact_link(
+    session: Session,
+    fact_type: str,
+    fact_id: str,
+) -> FactSourceLink:
+    return session.execute(
+        select(FactSourceLink).where(
+            FactSourceLink.fact_type == fact_type,
+            FactSourceLink.fact_id == fact_id,
+        )
+    ).scalar_one()
+
+
+def _assert_public_payload_safe(value: Any) -> None:
+    forbidden = {
+        "internal_notes",
+        "reporter_user_id",
+        "reporter_session_id",
+        "report_reason",
+        "related_user_report_id",
+        "assigned_owner",
+        "exception_case_id",
+        "risk_routing_decision_id",
+        "trust_assessment_id",
+        "raw_internal_risk",
+        "source_id",
+        "source_ref",
+        "fact_source_link_id",
+    }
+    assert forbidden.isdisjoint(_keys(value))
+
+
+def _keys(value: Any) -> set[str]:
+    if isinstance(value, dict):
+        keys = set(value)
+        for item in value.values():
+            keys.update(_keys(item))
+        return keys
+    if isinstance(value, list | tuple):
+        keys: set[str] = set()
+        for item in value:
+            keys.update(_keys(item))
+        return keys
+    return set()

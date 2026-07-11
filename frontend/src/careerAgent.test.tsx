@@ -396,7 +396,7 @@ function toolExecutionPayload(status = "approved") {
 }
 
 function careerAgentFetchMock(toolPreview = toolPreviewPayload()) {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url === "/me/career-memory") {
       return new Response(JSON.stringify(envelope(memoryPayload(true))), {

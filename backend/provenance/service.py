@@ -20,6 +20,7 @@ from backend.provenance.exceptions import (
 from backend.provenance.models import FactSourceLink, SourceObservation, SourceRef
 from backend.provenance.repository import ProvenanceRepository
 from backend.shared.confidence import Confidence
+from backend.shared.freshness import FreshnessStatus
 from backend.shared.provenance import (
     REAL_DATA_ORIGINS,
     DataOrigin,
@@ -44,6 +45,7 @@ class SourceRefDefinition(BaseModel):
     observed_at: datetime | None = None
     license_or_terms_category: LicenseTermsCategory = LicenseTermsCategory.UNKNOWN
     confidence: Confidence = Confidence.UNKNOWN
+    freshness_status: FreshnessStatus | None = None
     data_origin: DataOrigin = DataOrigin.UNKNOWN_ORIGIN
     notes: str | None = Field(default=None, max_length=2048)
 
@@ -58,6 +60,7 @@ class SourceObservationDefinition(BaseModel):
     data_origin: DataOrigin = DataOrigin.UNKNOWN_ORIGIN
     observation_status: ObservationStatus = ObservationStatus.UNKNOWN
     confidence: Confidence | None = None
+    freshness_status: FreshnessStatus | None = None
     notes: str | None = Field(default=None, max_length=2048)
 
 
@@ -72,6 +75,7 @@ class FactSourceLinkDefinition(BaseModel):
     data_origin: DataOrigin = DataOrigin.UNKNOWN_ORIGIN
     observation_status: ObservationStatus = ObservationStatus.UNKNOWN
     confidence: Confidence | None = None
+    freshness_status: FreshnessStatus | None = None
     notes: str | None = Field(default=None, max_length=2048)
 
 
@@ -89,6 +93,11 @@ class ProvenanceService:
             observed_at=definition.observed_at,
             license_or_terms_category=definition.license_or_terms_category.value,
             confidence=definition.confidence.value,
+            freshness_status=(
+                definition.freshness_status.value
+                if definition.freshness_status is not None
+                else None
+            ),
             data_origin=definition.data_origin.value,
             notes=definition.notes,
         )
@@ -190,6 +199,11 @@ class ProvenanceService:
             observed_at=definition.observed_at,
             license_or_terms_category=source_ref.license_or_terms_category,
             confidence=(definition.confidence or Confidence(source_ref.confidence)).value,
+            freshness_status=(
+                definition.freshness_status.value
+                if definition.freshness_status is not None
+                else source_ref.freshness_status
+            ),
             data_origin=definition.data_origin.value,
             observation_status=definition.observation_status.value,
             notes=definition.notes,
@@ -214,6 +228,11 @@ class ProvenanceService:
             observed_at=observation.observed_at,
             license_or_terms_category=observation.license_or_terms_category,
             confidence=(definition.confidence or Confidence(observation.confidence)).value,
+            freshness_status=(
+                definition.freshness_status.value
+                if definition.freshness_status is not None
+                else observation.freshness_status
+            ),
             data_origin=definition.data_origin.value,
             observation_status=definition.observation_status.value,
             notes=definition.notes,
@@ -231,6 +250,11 @@ class ProvenanceService:
             definition.license_or_terms_category.value
         )
         source_ref.confidence = definition.confidence.value
+        source_ref.freshness_status = (
+            definition.freshness_status.value
+            if definition.freshness_status is not None
+            else None
+        )
         source_ref.data_origin = definition.data_origin.value
         source_ref.notes = definition.notes
 
@@ -250,6 +274,11 @@ class ProvenanceService:
         observation.confidence = (
             definition.confidence or Confidence(source_ref.confidence)
         ).value
+        observation.freshness_status = (
+            definition.freshness_status.value
+            if definition.freshness_status is not None
+            else source_ref.freshness_status
+        )
         observation.data_origin = definition.data_origin.value
         observation.observation_status = definition.observation_status.value
         observation.notes = definition.notes
@@ -273,6 +302,7 @@ class ProvenanceService:
         link.observed_at = rebuilt.observed_at
         link.license_or_terms_category = rebuilt.license_or_terms_category
         link.confidence = rebuilt.confidence
+        link.freshness_status = rebuilt.freshness_status
         link.data_origin = rebuilt.data_origin
         link.observation_status = rebuilt.observation_status
         link.notes = rebuilt.notes
@@ -289,6 +319,12 @@ class ProvenanceService:
             and source_ref.license_or_terms_category
             == definition.license_or_terms_category.value
             and source_ref.confidence == definition.confidence.value
+            and source_ref.freshness_status
+            == (
+                definition.freshness_status.value
+                if definition.freshness_status is not None
+                else None
+            )
             and source_ref.data_origin == definition.data_origin.value
             and source_ref.notes == definition.notes
         )
@@ -310,6 +346,7 @@ class ProvenanceService:
             and observation.license_or_terms_category
             == candidate.license_or_terms_category
             and observation.confidence == candidate.confidence
+            and observation.freshness_status == candidate.freshness_status
             and observation.data_origin == candidate.data_origin
             and observation.observation_status == candidate.observation_status
             and observation.notes == candidate.notes
@@ -336,6 +373,7 @@ class ProvenanceService:
             and link.license_or_terms_category
             == candidate.license_or_terms_category
             and link.confidence == candidate.confidence
+            and link.freshness_status == candidate.freshness_status
             and link.data_origin == candidate.data_origin
             and link.observation_status == candidate.observation_status
             and link.notes == candidate.notes

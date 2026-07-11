@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.admin.models import AdminOverride, AdminRepairAction
 from backend.api.app import create_app
 from backend.api.dependencies import get_session
+from backend.api.protection import _public_demo_route_allowed
 from backend.companies.models import Company
 from backend.config.settings import Settings
 from backend.data_standards.models import (
@@ -32,9 +33,7 @@ def _settings(app_env: str, **overrides) -> Settings:
     return Settings(
         app_env=app_env,
         database_url=database_url,
-        cors_allowed_origins=(
-            "https://demo.example" if app_env == "public_demo" else ""
-        ),
+        cors_allowed_origins=("https://demo.example" if app_env == "public_demo" else ""),
         **overrides,
         _env_file=None,
     )
@@ -202,6 +201,23 @@ def test_public_demo_allows_frontend_public_read_and_metadata_routes(
     )
     assert action_plan.status_code == 200
     assert action_plan.json()["data"]["steps"]
+
+
+def test_public_demo_allows_imported_market_operation_reads_only() -> None:
+    assert _public_demo_route_allowed("GET", "/markets/imported")
+    assert _public_demo_route_allowed("GET", "/markets/imported/health")
+    for endpoint in (
+        "health",
+        "sources",
+        "facts",
+        "gaps",
+        "ranking-diagnostics",
+        "refresh-readiness",
+        "diff-preview",
+    ):
+        assert _public_demo_route_allowed("GET", f"/markets/imported/nyc/{endpoint}")
+        assert not _public_demo_route_allowed("POST", f"/markets/imported/nyc/{endpoint}")
+    assert not _public_demo_route_allowed("GET", "/markets/imported/nyc/apply")
 
 
 def test_public_demo_denies_admin_and_override_mutations_before_auth(
@@ -530,11 +546,7 @@ def test_public_demo_denial_response_is_safe_and_monitorable(session: Session) -
 
 def test_ingestion_and_refresh_api_routes_are_not_registered(session: Session) -> None:
     client = _api_client_for_env(session, "public_demo")
-    routes = {
-        route.path
-        for route in client.app.routes
-        if hasattr(route, "path")
-    }
+    routes = {route.path for route in client.app.routes if hasattr(route, "path")}
 
     assert not any(path.startswith("/ingestion") for path in routes)
     assert not any(path.startswith("/refresh") for path in routes)

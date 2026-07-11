@@ -1,0 +1,4 @@
+company_id,region_id,role_family,active_posting_count,active_posting_count_status,annualized_trend_signal,seasonal_student_hiring_signal,source_ref
+cmp_microsoft,washington_dc,ai_cloud_adjacent,4,positive_observed,positive,weak,src_washington_dc_hiring_2026_06
+cmp_cisco,washington_dc,cybersecurity,0,zero_observed,neutral,none,src_washington_dc_hiring_2026_06
+cmp_deloitte,washington_dc,product,,unknown,unknown,unknown,src_washington_dc_hiring_2026_06

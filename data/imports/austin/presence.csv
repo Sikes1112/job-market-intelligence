@@ -1,0 +1,4 @@
+company_id,region_id,presence_status,presence_basis,office_location_summary,source_ref
+cmp_google,austin,present,office_plus_operations,Austin engineering and operations office,src_austin_presence_2026_06
+cmp_deloitte,austin,present,office_plus_hiring,Austin digital consulting and analytics team,src_austin_presence_2026_06
+cmp_lone_star_cloud,austin,present,office_plus_hiring,Austin cloud startup product and platform office,src_austin_presence_2026_06

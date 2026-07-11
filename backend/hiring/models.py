@@ -45,12 +45,24 @@ class CompanyRegionHiring(Base, CanonicalMixin):
 
     currently_hiring_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     active_posting_count_now: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    active_posting_count_now_status: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     posting_count_30d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    posting_count_30d_status: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     posting_count_90d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    posting_count_90d_status: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
 
     annualized_trend_signal: Mapped[str | None] = mapped_column(String(32), nullable=True)
     seasonal_student_hiring_signal: Mapped[str | None] = mapped_column(String(32), nullable=True)
     hiring_program_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hiring_program_count_status: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     role_family_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     hiring_confidence: Mapped[str | None] = mapped_column(String(32), nullable=True)

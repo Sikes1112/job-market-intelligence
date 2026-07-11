@@ -1,0 +1,6 @@
+source_ref,source_name,source_type,source_url_or_reference,collected_at,observed_at,confidence,license_or_terms_category,freshness_status
+src_washington_dc_region_2026_06,Layer 32B Washington DC region fixture,manual_research,repo_fixture:data/imports/washington_dc/regions.json,2026-06-25,2026-06-25,high,permissive,fresh
+src_washington_dc_company_roster_2026_06,Layer 32B Washington DC company roster fixture,manual_research,repo_fixture:data/imports/washington_dc/companies.csv,2026-06-25,2026-06-25,medium,permissive,fresh
+src_washington_dc_presence_2026_06,Layer 32B Washington DC presence fixture,manual_research,repo_fixture:data/imports/washington_dc/presence.csv,2026-06-25,2026-06-25,medium,permissive,fresh
+src_washington_dc_hiring_2026_06,Layer 32B Washington DC hiring fixture,manual_research,repo_fixture:data/imports/washington_dc/hiring.csv,2026-06-25,2026-06-25,medium,permissive,fresh
+src_washington_dc_entry_level_2026_06,Layer 32B Washington DC entry-level fixture,manual_research,repo_fixture:data/imports/washington_dc/entry_level.csv,2026-06-25,2026-06-25,medium,permissive,fresh

@@ -9,6 +9,8 @@ mutates, or personalizes anything.
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -40,6 +42,24 @@ from backend.api.search import (
 )
 from backend.geography.market_coverage import priority_market_by_id
 from backend.geography.repository import RegionRepository
+from backend.imports.coverage import build_all_market_coverage_summaries
+from backend.imports.diagnostics import (
+    build_refresh_readiness_reports,
+    coverage_gaps_from_snapshot,
+    dataset_health_from_snapshot,
+    fact_health_from_snapshot,
+    platform_summary_from_health_reports,
+    ranking_exclusions_from_snapshot,
+    refresh_readiness_from_snapshot,
+    source_aging_from_snapshot,
+)
+from backend.imports.diff import build_import_diff_preview
+from backend.imports.operations import (
+    CuratedMarketRegistryUnavailable,
+    UnknownCuratedMarket,
+    build_all_market_operational_snapshots,
+    build_market_operational_snapshot,
+)
 from backend.monetization.enforcement import (
     evaluate_account_access,
     increment_feature_usage,
@@ -97,6 +117,122 @@ def coverage_metadata() -> dict:
     return lightweight_success_envelope(data=build_coverage_metadata_vocabulary())
 
 
+@router.get("/markets/imported")
+def imported_markets(session: Session = Depends(get_session)) -> dict:
+    summaries = build_all_market_coverage_summaries(session)
+    markets = [summary.as_dict() for summary in summaries.values()]
+    return lightweight_success_envelope(
+        data={"markets": markets, "market_count": len(markets)}
+    )
+
+
+@router.get("/markets/imported/health")
+def imported_market_health(
+    as_of: date | None = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    try:
+        snapshots = build_all_market_operational_snapshots(session, as_of=as_of)
+    except CuratedMarketRegistryUnavailable:
+        return _registry_unavailable_response()
+    health_reports = tuple(dataset_health_from_snapshot(snapshot) for snapshot in snapshots)
+    readiness_reports = build_refresh_readiness_reports(session, as_of=as_of)
+    summary = platform_summary_from_health_reports(health_reports, readiness_reports)
+    return lightweight_success_envelope(
+        data={
+            "summary": summary.as_dict(),
+            "markets": [report.as_dict() for report in health_reports],
+        }
+    )
+
+
+@router.get("/markets/imported/{market_key}/health")
+def imported_market_health_detail(
+    market_key: str,
+    as_of: date | None = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    snapshot = _market_snapshot_or_response(session, market_key, as_of=as_of)
+    if isinstance(snapshot, JSONResponse):
+        return snapshot
+    return lightweight_success_envelope(data=dataset_health_from_snapshot(snapshot).as_dict())
+
+
+@router.get("/markets/imported/{market_key}/sources")
+def imported_market_sources(
+    market_key: str,
+    as_of: date | None = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    snapshot = _market_snapshot_or_response(session, market_key, as_of=as_of)
+    if isinstance(snapshot, JSONResponse):
+        return snapshot
+    return lightweight_success_envelope(data=source_aging_from_snapshot(snapshot).as_dict())
+
+
+@router.get("/markets/imported/{market_key}/facts")
+def imported_market_facts(
+    market_key: str,
+    as_of: date | None = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    snapshot = _market_snapshot_or_response(session, market_key, as_of=as_of)
+    if isinstance(snapshot, JSONResponse):
+        return snapshot
+    return lightweight_success_envelope(data=fact_health_from_snapshot(snapshot).as_dict())
+
+
+@router.get("/markets/imported/{market_key}/gaps")
+def imported_market_gaps(
+    market_key: str,
+    as_of: date | None = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    snapshot = _market_snapshot_or_response(session, market_key, as_of=as_of)
+    if isinstance(snapshot, JSONResponse):
+        return snapshot
+    return lightweight_success_envelope(data=coverage_gaps_from_snapshot(snapshot).as_dict())
+
+
+@router.get("/markets/imported/{market_key}/ranking-diagnostics")
+def imported_market_ranking_diagnostics(
+    market_key: str,
+    as_of: date | None = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    snapshot = _market_snapshot_or_response(session, market_key, as_of=as_of)
+    if isinstance(snapshot, JSONResponse):
+        return snapshot
+    return lightweight_success_envelope(data=ranking_exclusions_from_snapshot(snapshot).as_dict())
+
+
+@router.get("/markets/imported/{market_key}/refresh-readiness")
+def imported_market_refresh_readiness(
+    market_key: str,
+    as_of: date | None = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    snapshot = _market_snapshot_or_response(session, market_key, as_of=as_of)
+    if isinstance(snapshot, JSONResponse):
+        return snapshot
+    return lightweight_success_envelope(data=refresh_readiness_from_snapshot(snapshot).as_dict())
+
+
+@router.get("/markets/imported/{market_key}/diff-preview")
+def imported_market_diff_preview(
+    market_key: str,
+    as_of: date | None = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    try:
+        preview = build_import_diff_preview(session, market_key, as_of=as_of)
+    except UnknownCuratedMarket:
+        return _unknown_market_response()
+    except CuratedMarketRegistryUnavailable:
+        return _registry_unavailable_response()
+    return lightweight_success_envelope(data=preview.as_dict())
+
+
 @router.get("/regions/search")
 def search_regions_route(
     query: str | None = Query(default=None, min_length=1),
@@ -115,6 +251,40 @@ def search_regions_route(
         min_opportunity_score=min_opportunity_score,
     )
     return lightweight_success_envelope(data=result.model_dump(mode="json"))
+
+
+def _market_snapshot_or_response(
+    session: Session,
+    market_key: str,
+    *,
+    as_of: date | None,
+):
+    try:
+        return build_market_operational_snapshot(session, market_key, as_of=as_of)
+    except UnknownCuratedMarket:
+        return _unknown_market_response()
+    except CuratedMarketRegistryUnavailable:
+        return _registry_unavailable_response()
+
+
+def _unknown_market_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content=error_envelope(
+            code=NOT_FOUND,
+            message="Imported market not found.",
+        ),
+    )
+
+
+def _registry_unavailable_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content=error_envelope(
+            code=VALIDATION_ERROR,
+            message="Curated market registry is not available.",
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

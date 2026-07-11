@@ -1,0 +1,4 @@
+company_id,region_id,presence_status,presence_basis,office_location_summary,source_ref
+cmp_google,chicago,present,office_plus_hiring,Chicago product engineering and cloud customer office,src_chicago_presence_2026_06
+cmp_microsoft,chicago,present,office_plus_operations,Chicago enterprise software and cloud customer office,src_chicago_presence_2026_06
+cmp_jpmorgan_chase,chicago,present,office_plus_hiring,Chicago data platform and financial technology teams,src_chicago_presence_2026_06

@@ -1,0 +1,4 @@
+company_id,company_name,sector,public_or_private,website_domain,source_ref
+cmp_google,Google,internet,public,google.com,src_austin_company_roster_2026_06
+cmp_deloitte,Deloitte,software,private,deloitte.com,src_austin_company_roster_2026_06
+cmp_lone_star_cloud,Lone Star Cloud,cloud,private,lone-star-cloud.example,src_austin_company_roster_2026_06

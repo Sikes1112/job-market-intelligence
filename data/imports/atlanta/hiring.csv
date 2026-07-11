@@ -1,0 +1,4 @@
+company_id,region_id,role_family,active_posting_count,active_posting_count_status,annualized_trend_signal,seasonal_student_hiring_signal,source_ref
+cmp_microsoft,atlanta,ai_cloud_adjacent,4,positive_observed,positive,moderate,src_atlanta_hiring_2026_06
+cmp_cisco,atlanta,cybersecurity,0,zero_observed,neutral,none,src_atlanta_hiring_2026_06
+cmp_jpmorgan_chase,atlanta,product,,unknown,unknown,unknown,src_atlanta_hiring_2026_06

@@ -1,0 +1,11 @@
+[
+  {
+    "region_id": "chicago",
+    "region_name": "Chicago",
+    "region_type": "greater_region",
+    "country": "US",
+    "state_codes": ["IL"],
+    "primary_city": "Chicago",
+    "source_ref": "src_chicago_region_2026_06"
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "region_id": "greater_boston",
+    "region_name": "Greater Boston",
+    "region_type": "greater_region",
+    "country": "US",
+    "state_codes": ["MA"],
+    "primary_city": "Boston",
+    "source_ref": "src_boston_region_2026_06"
+  }
+]

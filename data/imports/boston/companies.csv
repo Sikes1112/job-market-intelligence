@@ -1,0 +1,4 @@
+company_id,company_name,sector,public_or_private,website_domain,source_ref
+cmp_google,Google,internet,public,google.com,src_boston_company_roster_2026_06
+cmp_beacon_robotics,Beacon Robotics,hardware,private,beacon-robotics.example,src_boston_company_roster_2026_06
+cmp_charles_ai_health,Charles AI Health,ai,private,charles-ai-health.example,src_boston_company_roster_2026_06

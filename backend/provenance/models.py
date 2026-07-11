@@ -32,6 +32,7 @@ class SourceRef(Base, CanonicalMixin):
         String(32), nullable=False
     )
     confidence: Mapped[str] = mapped_column(String(32), nullable=False)
+    freshness_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     data_origin: Mapped[str] = mapped_column(String(64), nullable=False)
     notes: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
@@ -71,6 +72,7 @@ class SourceObservation(Base, CanonicalMixin):
         String(32), nullable=False
     )
     confidence: Mapped[str] = mapped_column(String(32), nullable=False)
+    freshness_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     data_origin: Mapped[str] = mapped_column(String(64), nullable=False)
     observation_status: Mapped[str] = mapped_column(String(64), nullable=False)
     notes: Mapped[str | None] = mapped_column(String(2048), nullable=True)
@@ -129,6 +131,7 @@ class FactSourceLink(Base, CanonicalMixin):
         String(32), nullable=False
     )
     confidence: Mapped[str] = mapped_column(String(32), nullable=False)
+    freshness_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     data_origin: Mapped[str] = mapped_column(String(64), nullable=False)
     observation_status: Mapped[str] = mapped_column(String(64), nullable=False)
     notes: Mapped[str | None] = mapped_column(String(2048), nullable=True)

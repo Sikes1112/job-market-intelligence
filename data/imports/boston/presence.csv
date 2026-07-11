@@ -1,0 +1,4 @@
+company_id,region_id,presence_status,presence_basis,office_location_summary,source_ref
+cmp_google,greater_boston,present,office_plus_hiring,Cambridge product and engineering office,src_boston_presence_2026_06
+cmp_beacon_robotics,greater_boston,present,office_plus_operations,Boston robotics engineering and university-adjacent operations,src_boston_presence_2026_06
+cmp_charles_ai_health,greater_boston,present,office_plus_hiring,Cambridge AI health software team,src_boston_presence_2026_06

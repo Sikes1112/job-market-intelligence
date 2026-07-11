@@ -48,6 +48,17 @@ import type {
   InstitutionReportCreateRequest,
   InstitutionReportGeneratePayload,
   InstitutionReportListPayload,
+  ImportedCoverageGapReport,
+  ImportedDatasetHealthReport,
+  ImportedDiffPreview,
+  ImportedFactHealthReport,
+  ImportedMarketHealthOverviewPayload,
+  ImportedMarketOperationDetails,
+  ImportedMarketOperationsViewPayload,
+  ImportedRankingExclusionReport,
+  ImportedRefreshReadinessReport,
+  ImportedSourceAgingReport,
+  MarketCoverageListPayload,
   EconomicDevelopmentProfile,
   EducationWorkforceAlignmentProfile,
   MonetizationAccessPreviewPayload,
@@ -334,6 +345,107 @@ export function getHealth() {
 
 export function getRegions() {
   return request<{ regions: RegionListItem[] }>("/regions");
+}
+
+export function getImportedMarkets() {
+  return request<MarketCoverageListPayload>("/markets/imported");
+}
+
+export function getImportedMarketHealthOverview() {
+  return request<ImportedMarketHealthOverviewPayload>("/markets/imported/health");
+}
+
+export function getImportedMarketHealth(marketKey: string) {
+  return request<ImportedDatasetHealthReport>(
+    `/markets/imported/${encodeURIComponent(marketKey)}/health`,
+  );
+}
+
+export function getImportedMarketSources(marketKey: string) {
+  return request<ImportedSourceAgingReport>(
+    `/markets/imported/${encodeURIComponent(marketKey)}/sources`,
+  );
+}
+
+export function getImportedMarketFacts(marketKey: string) {
+  return request<ImportedFactHealthReport>(
+    `/markets/imported/${encodeURIComponent(marketKey)}/facts`,
+  );
+}
+
+export function getImportedMarketGaps(marketKey: string) {
+  return request<ImportedCoverageGapReport>(
+    `/markets/imported/${encodeURIComponent(marketKey)}/gaps`,
+  );
+}
+
+export function getImportedMarketRankingDiagnostics(marketKey: string) {
+  return request<ImportedRankingExclusionReport>(
+    `/markets/imported/${encodeURIComponent(marketKey)}/ranking-diagnostics`,
+  );
+}
+
+export function getImportedMarketRefreshReadiness(marketKey: string) {
+  return request<ImportedRefreshReadinessReport>(
+    `/markets/imported/${encodeURIComponent(marketKey)}/refresh-readiness`,
+  );
+}
+
+export function getImportedMarketDiffPreview(marketKey: string) {
+  return request<ImportedDiffPreview>(
+    `/markets/imported/${encodeURIComponent(marketKey)}/diff-preview`,
+  );
+}
+
+export async function getImportedMarketOperationDetails(
+  marketKey: string,
+): Promise<ImportedMarketOperationDetails> {
+  const [sources, facts, gaps, ranking, readiness, diff] = await Promise.all([
+    getImportedMarketSources(marketKey),
+    getImportedMarketFacts(marketKey),
+    getImportedMarketGaps(marketKey),
+    getImportedMarketRankingDiagnostics(marketKey),
+    getImportedMarketRefreshReadiness(marketKey),
+    getImportedMarketDiffPreview(marketKey),
+  ]);
+  if (
+    !sources.data
+    || !facts.data
+    || !gaps.data
+    || !ranking.data
+    || !readiness.data
+    || !diff.data
+  ) {
+    throw new ApiError("Imported market diagnostics response was incomplete");
+  }
+  return {
+    sources: sources.data,
+    facts: facts.data,
+    gaps: gaps.data,
+    ranking: ranking.data,
+    readiness: readiness.data,
+    diff: diff.data,
+  };
+}
+
+export async function getImportedMarketOperationsView() {
+  const overview = await getImportedMarketHealthOverview();
+  if (!overview.data) {
+    throw new ApiError("Imported market health overview response was incomplete");
+  }
+  const detailEntries = await Promise.all(
+    overview.data.markets.map(async (market) => [
+      market.market_key,
+      await getImportedMarketOperationDetails(market.market_key),
+    ] as const),
+  );
+  return {
+    ...overview,
+    data: {
+      overview: overview.data,
+      details_by_market: Object.fromEntries(detailEntries),
+    } satisfies ImportedMarketOperationsViewPayload,
+  };
 }
 
 export function getRegion(regionId: string) {

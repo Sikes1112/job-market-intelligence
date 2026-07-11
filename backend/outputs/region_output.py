@@ -47,7 +47,8 @@ from backend.outputs.payloads import (
 from backend.outputs.types import BuildOutcome
 from backend.presence.models import CompanyRegionPresence
 from backend.scoring.models import RegionMarketScore
-from backend.shared.value_semantics import aggregate_counts
+from backend.shared.provenance import ObservationStatus
+from backend.shared.value_semantics import CountSemantics, aggregate_counts, classify_count
 
 _TOP_LIST_LIMIT = 25
 
@@ -164,19 +165,27 @@ def build_region_output(
             ),
             currently_hiring_flag=h.currently_hiring_flag,
             active_posting_count_now=h.active_posting_count_now,
+            active_posting_count_now_status=h.active_posting_count_now_status,
             posting_count_30d=h.posting_count_30d,
+            posting_count_30d_status=h.posting_count_30d_status,
             posting_count_90d=h.posting_count_90d,
+            posting_count_90d_status=h.posting_count_90d_status,
         )
         for h in top_hiring
     ]
 
     # --- entry-level summary --------------------------------------------
-    internship_semantics = aggregate_counts(
-        [e.internship_count for e in entry_level_list]
+    internship_semantics = _aggregate_statused_counts(
+        [(e.internship_count, e.internship_count_status) for e in entry_level_list]
     )
-    coop_semantics = aggregate_counts([e.coop_count for e in entry_level_list])
-    ft_semantics = aggregate_counts(
-        [e.entry_level_full_time_count for e in entry_level_list]
+    coop_semantics = _aggregate_statused_counts(
+        [(e.coop_count, e.coop_count_status) for e in entry_level_list]
+    )
+    ft_semantics = _aggregate_statused_counts(
+        [
+            (e.entry_level_full_time_count, e.entry_level_full_time_count_status)
+            for e in entry_level_list
+        ]
     )
     if not (
         internship_semantics.has_current_observed_value
@@ -208,8 +217,11 @@ def build_region_output(
     )
     entry_level_summary = EntryLevelSummary(
         internship_count_total=internship_semantics.value,
+        internship_count_total_status=internship_semantics.status.value,
         coop_count_total=coop_semantics.value,
+        coop_count_total_status=coop_semantics.status.value,
         entry_level_full_time_count_total=ft_semantics.value,
+        entry_level_full_time_count_total_status=ft_semantics.status.value,
         formal_early_career_program_count=formal_count,
         average_entry_level_access_score=avg_score,
         pairs_with_entry_level_access=len(nonzero_scores),
@@ -328,3 +340,41 @@ def build_region_output(
         freshness_expires_at=freshness_expires_at,
         warnings=tuple(warnings),
     )
+
+
+def _aggregate_statused_counts(
+    values: list[tuple[int | None, str | None]],
+) -> CountSemantics:
+    if not values:
+        return CountSemantics(value=None, status=ObservationStatus.NOT_COLLECTED)
+
+    statuses: list[ObservationStatus] = []
+    observed_values: list[int | None] = []
+    for value, raw_status in values:
+        try:
+            status = (
+                ObservationStatus(raw_status)
+                if raw_status
+                else classify_count(value).status
+            )
+        except ValueError:
+            status = None
+        if status is None:
+            return CountSemantics(value=None, status=ObservationStatus.UNKNOWN)
+        statuses.append(status)
+        if status in {
+            ObservationStatus.ZERO_OBSERVED,
+            ObservationStatus.POSITIVE_OBSERVED,
+        }:
+            observed_values.append(value)
+
+    for status in (
+        ObservationStatus.STALE,
+        ObservationStatus.NOT_COLLECTED,
+        ObservationStatus.UNKNOWN,
+        ObservationStatus.NOT_APPLICABLE,
+    ):
+        if status in statuses:
+            return CountSemantics(value=None, status=status)
+
+    return aggregate_counts(observed_values)

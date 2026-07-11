@@ -45,8 +45,13 @@ class CompanyRegionEntryLevel(Base, CanonicalMixin):
     )
 
     internship_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    internship_count_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
     coop_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    coop_count_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
     entry_level_full_time_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entry_level_full_time_count_status: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     formal_early_career_program_flag: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )

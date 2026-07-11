@@ -1208,6 +1208,345 @@ export type RegionScores = {
   score_ruleset_version?: string | null;
 };
 
+export type CountStatus =
+  | "unknown"
+  | "not_collected"
+  | "not_applicable"
+  | "zero_observed"
+  | "positive_observed"
+  | "stale"
+  | "conflicting"
+  | "low_confidence"
+  | string;
+
+export type ImportDisplayMetadata = {
+  data_basis: "real_imported" | "mixed" | "unknown" | string;
+  imported_data: boolean;
+  imported_data_label: string;
+  source_backed: boolean;
+  source_label: string;
+  coverage_label: string;
+  freshness_status: "current" | "stale" | "unknown" | string;
+  freshness_label: string;
+  trust_label: string | null;
+  risk_label: string | null;
+  ranking_influence_allowed: boolean | null;
+  ranking_label: string;
+};
+
+export type MarketCoverageSummary = {
+  market_key: string;
+  region_id: string;
+  display_name: string;
+  coverage_status: string;
+  import_status: string;
+  company_count: number;
+  presence_fact_count: number;
+  hiring_fact_count: number;
+  entry_level_fact_count: number;
+  source_count: number;
+  freshness_status: FreshnessStatus | string;
+  ranking_eligible_fact_count: number;
+  ranking_excluded_fact_count: number;
+  unknown_count_dimensions: number;
+  observed_zero_count_dimensions: number;
+  count_status_breakdown: Partial<Record<CountStatus, number>>;
+  last_curated_at: string;
+  last_import_status: string;
+  last_refresh_status: string;
+  imported_data_label: string;
+  coverage_label: string;
+  freshness_label: string;
+  source_label: string;
+  trust_label: string;
+  risk_label: string;
+  ranking_label: string;
+  comparison_available: boolean;
+  comparison_label: string;
+};
+
+export type MarketCoverageListPayload = {
+  markets: MarketCoverageSummary[];
+  market_count: number;
+};
+
+export type ImportedMarketHealthStatus =
+  | "healthy"
+  | "needs_refresh"
+  | "limited_coverage"
+  | "stale_sources"
+  | "validation_failed"
+  | "ranking_limited"
+  | (string & {});
+
+export type ImportedSourceFreshnessStatus =
+  | "current"
+  | "aging"
+  | "stale"
+  | "expired"
+  | "needs_review"
+  | (string & {});
+
+export type ImportedRefreshReadinessStatus =
+  | "ready"
+  | "needs_source_refresh"
+  | "needs_coverage_expansion"
+  | "needs_validation_fix"
+  | "needs_ranking_review"
+  | "not_ready"
+  | (string & {});
+
+export type ImportedGapSeverity =
+  | "low"
+  | "medium"
+  | "high"
+  | "critical"
+  | (string & {});
+
+export type ImportedDiffRisk =
+  | "none"
+  | "low"
+  | "medium"
+  | "high"
+  | "blocking"
+  | (string & {});
+
+export type ImportedFactArea =
+  | "market_identity"
+  | "region"
+  | "company"
+  | "source"
+  | "presence"
+  | "hiring"
+  | "entry_level"
+  | (string & {});
+
+export type ImportedMaintenancePriority =
+  | "low"
+  | "medium"
+  | "high"
+  | "critical"
+  | (string & {});
+
+export type ImportedRankingExclusionCategory =
+  | "stale_source"
+  | "low_confidence"
+  | "insufficient_evidence"
+  | "unsupported_freshness"
+  | "source_not_allowed"
+  | "missing_source"
+  | "trust_or_risk_limited"
+  | "unassessed"
+  | "default_denied"
+  | (string & {});
+
+export type ImportedMarketOperationalCounts = {
+  company_count: number;
+  source_count: number;
+  presence_fact_count: number;
+  hiring_fact_count: number;
+  entry_level_fact_count: number;
+  total_fact_count: number;
+  unknown_fact_count: number;
+  observed_zero_fact_count: number;
+  ranking_eligible_fact_count: number;
+  ranking_excluded_fact_count: number;
+  stale_fact_count: number;
+  stale_source_count: number;
+};
+
+export type ImportedMarketPlatformSummary = {
+  registered_market_count: number;
+  healthy_market_count: number;
+  markets_needing_refresh: number;
+  markets_with_limited_coverage: number;
+  markets_with_stale_sources: number;
+  total_stale_source_count: number;
+  total_ranking_excluded_fact_count: number;
+  highest_priority_maintenance_market: string | null;
+  recommended_next_maintenance_action: string;
+  overall_health_status: ImportedMarketHealthStatus;
+};
+
+export type ImportedDatasetHealthReport = {
+  market_key: string;
+  market_name: string;
+  validation_ok: boolean;
+  missing_required_files: string[];
+  counts: ImportedMarketOperationalCounts;
+  oldest_source_age_days: number | null;
+  newest_source_age_days: number | null;
+  coverage_summary: string;
+  freshness_summary: string;
+  health_status: ImportedMarketHealthStatus;
+  reasons: string[];
+  recommended_next_action: string;
+};
+
+export type ImportedMarketHealthOverviewPayload = {
+  summary: ImportedMarketPlatformSummary;
+  markets: ImportedDatasetHealthReport[];
+};
+
+export type ImportedSourceDiagnostic = {
+  source_id: string;
+  source_label: string;
+  source_type: string;
+  observed_date: string | null;
+  collected_date: string | null;
+  age_days: number | null;
+  freshness_status: ImportedSourceFreshnessStatus;
+  is_stale: boolean;
+  license_or_terms_category: string | null;
+  fact_usage_count: number;
+  affected_areas: string[];
+  affects_ranking_eligibility: boolean;
+  impact: string;
+};
+
+export type ImportedSourceAgingReport = {
+  market_key: string;
+  source_count: number;
+  stale_source_count: number;
+  aging_source_count: number;
+  expired_source_count: number;
+  oldest_source_age_days: number | null;
+  newest_source_age_days: number | null;
+  oldest_sources: ImportedSourceDiagnostic[];
+  greatest_fact_impact_sources: ImportedSourceDiagnostic[];
+  important_stale_sources: ImportedSourceDiagnostic[];
+  sources: ImportedSourceDiagnostic[];
+};
+
+export type ImportedFactHealthFinding = {
+  fact_type: string;
+  fact_id: string;
+  company_id: string | null;
+  region_id: string | null;
+  area: ImportedFactArea;
+  ranking_eligible: boolean;
+  ranking_excluded_reasons: string[];
+  freshness_status: string;
+  confidence: string;
+  observation_status: string;
+  source_count: number;
+  public_message: string;
+};
+
+export type ImportedFactHealthReport = {
+  market_key: string;
+  total_facts: number;
+  ranking_eligible_facts: number;
+  ranking_excluded_facts: number;
+  stale_facts: number;
+  low_confidence_facts: number;
+  unknown_facts: number;
+  observed_zero_facts: number;
+  missing_useful_dimension_facts: number;
+  weak_source_coverage_facts: number;
+  trust_or_risk_limited_facts: number;
+  limiting_categories: string[];
+  findings: ImportedFactHealthFinding[];
+};
+
+export type ImportedCoverageGap = {
+  gap_code: string;
+  severity: ImportedGapSeverity;
+  market_key: string;
+  affected_area: ImportedFactArea;
+  message: string;
+  supporting_counts: Record<string, number | string | null>;
+  recommended_action: string;
+  estimated_impact: string;
+};
+
+export type ImportedCoverageGapReport = {
+  market_key: string;
+  gap_count: number;
+  highest_severity: ImportedGapSeverity | null;
+  gaps: ImportedCoverageGap[];
+};
+
+export type ImportedRankingExclusionDiagnostic = {
+  fact_type: string;
+  fact_id: string;
+  area: ImportedFactArea;
+  reason_categories: ImportedRankingExclusionCategory[];
+  explanation: string;
+};
+
+export type ImportedRankingExclusionReport = {
+  market_key: string;
+  excluded_fact_count: number;
+  total_fact_count: number;
+  ranking_limited_ratio: number;
+  affected_areas: string[];
+  reason_counts: Record<string, number>;
+  stale_source_exclusion_count: number;
+  low_confidence_exclusion_count: number;
+  insufficient_evidence_exclusion_count: number;
+  unsupported_freshness_exclusion_count: number;
+  trust_or_risk_limitation_count: number;
+  diagnostics: ImportedRankingExclusionDiagnostic[];
+};
+
+export type ImportedRefreshReadinessReport = {
+  market_key: string;
+  readiness_status: ImportedRefreshReadinessStatus;
+  blocking_conditions: string[];
+  warnings: string[];
+  recommended_next_action: string;
+  ordered_actions: string[];
+  reasons: string[];
+  expected_impact: string;
+  maintenance_priority: ImportedMaintenancePriority;
+  priority_score: number;
+};
+
+export type ImportedDiffChange = {
+  area: ImportedFactArea;
+  change_type: string;
+  record_id: string;
+  field: string | null;
+  before: unknown;
+  after: unknown;
+  message: string;
+};
+
+export type ImportedDiffWarning = {
+  code: string;
+  severity: ImportedDiffRisk;
+  area: ImportedFactArea;
+  record_id: string | null;
+  message: string;
+};
+
+export type ImportedDiffPreview = {
+  market_key: string;
+  validation_ok: boolean;
+  overall_diff_risk: ImportedDiffRisk;
+  risk_reasons: string[];
+  blocking_issues: ImportedDiffWarning[];
+  warnings: ImportedDiffWarning[];
+  summary_counts: Record<string, number>;
+  narrative_summary: string;
+  changes: ImportedDiffChange[];
+};
+
+export type ImportedMarketOperationDetails = {
+  sources: ImportedSourceAgingReport;
+  facts: ImportedFactHealthReport;
+  gaps: ImportedCoverageGapReport;
+  ranking: ImportedRankingExclusionReport;
+  readiness: ImportedRefreshReadinessReport;
+  diff: ImportedDiffPreview;
+};
+
+export type ImportedMarketOperationsViewPayload = {
+  overview: ImportedMarketHealthOverviewPayload;
+  details_by_market: Record<string, ImportedMarketOperationDetails>;
+};
+
 export type RegionCompany = {
   company_id: string;
   company_name: string;
@@ -1216,6 +1555,7 @@ export type RegionCompany = {
   is_major_tech: boolean;
   is_mag7: boolean;
   prestige_score: number | null;
+  import_metadata?: ImportDisplayMetadata | null;
 };
 
 export type HiringCompany = {
@@ -1223,8 +1563,24 @@ export type HiringCompany = {
   company_name: string;
   currently_hiring_flag: boolean;
   active_posting_count_now: number | null;
+  active_posting_count_now_status?: CountStatus | null;
   posting_count_30d: number | null;
+  posting_count_30d_status?: CountStatus | null;
   posting_count_90d: number | null;
+  posting_count_90d_status?: CountStatus | null;
+  import_metadata?: ImportDisplayMetadata | null;
+};
+
+export type EntryLevelSummary = {
+  internship_count_total?: number | null;
+  internship_count_total_status?: CountStatus | null;
+  coop_count_total?: number | null;
+  coop_count_total_status?: CountStatus | null;
+  entry_level_full_time_count_total?: number | null;
+  entry_level_full_time_count_total_status?: CountStatus | null;
+  formal_early_career_program_count?: number | null;
+  average_entry_level_access_score?: number | null;
+  pairs_with_entry_level_access?: number | null;
 };
 
 export type RegionDetail = {
@@ -1238,9 +1594,10 @@ export type RegionDetail = {
   priority_market?: PriorityMarket | null;
   summary?: Record<string, number>;
   scores: RegionScores | null;
+  import_metadata?: ImportDisplayMetadata | null;
   top_companies_present?: RegionCompany[];
   top_companies_hiring?: HiringCompany[];
-  entry_level_summary?: Record<string, number | null>;
+  entry_level_summary?: EntryLevelSummary;
   major_tech_summary?: { count: number; company_ids: string[] };
   mag7_summary?: { count: number; company_ids: string[] };
 };
@@ -1257,12 +1614,14 @@ export type CompanyDetail = {
   is_major_tech: boolean;
   is_mag7: boolean;
   prestige_score: number | null;
+  import_metadata?: ImportDisplayMetadata | null;
   regions_present?: Array<{
     region_id: string;
     region_display_name: string;
     presence_status: string;
     presence_basis: string | null;
     presence_confidence: string | null;
+    import_metadata?: ImportDisplayMetadata | null;
     coverage?: CoverageMetadata;
     sector_coverage?: SectorCoverageMap;
     priority_market?: PriorityMarket | null;
@@ -1272,8 +1631,12 @@ export type CompanyDetail = {
     region_display_name: string;
     currently_hiring_flag: boolean;
     active_posting_count_now: number | null;
+    active_posting_count_now_status?: CountStatus | null;
     posting_count_30d: number | null;
+    posting_count_30d_status?: CountStatus | null;
     posting_count_90d: number | null;
+    posting_count_90d_status?: CountStatus | null;
+    import_metadata?: ImportDisplayMetadata | null;
     coverage?: CoverageMetadata;
     sector_coverage?: SectorCoverageMap;
     priority_market?: PriorityMarket | null;
@@ -1282,11 +1645,15 @@ export type CompanyDetail = {
     region_id: string;
     region_display_name: string;
     internship_count: number | null;
+    internship_count_status?: CountStatus | null;
     coop_count: number | null;
+    coop_count_status?: CountStatus | null;
     entry_level_full_time_count: number | null;
+    entry_level_full_time_count_status?: CountStatus | null;
     formal_early_career_program_flag: boolean;
     entry_level_access_score: number | null;
     entry_level_confidence: string | null;
+    import_metadata?: ImportDisplayMetadata | null;
     coverage?: CoverageMetadata;
     sector_coverage?: SectorCoverageMap;
     priority_market?: PriorityMarket | null;
@@ -1357,6 +1724,7 @@ export type ComparisonDetail = {
     region_id: string;
     display_name: string;
     scores: RegionScores | null;
+    import_metadata?: ImportDisplayMetadata | null;
     coverage?: CoverageMetadata;
     sector_coverage?: SectorCoverageMap;
     priority_market?: PriorityMarket | null;
@@ -1365,6 +1733,7 @@ export type ComparisonDetail = {
     region_id: string;
     display_name: string;
     scores: RegionScores | null;
+    import_metadata?: ImportDisplayMetadata | null;
     coverage?: CoverageMetadata;
     sector_coverage?: SectorCoverageMap;
     priority_market?: PriorityMarket | null;

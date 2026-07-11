@@ -33,6 +33,8 @@ import {
   getBillingStatus,
   getCareerPlatformRegistry,
   getHealth,
+  getImportedMarkets,
+  getImportedMarketOperationsView,
   getInstitutionBenchmarks,
   getInstitutionCurrentOrganizations,
   getInstitutionCurriculumMarketMap,
@@ -99,6 +101,13 @@ import {
   sectorCoverageLevelLabel,
   sectorCoverageTone,
 } from "./dataQuality";
+import {
+  CountStatusValue,
+  ImportedMarketBadges,
+  ImportedMarketCoveragePanel,
+} from "./ImportedMarketDisplay";
+import { ImportedMarketOperationsPanel } from "./ImportedMarketOperations";
+import { formatCountStatus } from "./importedMarketFormat";
 import type {
   ApiEnvelope,
   AccountDeactivationResult,
@@ -122,6 +131,7 @@ import type {
   CurrentUserProfile,
   ExplanationEvidencePacket,
   ExplanationResult,
+  EntryLevelSummary,
   FreshnessSourceSummary,
   FreshnessStatus,
   InstitutionAggregateItem,
@@ -162,6 +172,8 @@ import type {
   InstitutionReportSummary,
   InstitutionReportType,
   InstitutionWorkforceReportPayload,
+  ImportedMarketOperationsViewPayload,
+  MarketCoverageListPayload,
   MonetizationAccessPreviewPayload,
   MonetizationFeature,
   MonetizationFeatureKey,
@@ -4499,6 +4511,56 @@ function StatGrid({ values }: { values: Record<string, unknown> }) {
   );
 }
 
+function EntryLevelSummaryGrid({ summary }: { summary?: EntryLevelSummary | null }) {
+  if (!summary) {
+    return <EmptyState title="No entry-level summary" body="No early-career summary was returned." />;
+  }
+
+  return (
+    <div className="stat-grid">
+      <div className="stat-card">
+        <span>Internships</span>
+        <strong>
+          <CountStatusValue
+            value={summary.internship_count_total}
+            status={summary.internship_count_total_status}
+          />
+        </strong>
+      </div>
+      <div className="stat-card">
+        <span>Co-ops</span>
+        <strong>
+          <CountStatusValue
+            value={summary.coop_count_total}
+            status={summary.coop_count_total_status}
+          />
+        </strong>
+      </div>
+      <div className="stat-card">
+        <span>Entry-level full-time</span>
+        <strong>
+          <CountStatusValue
+            value={summary.entry_level_full_time_count_total}
+            status={summary.entry_level_full_time_count_total_status}
+          />
+        </strong>
+      </div>
+      <div className="stat-card">
+        <span>Formal programs</span>
+        <strong>{formatValue(summary.formal_early_career_program_count)}</strong>
+      </div>
+      <div className="stat-card">
+        <span>Average access score</span>
+        <strong>{formatValue(summary.average_entry_level_access_score)}</strong>
+      </div>
+      <div className="stat-card">
+        <span>Pairs with access</span>
+        <strong>{formatValue(summary.pairs_with_entry_level_access)}</strong>
+      </div>
+    </div>
+  );
+}
+
 function RegionScoreGrid({ scores }: { scores: RegionScores | null | undefined }) {
   if (!scores) {
     return <EmptyState title="Scores unavailable" body="No score object was returned for this region." />;
@@ -4729,34 +4791,47 @@ function CompanyList({
 
   return (
     <div className="company-list">
-      {companies.map((company) => (
-        <button
-          className="company-row"
-          key={company.company_id}
-          type="button"
-          onClick={() => onSelectCompany(company.company_id)}
-        >
-          <span>
-            <strong>{company.company_name}</strong>
-            <small>
-              {mode === "present"
-                ? `${formatValue("sector_primary" in company ? company.sector_primary : null)} · ${formatValue(
-                    "eligibility_status" in company ? company.eligibility_status : null,
-                  )}`
-                : `${formatValue("active_posting_count_now" in company ? company.active_posting_count_now : null)} active · ${formatValue(
-                    "posting_count_90d" in company ? company.posting_count_90d : null,
-                  )} in 90d`}
-            </small>
-          </span>
-          <span className="row-arrow">View</span>
-        </button>
-      ))}
+      {companies.map((company) => {
+        const hiringCopy =
+          "active_posting_count_now" in company
+            ? `${formatCountStatus(
+                company.active_posting_count_now,
+                company.active_posting_count_now_status,
+              )} active · ${formatCountStatus(
+                company.posting_count_90d,
+                company.posting_count_90d_status,
+              )} in 90d`
+            : "";
+        return (
+          <button
+            className="company-row"
+            key={company.company_id}
+            type="button"
+            onClick={() => onSelectCompany(company.company_id)}
+          >
+            <span>
+              <strong>{company.company_name}</strong>
+              <small>
+                {mode === "present"
+                  ? `${formatValue("sector_primary" in company ? company.sector_primary : null)} · ${formatValue(
+                      "eligibility_status" in company ? company.eligibility_status : null,
+                    )}`
+                  : hiringCopy}
+              </small>
+              <ImportedMarketBadges metadata={company.import_metadata} />
+            </span>
+            <span className="row-arrow">View</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 function ExploreMarkets({
   health,
+  marketCoverage,
+  marketOperations,
   regions,
   regionSearch,
   regionDetails,
@@ -4765,6 +4840,8 @@ function ExploreMarkets({
   onSelectRegion,
 }: {
   health: LoadState<{ service: string }>;
+  marketCoverage: LoadState<MarketCoverageListPayload>;
+  marketOperations: LoadState<ImportedMarketOperationsViewPayload>;
   regions: LoadState<{ regions: RegionListItem[] }>;
   regionSearch: LoadState<RegionSearchResponse>;
   regionDetails: Record<string, ApiEnvelope<RegionDetail>>;
@@ -4845,6 +4922,19 @@ function ExploreMarkets({
           feature="full_market_coverage"
           title="Broader market coverage is an added-value plan feature."
           body="The demo still shows useful basic exploration; paid coverage expands the maintained market catalog without changing recommendation ranking."
+        />
+      </ShellCard>
+
+      <ShellCard title="Imported markets" eyebrow="Curated coverage">
+        {marketCoverage.loading ? <LoadingBlock label="Loading imported market coverage" /> : null}
+        {marketCoverage.error ? (
+          <ErrorState message={`Imported market coverage unavailable: ${marketCoverage.error}`} />
+        ) : null}
+        <ImportedMarketCoveragePanel markets={marketCoverage.envelope?.data?.markets ?? []} />
+        <ImportedMarketOperationsPanel
+          error={marketOperations.error}
+          loading={marketOperations.loading}
+          payload={marketOperations.envelope?.data ?? null}
         />
       </ShellCard>
 
@@ -5072,7 +5162,7 @@ function RegionExplorer({
   const hasSelectedRegion = regions.some((item) => item.region_id === selectedRegionId);
   const source = sourceState.envelope?.data;
   const roleCounts = roleFamilyCounts(roleFamilyState.envelope?.data);
-  const entrySummary = region?.entry_level_summary ?? {};
+  const entrySummary = region?.entry_level_summary ?? null;
   const savedRegionArtifact = savedArtifactsByKey.get(savedArtifactKey("region", selectedRegionId));
 
   return (
@@ -5172,6 +5262,7 @@ function RegionExplorer({
                     <PriorityMarketBadge priorityMarket={region.priority_market} />
                   </div>
                 ) : null}
+                <ImportedMarketBadges metadata={region.import_metadata} />
                 <h3>What this output contains</h3>
                 <p className="meta-copy">
                   Counts are returned facts from the prepared output. Missing fields are shown
@@ -5249,7 +5340,7 @@ function RegionExplorer({
                 Internship, co-op, full-time, and formal program signals are separate inputs.
                 Unknown totals are not treated as zero.
               </p>
-              <StatGrid values={entrySummary} />
+              <EntryLevelSummaryGrid summary={entrySummary} />
             </ShellCard>
 
             <ShellCard title="Role-family concentration" eyebrow="Derived from company search rows">
@@ -5459,6 +5550,7 @@ function CompanyExplorer({
                 </span>
               </div>
             </div>
+            <ImportedMarketBadges metadata={company.import_metadata} />
             <MetadataPanel envelope={companyState.envelope} source={source} />
           </ShellCard>
 
@@ -5531,6 +5623,7 @@ function CompanyExplorer({
                       <CoverageBadge coverage={region.coverage} />
                       <PriorityMarketBadge priorityMarket={region.priority_market} />
                       <CoverageInlineNote coverage={region.coverage} />
+                      <ImportedMarketBadges metadata={region.import_metadata} />
                       <span>
                         {formatValue(region.presence_basis)} · {formatValue(region.presence_confidence)}
                       </span>
@@ -5559,9 +5652,16 @@ function CompanyExplorer({
                       <CoverageBadge coverage={region.coverage} />
                       <PriorityMarketBadge priorityMarket={region.priority_market} />
                       <CoverageInlineNote coverage={region.coverage} />
+                      <ImportedMarketBadges metadata={region.import_metadata} />
                       <span>
-                        {formatValue(region.active_posting_count_now)} active ·{" "}
-                        {formatValue(region.posting_count_90d)} in 90d
+                        {formatCountStatus(
+                          region.active_posting_count_now,
+                          region.active_posting_count_now_status,
+                        )} active ·{" "}
+                        {formatCountStatus(
+                          region.posting_count_90d,
+                          region.posting_count_90d_status,
+                        )} in 90d
                       </span>
                       <span className={region.currently_hiring_flag ? "badge badge-fresh" : "badge badge-unknown"}>
                         Currently hiring: {formatValue(region.currently_hiring_flag)}
@@ -5589,19 +5689,48 @@ function CompanyExplorer({
                     <CoverageBadge coverage={region.coverage} />
                     <PriorityMarketBadge priorityMarket={region.priority_market} />
                     <CoverageInlineNote coverage={region.coverage} />
+                    <ImportedMarketBadges metadata={region.import_metadata} />
                     <span className={qualityBadgeClass(confidenceTone(region.entry_level_confidence))}>
                       Confidence: {formatValue(region.entry_level_confidence)}
                     </span>
                     <ScoreCard label="Access score" value={region.entry_level_access_score} />
-                    <StatGrid
-                      values={{
-                        internships: region.internship_count,
-                        coops: region.coop_count,
-                        entry_level_full_time: region.entry_level_full_time_count,
-                        formal_program: region.formal_early_career_program_flag,
-                        confidence: region.entry_level_confidence,
-                      }}
-                    />
+                    <div className="stat-grid">
+                      <div className="stat-card">
+                        <span>Internships</span>
+                        <strong>
+                          <CountStatusValue
+                            value={region.internship_count}
+                            status={region.internship_count_status}
+                          />
+                        </strong>
+                      </div>
+                      <div className="stat-card">
+                        <span>Co-ops</span>
+                        <strong>
+                          <CountStatusValue
+                            value={region.coop_count}
+                            status={region.coop_count_status}
+                          />
+                        </strong>
+                      </div>
+                      <div className="stat-card">
+                        <span>Entry-level full-time</span>
+                        <strong>
+                          <CountStatusValue
+                            value={region.entry_level_full_time_count}
+                            status={region.entry_level_full_time_count_status}
+                          />
+                        </strong>
+                      </div>
+                      <div className="stat-card">
+                        <span>Formal program</span>
+                        <strong>{formatValue(region.formal_early_career_program_flag)}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span>Confidence</span>
+                        <strong>{formatValue(region.entry_level_confidence)}</strong>
+                      </div>
+                    </div>
                     <SectorCoveragePanel sectorCoverage={region.sector_coverage} />
                   </div>
                 ))}
@@ -5772,6 +5901,7 @@ function ComparisonView({
               <div className="source-compare-card">
                 <strong>{regionALabel}</strong>
                 <PriorityMarketBadge priorityMarket={comparison.region_a?.priority_market} />
+                <ImportedMarketBadges metadata={comparison.region_a?.import_metadata} />
                 <CoveragePanel
                   coverage={comparison.region_a?.coverage}
                   sectorCoverage={comparison.region_a?.sector_coverage}
@@ -5780,6 +5910,7 @@ function ComparisonView({
               <div className="source-compare-card">
                 <strong>{regionBLabel}</strong>
                 <PriorityMarketBadge priorityMarket={comparison.region_b?.priority_market} />
+                <ImportedMarketBadges metadata={comparison.region_b?.import_metadata} />
                 <CoveragePanel
                   coverage={comparison.region_b?.coverage}
                   sectorCoverage={comparison.region_b?.sector_coverage}
@@ -10077,6 +10208,10 @@ function App() {
   );
   const [health, setHealth] = useState<LoadState<{ service: string }>>(emptyLoadState);
   const [regions, setRegions] = useState<LoadState<{ regions: RegionListItem[] }>>(emptyLoadState);
+  const [marketCoverageState, setMarketCoverageState] =
+    useState<LoadState<MarketCoverageListPayload>>(emptyLoadState);
+  const [marketOperationsState, setMarketOperationsState] =
+    useState<LoadState<ImportedMarketOperationsViewPayload>>(emptyLoadState);
   const [regionDetails, setRegionDetails] = useState<Record<string, ApiEnvelope<RegionDetail>>>({});
   const [regionErrors, setRegionErrors] = useState<Record<string, string>>({});
   const [regionLoading, setRegionLoading] = useState<Record<string, boolean>>({});
@@ -11039,8 +11174,15 @@ function App() {
     async function loadInitialData() {
       setHealth((current) => ({ ...current, loading: true, error: null }));
       setRegions((current) => ({ ...current, loading: true, error: null }));
+      setMarketCoverageState((current) => ({ ...current, loading: true, error: null }));
+      setMarketOperationsState((current) => ({ ...current, loading: true, error: null }));
 
-      const [healthResult, regionsResult] = await Promise.allSettled([getHealth(), getRegions()]);
+      const [healthResult, regionsResult, marketCoverageResult, marketOperationsResult] = await Promise.allSettled([
+        getHealth(),
+        getRegions(),
+        getImportedMarkets(),
+        getImportedMarketOperationsView(),
+      ]);
 
       if (healthResult.status === "fulfilled") {
         setHealth({ loading: false, envelope: healthResult.value, error: null });
@@ -11064,6 +11206,38 @@ function App() {
           loading: false,
           envelope: null,
           error: regionsResult.reason instanceof Error ? regionsResult.reason.message : "Failed to load regions",
+        });
+      }
+
+      if (marketCoverageResult.status === "fulfilled") {
+        setMarketCoverageState({
+          loading: false,
+          envelope: marketCoverageResult.value,
+          error: null,
+        });
+      } else {
+        setMarketCoverageState({
+          loading: false,
+          envelope: null,
+          error: marketCoverageResult.reason instanceof Error
+            ? marketCoverageResult.reason.message
+            : "Failed to load imported market coverage",
+        });
+      }
+
+      if (marketOperationsResult.status === "fulfilled") {
+        setMarketOperationsState({
+          loading: false,
+          envelope: marketOperationsResult.value,
+          error: null,
+        });
+      } else {
+        setMarketOperationsState({
+          loading: false,
+          envelope: null,
+          error: marketOperationsResult.reason instanceof Error
+            ? marketOperationsResult.reason.message
+            : "Failed to load imported market operations",
         });
       }
     }
@@ -12504,6 +12678,8 @@ function App() {
         {route.page === "explore" ? (
           <ExploreMarkets
             health={health}
+            marketCoverage={marketCoverageState}
+            marketOperations={marketOperationsState}
             onOpenCompare={() => navigateTo(compareMarketsUrl(comparisonA, comparisonB))}
             onOpenRegionDetail={() => navigateTo(regionDetailUrl(selectedRegionId))}
             onSelectRegion={selectRegion}

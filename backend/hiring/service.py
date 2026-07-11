@@ -37,6 +37,7 @@ from backend.hiring.types import (
     SeasonalStudentHiringSignal,
 )
 from backend.presence.repository import PresenceRepository
+from backend.shared.provenance import ObservationStatus
 from backend.shared.state import ObjectState, validate_transition
 from backend.shared.versioning import next_version
 
@@ -60,11 +61,15 @@ class HiringSnapshot(BaseModel):
 
     currently_hiring_flag: bool
     active_posting_count_now: int | None = None
+    active_posting_count_now_status: ObservationStatus | None = None
     posting_count_30d: int | None = None
+    posting_count_30d_status: ObservationStatus | None = None
     posting_count_90d: int | None = None
+    posting_count_90d_status: ObservationStatus | None = None
     annualized_trend_signal: AnnualizedTrendSignal | None = None
     seasonal_student_hiring_signal: SeasonalStudentHiringSignal | None = None
     hiring_program_count: int | None = None
+    hiring_program_count_status: ObservationStatus | None = None
     role_family_summary: dict[str, int] | None = None
     hiring_confidence: HiringConfidence | None = None
     freshness_expires_at: datetime | None = None
@@ -240,8 +245,23 @@ class HiringService:
     ) -> None:
         row.currently_hiring_flag = snapshot.currently_hiring_flag
         row.active_posting_count_now = snapshot.active_posting_count_now
+        row.active_posting_count_now_status = (
+            snapshot.active_posting_count_now_status.value
+            if snapshot.active_posting_count_now_status
+            else None
+        )
         row.posting_count_30d = snapshot.posting_count_30d
+        row.posting_count_30d_status = (
+            snapshot.posting_count_30d_status.value
+            if snapshot.posting_count_30d_status
+            else None
+        )
         row.posting_count_90d = snapshot.posting_count_90d
+        row.posting_count_90d_status = (
+            snapshot.posting_count_90d_status.value
+            if snapshot.posting_count_90d_status
+            else None
+        )
         row.annualized_trend_signal = (
             snapshot.annualized_trend_signal.value
             if snapshot.annualized_trend_signal
@@ -253,6 +273,11 @@ class HiringService:
             else None
         )
         row.hiring_program_count = snapshot.hiring_program_count
+        row.hiring_program_count_status = (
+            snapshot.hiring_program_count_status.value
+            if snapshot.hiring_program_count_status
+            else None
+        )
         row.role_family_summary = snapshot.role_family_summary
         row.hiring_confidence = (
             snapshot.hiring_confidence.value if snapshot.hiring_confidence else None
@@ -282,14 +307,38 @@ class HiringService:
             if snapshot.hiring_confidence
             else None
         )
+        proposed_active_status = (
+            snapshot.active_posting_count_now_status.value
+            if snapshot.active_posting_count_now_status
+            else None
+        )
+        proposed_30d_status = (
+            snapshot.posting_count_30d_status.value
+            if snapshot.posting_count_30d_status
+            else None
+        )
+        proposed_90d_status = (
+            snapshot.posting_count_90d_status.value
+            if snapshot.posting_count_90d_status
+            else None
+        )
+        proposed_program_status = (
+            snapshot.hiring_program_count_status.value
+            if snapshot.hiring_program_count_status
+            else None
+        )
         return (
             row.currently_hiring_flag == snapshot.currently_hiring_flag
             and row.active_posting_count_now == snapshot.active_posting_count_now
+            and row.active_posting_count_now_status == proposed_active_status
             and row.posting_count_30d == snapshot.posting_count_30d
+            and row.posting_count_30d_status == proposed_30d_status
             and row.posting_count_90d == snapshot.posting_count_90d
+            and row.posting_count_90d_status == proposed_90d_status
             and row.annualized_trend_signal == proposed_trend
             and row.seasonal_student_hiring_signal == proposed_seasonal
             and row.hiring_program_count == snapshot.hiring_program_count
+            and row.hiring_program_count_status == proposed_program_status
             and row.role_family_summary == snapshot.role_family_summary
             and row.hiring_confidence == proposed_confidence
             and row.source_refs == snapshot.source_refs

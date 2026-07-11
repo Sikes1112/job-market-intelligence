@@ -1,0 +1,4 @@
+company_id,region_id,role_family,active_posting_count,active_posting_count_status,annualized_trend_signal,seasonal_student_hiring_signal,source_ref
+cmp_google,greater_boston,product,3,positive_observed,positive,moderate,src_boston_hiring_2026_06
+cmp_beacon_robotics,greater_boston,ai_cloud_adjacent,0,zero_observed,neutral,strong,src_boston_hiring_2026_06
+cmp_charles_ai_health,greater_boston,cybersecurity,,unknown,unknown,unknown,src_boston_hiring_2026_06

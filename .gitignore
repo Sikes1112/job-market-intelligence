@@ -27,7 +27,9 @@ build/
 logs/
 
 # Local data
-data/
+data/*
+!data/imports/
+!data/imports/**
 tmp/
 /demo.db
 /demo.db-*

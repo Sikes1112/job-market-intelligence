@@ -1,0 +1,4 @@
+company_id,company_name,sector,public_or_private,website_domain,source_ref
+cmp_microsoft,Microsoft,software,public,microsoft.com,src_atlanta_company_roster_2026_06
+cmp_cisco,Cisco Systems,cybersecurity,public,cisco.com,src_atlanta_company_roster_2026_06
+cmp_jpmorgan_chase,JPMorgan Chase,data,public,jpmorganchase.com,src_atlanta_company_roster_2026_06

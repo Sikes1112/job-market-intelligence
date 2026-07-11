@@ -1006,6 +1006,23 @@ legend {
   color: #5d574f;
 }
 
+.count-status {
+  display: inline-flex;
+  font-weight: 900;
+}
+
+.count-status-observed {
+  color: var(--green);
+}
+
+.count-status-warning {
+  color: #7a421c;
+}
+
+.count-status-unknown {
+  color: var(--muted);
+}
+
 .badge-error,
 .badge-failed {
   background: var(--red-soft);
@@ -1948,6 +1965,256 @@ legend {
   display: grid;
   gap: 0.65rem;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.imported-market-coverage {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.imported-market-summary {
+  margin-top: 0;
+}
+
+.imported-market-card {
+  align-content: start;
+}
+
+.imported-market-card > div > strong {
+  display: block;
+  font-size: 1.08rem;
+  line-height: 1.2;
+}
+
+.imported-market-card > div > small {
+  color: var(--muted);
+  display: block;
+  font-size: 0.82rem;
+  margin-top: 0.18rem;
+}
+
+.imported-market-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+}
+
+.imported-market-stat {
+  min-height: 74px;
+}
+
+.count-dimension-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.count-dimension-list span {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 0.36rem 0.58rem;
+}
+
+.imported-operations {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.imported-operations-copy {
+  color: var(--muted);
+  display: grid;
+  gap: 0.25rem;
+  max-width: 900px;
+}
+
+.imported-operations-copy p,
+.imported-operations-priority p,
+.imported-operations-action p {
+  margin: 0;
+}
+
+.imported-operations-overview {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.compact-header {
+  align-items: center;
+}
+
+.imported-operations-summary {
+  margin-top: 0;
+}
+
+.imported-operations-priority {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(180px, 0.35fr) minmax(0, 1fr);
+}
+
+.imported-operations-priority div,
+.imported-operations-action {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+}
+
+.imported-operations-priority span,
+.imported-operations-action span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.imported-operations-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.imported-operations-card {
+  gap: 0.85rem;
+}
+
+.imported-operations-card-header {
+  align-items: start;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.imported-operations-card-header small {
+  color: var(--muted);
+  display: block;
+  font-size: 0.82rem;
+  margin-top: 0.18rem;
+}
+
+.imported-operations-statuses {
+  justify-content: end;
+}
+
+.imported-status-badge {
+  text-transform: none;
+}
+
+.compact-empty {
+  padding: 0.75rem;
+}
+
+.imported-ops-details {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.85rem;
+  padding-top: 0.75rem;
+}
+
+.imported-ops-details > summary,
+.imported-diff-details > summary {
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.imported-ops-section {
+  display: grid;
+  gap: 0.65rem;
+  padding-top: 0.35rem;
+}
+
+.imported-ops-section h4 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.imported-ops-diagnostic-list,
+.condition-list ul {
+  display: grid;
+  gap: 0.55rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.imported-ops-diagnostic-list li,
+.condition-list li {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.65rem;
+}
+
+.imported-ops-diagnostic-list li > span:first-child,
+.condition-list strong {
+  font-weight: 900;
+}
+
+.imported-ops-diagnostic-list small,
+.condition-list li small {
+  color: var(--muted);
+}
+
+.imported-ops-metrics {
+  margin-top: 0.1rem;
+}
+
+.preview-only {
+  background: var(--green-soft);
+  border-left: 4px solid var(--green);
+  color: var(--green);
+  font-weight: 900;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+}
+
+.diff-value-grid {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.diff-value-grid div {
+  background: var(--field);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.55rem;
+}
+
+.diff-value-grid span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.diff-value-grid code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 720px) {
+  .imported-operations-card-header,
+  .imported-operations-priority {
+    grid-template-columns: 1fr;
+  }
+
+  .imported-operations-card-header {
+    display: grid;
+  }
+
+  .imported-operations-statuses {
+    justify-content: start;
+  }
 }
 
 .objective-winner-panel {

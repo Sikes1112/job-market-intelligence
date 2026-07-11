@@ -1,0 +1,4 @@
+company_id,company_name,sector,public_or_private,website_domain,source_ref
+cmp_hudson_applied_ai,Hudson Applied AI,ai,private,hudson-applied-ai.example,src_nyc_company_roster_2026_06
+cmp_brooklyn_cloudworks,Brooklyn Cloudworks,cloud,private,brooklyn-cloudworks.example,src_nyc_company_roster_2026_06
+cmp_liberty_cyber_systems,Liberty Cyber Systems,cybersecurity,private,liberty-cyber-systems.example,src_nyc_company_roster_2026_06

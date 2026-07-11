@@ -48,6 +48,30 @@ class OutputPayloadMetadata(BaseModel):
     warnings: list[JobWarning] = Field(default_factory=list)
 
 
+class ImportDisplayMetadata(BaseModel):
+    """Public-safe imported-data display labels.
+
+    This intentionally carries only user-facing labels and booleans. It does
+    not expose trust/routing row IDs, raw risk objects, source internals,
+    report text, reviewer notes, or exception internals.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    data_basis: str = "unknown"
+    imported_data: bool = False
+    imported_data_label: str = "Unknown data basis"
+    source_backed: bool = False
+    source_label: str = "Source evidence unknown"
+    coverage_label: str = "Coverage unknown"
+    freshness_status: str = "unknown"
+    freshness_label: str = "Freshness: unknown"
+    trust_label: str | None = None
+    risk_label: str | None = None
+    ranking_influence_allowed: bool | None = None
+    ranking_label: str = "Ranking not assessed"
+
+
 # ---------------------------------------------------------------------------
 # Shared building-block models
 # ---------------------------------------------------------------------------
@@ -88,6 +112,7 @@ class CompanyEntry(BaseModel):
     is_major_tech: bool = False
     is_mag7: bool = False
     prestige_score: float | None = None
+    import_metadata: ImportDisplayMetadata | None = None
 
 
 class HiringCompanyEntry(BaseModel):
@@ -99,16 +124,23 @@ class HiringCompanyEntry(BaseModel):
     company_name: str
     currently_hiring_flag: bool
     active_posting_count_now: int | None = None
+    active_posting_count_now_status: str | None = None
     posting_count_30d: int | None = None
+    posting_count_30d_status: str | None = None
     posting_count_90d: int | None = None
+    posting_count_90d_status: str | None = None
+    import_metadata: ImportDisplayMetadata | None = None
 
 
 class EntryLevelSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     internship_count_total: int | None = None
+    internship_count_total_status: str | None = None
     coop_count_total: int | None = None
+    coop_count_total_status: str | None = None
     entry_level_full_time_count_total: int | None = None
+    entry_level_full_time_count_total_status: str | None = None
     formal_early_career_program_count: int = 0
     average_entry_level_access_score: float | None = None
     pairs_with_entry_level_access: int = 0
@@ -152,6 +184,7 @@ class RegionOutputBody(BaseModel):
     )
     summary: RegionSummary
     scores: RegionScoresPayload | None = None
+    import_metadata: ImportDisplayMetadata | None = None
     top_companies_present: list[CompanyEntry] = Field(default_factory=list)
     top_companies_hiring: list[HiringCompanyEntry] = Field(default_factory=list)
     entry_level_summary: EntryLevelSummary
@@ -180,6 +213,7 @@ class CompanyRegionPresenceEntry(BaseModel):
     presence_status: str
     presence_basis: str | None = None
     presence_confidence: str | None = None
+    import_metadata: ImportDisplayMetadata | None = None
     coverage: CoverageMetadataPayload = Field(
         default_factory=placeholder_coverage_metadata
     )
@@ -196,8 +230,12 @@ class CompanyRegionHiringEntry(BaseModel):
     priority_market: PriorityMarket | None = None
     currently_hiring_flag: bool
     active_posting_count_now: int | None = None
+    active_posting_count_now_status: str | None = None
     posting_count_30d: int | None = None
+    posting_count_30d_status: str | None = None
     posting_count_90d: int | None = None
+    posting_count_90d_status: str | None = None
+    import_metadata: ImportDisplayMetadata | None = None
     coverage: CoverageMetadataPayload = Field(
         default_factory=placeholder_coverage_metadata
     )
@@ -213,11 +251,15 @@ class CompanyRegionEntryLevelEntry(BaseModel):
     region_display_name: str
     priority_market: PriorityMarket | None = None
     internship_count: int | None = None
+    internship_count_status: str | None = None
     coop_count: int | None = None
+    coop_count_status: str | None = None
     entry_level_full_time_count: int | None = None
+    entry_level_full_time_count_status: str | None = None
     formal_early_career_program_flag: bool = False
     entry_level_access_score: float | None = None
     entry_level_confidence: str | None = None
+    import_metadata: ImportDisplayMetadata | None = None
     coverage: CoverageMetadataPayload = Field(
         default_factory=placeholder_coverage_metadata
     )
@@ -240,6 +282,7 @@ class CompanyOutputBody(BaseModel):
     is_major_tech: bool = False
     is_mag7: bool = False
     prestige_score: float | None = None
+    import_metadata: ImportDisplayMetadata | None = None
     regions_present: list[CompanyRegionPresenceEntry] = Field(default_factory=list)
     regions_hiring: list[CompanyRegionHiringEntry] = Field(default_factory=list)
     entry_level_regions: list[CompanyRegionEntryLevelEntry] = Field(default_factory=list)
@@ -264,6 +307,7 @@ class ComparisonRegionSide(BaseModel):
     display_name: str
     priority_market: PriorityMarket | None = None
     scores: RegionScoresPayload | None = None
+    import_metadata: ImportDisplayMetadata | None = None
     coverage: CoverageMetadataPayload = Field(
         default_factory=placeholder_coverage_metadata
     )

@@ -1,0 +1,11 @@
+[
+  {
+    "region_id": "washington_dc",
+    "region_name": "Washington DC",
+    "region_type": "greater_region",
+    "country": "US",
+    "state_codes": ["DC", "VA", "MD"],
+    "primary_city": "Washington",
+    "source_ref": "src_washington_dc_region_2026_06"
+  }
+]

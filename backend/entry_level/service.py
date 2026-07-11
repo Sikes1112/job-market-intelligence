@@ -33,6 +33,7 @@ from backend.entry_level.types import (
     StudentSeasonRecurrenceSignal,
 )
 from backend.hiring.repository import HiringRepository
+from backend.shared.provenance import ObservationStatus
 from backend.shared.state import ObjectState, validate_transition
 from backend.shared.versioning import next_version
 
@@ -50,8 +51,11 @@ class EntryLevelSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     internship_count: int | None = None
+    internship_count_status: ObservationStatus | None = None
     coop_count: int | None = None
+    coop_count_status: ObservationStatus | None = None
     entry_level_full_time_count: int | None = None
+    entry_level_full_time_count_status: ObservationStatus | None = None
     formal_early_career_program_flag: bool = False
     student_season_recurrence_signal: StudentSeasonRecurrenceSignal | None = None
     freshness_expires_at: datetime | None = None
@@ -214,8 +218,21 @@ class EntryLevelService:
         self, row: CompanyRegionEntryLevel, snapshot: EntryLevelSnapshot
     ) -> None:
         row.internship_count = snapshot.internship_count
+        row.internship_count_status = (
+            snapshot.internship_count_status.value
+            if snapshot.internship_count_status
+            else None
+        )
         row.coop_count = snapshot.coop_count
+        row.coop_count_status = (
+            snapshot.coop_count_status.value if snapshot.coop_count_status else None
+        )
         row.entry_level_full_time_count = snapshot.entry_level_full_time_count
+        row.entry_level_full_time_count_status = (
+            snapshot.entry_level_full_time_count_status.value
+            if snapshot.entry_level_full_time_count_status
+            else None
+        )
         row.formal_early_career_program_flag = snapshot.formal_early_career_program_flag
         row.student_season_recurrence_signal = (
             snapshot.student_season_recurrence_signal.value
@@ -251,10 +268,26 @@ class EntryLevelService:
             if snapshot.student_season_recurrence_signal
             else None
         )
+        proposed_internship_status = (
+            snapshot.internship_count_status.value
+            if snapshot.internship_count_status
+            else None
+        )
+        proposed_coop_status = (
+            snapshot.coop_count_status.value if snapshot.coop_count_status else None
+        )
+        proposed_full_time_status = (
+            snapshot.entry_level_full_time_count_status.value
+            if snapshot.entry_level_full_time_count_status
+            else None
+        )
         return (
             row.internship_count == snapshot.internship_count
+            and row.internship_count_status == proposed_internship_status
             and row.coop_count == snapshot.coop_count
+            and row.coop_count_status == proposed_coop_status
             and row.entry_level_full_time_count == snapshot.entry_level_full_time_count
+            and row.entry_level_full_time_count_status == proposed_full_time_status
             and row.formal_early_career_program_flag
             == snapshot.formal_early_career_program_flag
             and row.student_season_recurrence_signal == proposed_recurrence

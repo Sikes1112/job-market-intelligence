@@ -1,0 +1,11 @@
+[
+  {
+    "region_id": "atlanta",
+    "region_name": "Atlanta",
+    "region_type": "greater_region",
+    "country": "US",
+    "state_codes": ["GA"],
+    "primary_city": "Atlanta",
+    "source_ref": "src_atlanta_region_2026_06"
+  }
+]

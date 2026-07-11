@@ -1,0 +1,6 @@
+source_ref,source_name,source_type,source_url_or_reference,collected_at,observed_at,confidence,license_or_terms_category,freshness_status
+src_san_francisco_bay_area_region_2026_06,Layer 32B Bay Area region fixture,manual_research,repo_fixture:data/imports/san_francisco_bay_area/regions.json,2026-06-25,2026-06-25,high,permissive,fresh
+src_san_francisco_bay_area_company_roster_2026_06,Layer 32B Bay Area company roster fixture,manual_research,repo_fixture:data/imports/san_francisco_bay_area/companies.csv,2026-06-25,2026-06-25,medium,permissive,fresh
+src_san_francisco_bay_area_presence_2026_06,Layer 32B Bay Area presence fixture,manual_research,repo_fixture:data/imports/san_francisco_bay_area/presence.csv,2026-06-25,2026-06-25,medium,permissive,fresh
+src_san_francisco_bay_area_hiring_2026_06,Layer 32B Bay Area hiring fixture,manual_research,repo_fixture:data/imports/san_francisco_bay_area/hiring.csv,2026-06-25,2026-06-25,medium,permissive,fresh
+src_san_francisco_bay_area_entry_level_2026_06,Layer 32B Bay Area entry-level fixture,manual_research,repo_fixture:data/imports/san_francisco_bay_area/entry_level.csv,2026-06-25,2026-06-25,medium,permissive,fresh

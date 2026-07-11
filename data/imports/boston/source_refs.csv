@@ -1,0 +1,6 @@
+source_ref,source_name,source_type,source_url_or_reference,collected_at,observed_at,confidence,license_or_terms_category,freshness_status
+src_boston_region_2026_06,Layer 32B Boston region fixture,manual_research,repo_fixture:data/imports/boston/regions.json,2026-06-25,2026-06-25,high,permissive,fresh
+src_boston_company_roster_2026_06,Layer 32B Boston company roster fixture,manual_research,repo_fixture:data/imports/boston/companies.csv,2026-06-25,2026-06-25,medium,permissive,fresh
+src_boston_presence_2026_06,Layer 32B Boston presence fixture,manual_research,repo_fixture:data/imports/boston/presence.csv,2026-06-25,2026-06-25,medium,permissive,fresh
+src_boston_hiring_2026_06,Layer 32B Boston hiring fixture,manual_research,repo_fixture:data/imports/boston/hiring.csv,2026-06-25,2026-06-25,medium,permissive,fresh
+src_boston_entry_level_2026_06,Layer 32B Boston entry-level fixture,manual_research,repo_fixture:data/imports/boston/entry_level.csv,2026-06-25,2026-06-25,medium,permissive,fresh

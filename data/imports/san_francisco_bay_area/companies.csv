@@ -1,0 +1,4 @@
+company_id,company_name,sector,public_or_private,website_domain,source_ref
+cmp_google,Google,internet,public,google.com,src_san_francisco_bay_area_company_roster_2026_06
+cmp_cisco,Cisco Systems,cybersecurity,public,cisco.com,src_san_francisco_bay_area_company_roster_2026_06
+cmp_pacific_ai_labs,Pacific AI Labs,ai,private,pacific-ai-labs.example,src_san_francisco_bay_area_company_roster_2026_06

@@ -23,6 +23,8 @@ PUBLIC_DEMO_EXACT_ALLOWLIST = frozenset(
         ("GET", "/ready"),
         ("GET", "/regions"),
         ("GET", "/regions/search"),
+        ("GET", "/markets/imported"),
+        ("GET", "/markets/imported/health"),
         ("GET", "/companies/search"),
         ("GET", "/compare"),
         ("POST", "/discover/personalized"),
@@ -152,9 +154,7 @@ class APIProtectionMiddleware:
         return not _public_demo_route_allowed(method, path)
 
     def _prune_expired_rate_limits(self, now: float) -> None:
-        expired_keys = [
-            key for key, bucket in self._rate_limits.items() if bucket.reset_at <= now
-        ]
+        expired_keys = [key for key, bucket in self._rate_limits.items() if bucket.reset_at <= now]
         for key in expired_keys:
             del self._rate_limits[key]
 
@@ -224,12 +224,7 @@ def _public_demo_route_allowed(method: str, path: str) -> bool:
     parts = path.strip("/").split("/")
     if len(parts) == 2 and parts[0] in {"regions", "companies"} and parts[1]:
         return parts[1] != "search"
-    if (
-        len(parts) == 3
-        and parts[0] == "data-standards"
-        and parts[1] == "partners"
-        and parts[2]
-    ):
+    if len(parts) == 3 and parts[0] == "data-standards" and parts[1] == "partners" and parts[2]:
         return True
     if (
         len(parts) == 3
@@ -238,11 +233,23 @@ def _public_demo_route_allowed(method: str, path: str) -> bool:
         and parts[2]
     ):
         return True
+    if len(parts) == 3 and parts[0] == "regions" and parts[1] and parts[2] == "sources":
+        return True
     if (
-        len(parts) == 3
-        and parts[0] == "regions"
-        and parts[1]
-        and parts[2] == "sources"
+        len(parts) == 4
+        and parts[0] == "markets"
+        and parts[1] == "imported"
+        and parts[2]
+        and parts[3]
+        in {
+            "health",
+            "sources",
+            "facts",
+            "gaps",
+            "ranking-diagnostics",
+            "refresh-readiness",
+            "diff-preview",
+        }
     ):
         return True
     if (
@@ -280,12 +287,7 @@ def _public_demo_route_allowed(method: str, path: str) -> bool:
         and parts[2] == "reports"
     ):
         return True
-    if (
-        len(parts) == 3
-        and parts[0] == "platform"
-        and parts[1] == "reports"
-        and parts[2]
-    ):
+    if len(parts) == 3 and parts[0] == "platform" and parts[1] == "reports" and parts[2]:
         return True
     if (
         len(parts) == 6

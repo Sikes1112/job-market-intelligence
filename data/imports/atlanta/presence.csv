@@ -1,0 +1,4 @@
+company_id,region_id,presence_status,presence_basis,office_location_summary,source_ref
+cmp_microsoft,atlanta,present,office_plus_hiring,Atlanta cloud and customer engineering office,src_atlanta_presence_2026_06
+cmp_cisco,atlanta,present,office_plus_operations,Atlanta networking and cybersecurity operations presence,src_atlanta_presence_2026_06
+cmp_jpmorgan_chase,atlanta,present,office_plus_hiring,Atlanta financial technology and data teams,src_atlanta_presence_2026_06

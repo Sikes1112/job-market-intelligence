@@ -1,0 +1,4 @@
+company_id,region_id,presence_status,presence_basis,office_location_summary,source_ref
+cmp_microsoft,washington_dc,present,office_plus_operations,Redmond-linked public sector technology office in the DC area,src_washington_dc_presence_2026_06
+cmp_cisco,washington_dc,present,office_plus_hiring,DC-area public sector security and networking team,src_washington_dc_presence_2026_06
+cmp_deloitte,washington_dc,present,office_plus_hiring,Government technology consulting and analytics teams,src_washington_dc_presence_2026_06

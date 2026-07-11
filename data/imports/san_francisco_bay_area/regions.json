@@ -1,0 +1,11 @@
+[
+  {
+    "region_id": "sf_bay_area",
+    "region_name": "San Francisco Bay Area",
+    "region_type": "greater_region",
+    "country": "US",
+    "state_codes": ["CA"],
+    "primary_city": "San Francisco",
+    "source_ref": "src_san_francisco_bay_area_region_2026_06"
+  }
+]

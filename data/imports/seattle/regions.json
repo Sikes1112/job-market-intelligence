@@ -1,0 +1,11 @@
+[
+  {
+    "region_id": "greater_seattle",
+    "region_name": "Greater Seattle",
+    "region_type": "greater_region",
+    "country": "US",
+    "state_codes": ["WA"],
+    "primary_city": "Seattle",
+    "source_ref": "src_seattle_region_fixture_2026_06"
+  }
+]

@@ -1,0 +1,4 @@
+company_id,region_id,presence_status,presence_basis,office_location_summary,source_ref
+cmp_google,sf_bay_area,present,office_plus_operations,Mountain View and San Francisco engineering presence,src_san_francisco_bay_area_presence_2026_06
+cmp_cisco,sf_bay_area,present,office_plus_operations,San Jose enterprise networking and security campus,src_san_francisco_bay_area_presence_2026_06
+cmp_pacific_ai_labs,sf_bay_area,present,office_plus_hiring,San Francisco AI product and research office,src_san_francisco_bay_area_presence_2026_06

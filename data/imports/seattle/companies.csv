@@ -1,0 +1,4 @@
+company_id,company_name,sector,public_or_private,website_domain,source_ref
+cmp_hudson_applied_ai,Hudson Applied AI,ai,private,hudson-applied-ai.example,src_seattle_company_roster_2026_06
+cmp_cascade_cloud_labs,Cascade Cloud Labs,cloud,private,cascade-cloud-labs.example,src_seattle_company_roster_2026_06
+cmp_sound_security_systems,Sound Security Systems,cybersecurity,private,sound-security-systems.example,src_seattle_company_roster_2026_06

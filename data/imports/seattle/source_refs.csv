@@ -1,0 +1,6 @@
+source_ref,source_name,source_type,source_url_or_reference,collected_at,observed_at,confidence,license_or_terms_category,freshness_status
+src_seattle_region_fixture_2026_06,Layer 32A Seattle region fixture,manual_research,repo_fixture:data/imports/seattle/regions.json,2026-06-20,2026-06-20,high,permissive,fresh
+src_seattle_company_roster_2026_06,Layer 32A Seattle company roster fixture,manual_research,repo_fixture:data/imports/seattle/companies.csv,2026-06-20,2026-06-20,medium,permissive,fresh
+src_seattle_presence_observation_2026_06,Layer 32A Seattle presence observation fixture,manual_research,repo_fixture:data/imports/seattle/presence.csv,2026-06-20,2026-06-20,medium,permissive,fresh
+src_seattle_hiring_snapshot_2026_06,Layer 32A Seattle hiring snapshot fixture,manual_research,repo_fixture:data/imports/seattle/hiring.csv,2026-06-20,2026-06-20,medium,permissive,fresh
+src_seattle_entry_level_snapshot_2026_06,Layer 32A Seattle entry-level snapshot fixture,manual_research,repo_fixture:data/imports/seattle/entry_level.csv,2026-06-20,2026-06-20,medium,permissive,fresh

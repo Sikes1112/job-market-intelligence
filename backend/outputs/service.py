@@ -60,6 +60,7 @@ from backend.outputs.models import OutputMetadata
 from backend.outputs.payloads import (
     CompanyOutput,
     ComparisonOutput,
+    ImportDisplayMetadata,
     RegionOutput,
 )
 from backend.outputs.region_output import build_region_output
@@ -67,11 +68,37 @@ from backend.outputs.repository import OutputMetadataRepository
 from backend.outputs.types import BuildOutcome, OutputType
 from backend.presence.models import CompanyRegionPresence
 from backend.presence.repository import PresenceRepository
+from backend.provenance.models import FactSourceLink
 from backend.scoring.repository import RegionScoreRepository
+from backend.shared.freshness import FreshnessStatus
+from backend.shared.provenance import (
+    REAL_DATA_ORIGINS,
+    DataOrigin,
+    FactBindingType,
+)
 from backend.shared.state import ObjectState, validate_transition
+from backend.trust.explanations import RISK_LABELS, TRUST_LABELS
+from backend.trust.models import RiskRoutingDecision
+from backend.trust.schemas import RiskLevel, TrustAssessmentSubjectType, TrustTier
 
 UpsertOutcome = Literal["created", "updated", "unchanged"]
 AssemblyAction = Literal["created", "updated", "unchanged", "read_only", "cached"]
+
+_FactRef = tuple[str, str]
+
+_FACT_SUBJECT_TYPES: dict[str, TrustAssessmentSubjectType] = {
+    FactBindingType.COMPANY.value: TrustAssessmentSubjectType.COMPANY_FACT,
+    FactBindingType.REGION.value: TrustAssessmentSubjectType.REGION_FACT,
+    FactBindingType.COMPANY_REGION_PRESENCE.value: (
+        TrustAssessmentSubjectType.DATA_STANDARD_FACT
+    ),
+    FactBindingType.COMPANY_REGION_HIRING.value: (
+        TrustAssessmentSubjectType.DATA_STANDARD_FACT
+    ),
+    FactBindingType.COMPANY_REGION_ENTRY_LEVEL.value: (
+        TrustAssessmentSubjectType.DATA_STANDARD_FACT
+    ),
+}
 
 
 class _AssembledOutput(NamedTuple):
@@ -177,9 +204,18 @@ class OutputAssemblyService:
             entry_level_rows=entry_level_rows,
             now=(now or _default_now)(),
         )
+        payload = self._enrich_region_payload(
+            result.payload,
+            region_id=region_id,
+            present_companies=present_companies,
+            presence_rows=presence_rows,
+            hiring_rows=hiring_rows,
+            entry_level_rows=entry_level_rows,
+            outcome=result.outcome,
+        )
         return _AssembledOutput(
             subject_id=region_id,
-            payload=result.payload,
+            payload=payload,
             outcome=result.outcome,
             source_version_bundle=result.source_version_bundle,
             freshness_expires_at=result.freshness_expires_at,
@@ -262,9 +298,17 @@ class OutputAssemblyService:
             coverage_by_region=coverage_by_region,
             now=(now or _default_now)(),
         )
+        payload = self._enrich_company_payload(
+            result.payload,
+            company_id=company_id,
+            presence_rows=presence_rows,
+            hiring_rows=hiring_rows,
+            entry_level_rows=entry_level_rows,
+            outcome=result.outcome,
+        )
         return _AssembledOutput(
             subject_id=company_id,
-            payload=result.payload,
+            payload=payload,
             outcome=result.outcome,
             source_version_bundle=result.source_version_bundle,
             freshness_expires_at=result.freshness_expires_at,
@@ -437,15 +481,329 @@ class OutputAssemblyService:
             extra_freshness_inputs=extra_freshness,
             now=(now or _default_now)(),
         )
+        payload = self._enrich_comparison_payload(
+            result.payload,
+            region_a_id=canonical_a,
+            region_b_id=canonical_b,
+            outcome=result.outcome,
+        )
         subject_id = canonical_comparison_id(canonical_a, canonical_b)
         return _AssembledOutput(
             subject_id=subject_id,
-            payload=result.payload,
+            payload=payload,
             outcome=result.outcome,
             source_version_bundle=result.source_version_bundle,
             freshness_expires_at=result.freshness_expires_at,
             output_id_default=f"out_comparison_{subject_id}",
         )
+
+    # --- public imported-data display metadata ---------------------------
+
+    def _enrich_region_payload(
+        self,
+        payload: RegionOutput,
+        *,
+        region_id: str,
+        present_companies,
+        presence_rows: list[CompanyRegionPresence],
+        hiring_rows: list[CompanyRegionHiring],
+        entry_level_rows: list[CompanyRegionEntryLevel],
+        outcome: BuildOutcome,
+    ) -> RegionOutput:
+        presence_by_company = {row.company_id: row for row in presence_rows}
+        hiring_by_company = {row.company_id: row for row in hiring_rows}
+
+        top_present = [
+            entry.model_copy(
+                update={
+                    "import_metadata": self._import_metadata(
+                        _dedupe_fact_refs(
+                            [
+                                (FactBindingType.COMPANY.value, entry.company_id),
+                                *(
+                                    [
+                                        (
+                                            FactBindingType.COMPANY_REGION_PRESENCE.value,
+                                            presence_by_company[
+                                                entry.company_id
+                                            ].presence_id,
+                                        )
+                                    ]
+                                    if entry.company_id in presence_by_company
+                                    else []
+                                ),
+                            ]
+                        )
+                    )
+                }
+            )
+            for entry in payload.region.top_companies_present
+        ]
+        top_hiring = [
+            entry.model_copy(
+                update={
+                    "import_metadata": self._import_metadata(
+                        [
+                            (
+                                FactBindingType.COMPANY_REGION_HIRING.value,
+                                hiring_by_company[entry.company_id].hiring_id,
+                            )
+                        ]
+                        if entry.company_id in hiring_by_company
+                        else []
+                    )
+                }
+            )
+            for entry in payload.region.top_companies_hiring
+        ]
+        region_refs: list[_FactRef] = [
+            (FactBindingType.REGION.value, region_id),
+            *[
+                (FactBindingType.COMPANY.value, company.company_id)
+                for company in present_companies
+            ],
+            *[
+                (FactBindingType.COMPANY_REGION_PRESENCE.value, row.presence_id)
+                for row in presence_rows
+            ],
+            *[
+                (FactBindingType.COMPANY_REGION_HIRING.value, row.hiring_id)
+                for row in hiring_rows
+            ],
+            *[
+                (FactBindingType.COMPANY_REGION_ENTRY_LEVEL.value, row.entry_level_id)
+                for row in entry_level_rows
+            ],
+        ]
+        region_body = payload.region.model_copy(
+            update={
+                "import_metadata": self._import_metadata(region_refs, outcome=outcome),
+                "top_companies_present": top_present,
+                "top_companies_hiring": top_hiring,
+            }
+        )
+        return payload.model_copy(update={"region": region_body})
+
+    def _enrich_company_payload(
+        self,
+        payload: CompanyOutput,
+        *,
+        company_id: str,
+        presence_rows: list[CompanyRegionPresence],
+        hiring_rows: list[CompanyRegionHiring],
+        entry_level_rows: list[CompanyRegionEntryLevel],
+        outcome: BuildOutcome,
+    ) -> CompanyOutput:
+        presence_by_region = {row.region_id: row for row in presence_rows}
+        hiring_by_region = {row.region_id: row for row in hiring_rows}
+        entry_by_region = {row.region_id: row for row in entry_level_rows}
+
+        regions_present = [
+            entry.model_copy(
+                update={
+                    "import_metadata": self._import_metadata(
+                        [
+                            (
+                                FactBindingType.COMPANY_REGION_PRESENCE.value,
+                                presence_by_region[entry.region_id].presence_id,
+                            )
+                        ]
+                        if entry.region_id in presence_by_region
+                        else []
+                    )
+                }
+            )
+            for entry in payload.company.regions_present
+        ]
+        regions_hiring = [
+            entry.model_copy(
+                update={
+                    "import_metadata": self._import_metadata(
+                        [
+                            (
+                                FactBindingType.COMPANY_REGION_HIRING.value,
+                                hiring_by_region[entry.region_id].hiring_id,
+                            )
+                        ]
+                        if entry.region_id in hiring_by_region
+                        else []
+                    )
+                }
+            )
+            for entry in payload.company.regions_hiring
+        ]
+        entry_level_regions = [
+            entry.model_copy(
+                update={
+                    "import_metadata": self._import_metadata(
+                        [
+                            (
+                                FactBindingType.COMPANY_REGION_ENTRY_LEVEL.value,
+                                entry_by_region[entry.region_id].entry_level_id,
+                            )
+                        ]
+                        if entry.region_id in entry_by_region
+                        else []
+                    )
+                }
+            )
+            for entry in payload.company.entry_level_regions
+        ]
+        company_refs: list[_FactRef] = [
+            (FactBindingType.COMPANY.value, company_id),
+            *[
+                (FactBindingType.COMPANY_REGION_PRESENCE.value, row.presence_id)
+                for row in presence_rows
+            ],
+            *[
+                (FactBindingType.COMPANY_REGION_HIRING.value, row.hiring_id)
+                for row in hiring_rows
+            ],
+            *[
+                (FactBindingType.COMPANY_REGION_ENTRY_LEVEL.value, row.entry_level_id)
+                for row in entry_level_rows
+            ],
+        ]
+        company_body = payload.company.model_copy(
+            update={
+                "import_metadata": self._import_metadata(company_refs, outcome=outcome),
+                "regions_present": regions_present,
+                "regions_hiring": regions_hiring,
+                "entry_level_regions": entry_level_regions,
+            }
+        )
+        return payload.model_copy(update={"company": company_body})
+
+    def _enrich_comparison_payload(
+        self,
+        payload: ComparisonOutput,
+        *,
+        region_a_id: str,
+        region_b_id: str,
+        outcome: BuildOutcome,
+    ) -> ComparisonOutput:
+        comparison_body = payload.comparison.model_copy(
+            update={
+                "region_a": payload.comparison.region_a.model_copy(
+                    update={
+                        "import_metadata": self._import_metadata(
+                            [(FactBindingType.REGION.value, region_a_id)],
+                            outcome=outcome,
+                        )
+                    }
+                ),
+                "region_b": payload.comparison.region_b.model_copy(
+                    update={
+                        "import_metadata": self._import_metadata(
+                            [(FactBindingType.REGION.value, region_b_id)],
+                            outcome=outcome,
+                        )
+                    }
+                ),
+            }
+        )
+        return payload.model_copy(update={"comparison": comparison_body})
+
+    def _import_metadata(
+        self,
+        fact_refs: list[_FactRef] | tuple[_FactRef, ...],
+        *,
+        outcome: BuildOutcome | None = None,
+    ) -> ImportDisplayMetadata:
+        refs = _dedupe_fact_refs(fact_refs)
+        links = self._fact_source_links(refs)
+        decisions = self._latest_routing_decisions(refs)
+        data_basis = _data_basis(links)
+        imported_data = data_basis in {"real_imported", "mixed"}
+        source_backed = bool(links)
+        freshness_status = _freshness_status(links, outcome=outcome)
+        ranking_allowed = _ranking_allowed(decisions)
+        return ImportDisplayMetadata(
+            data_basis=data_basis,
+            imported_data=imported_data,
+            imported_data_label=(
+                "Real imported data" if imported_data else "Unknown data basis"
+            ),
+            source_backed=source_backed,
+            source_label="Source-backed" if source_backed else "Source evidence unknown",
+            coverage_label=_coverage_label(outcome, source_backed=source_backed),
+            freshness_status=freshness_status,
+            freshness_label=f"Freshness: {freshness_status}",
+            trust_label=_trust_label(decisions),
+            risk_label=_risk_label(decisions),
+            ranking_influence_allowed=ranking_allowed,
+            ranking_label=_ranking_label(ranking_allowed),
+        )
+
+    def _fact_source_links(
+        self, fact_refs: tuple[_FactRef, ...]
+    ) -> tuple[FactSourceLink, ...]:
+        if not fact_refs:
+            return ()
+        rows: list[FactSourceLink] = []
+        grouped = _group_fact_refs(fact_refs)
+        for fact_type, fact_ids in grouped.items():
+            stmt = (
+                select(FactSourceLink)
+                .where(FactSourceLink.fact_type == fact_type)
+                .where(FactSourceLink.fact_id.in_(fact_ids))
+                .order_by(
+                    FactSourceLink.fact_type,
+                    FactSourceLink.fact_id,
+                    FactSourceLink.source_id,
+                    FactSourceLink.link_id,
+                )
+            )
+            rows.extend(self._session.execute(stmt).scalars())
+        return tuple(
+            sorted(
+                rows,
+                key=lambda row: (
+                    row.fact_type,
+                    row.fact_id,
+                    row.source_id,
+                    row.link_id,
+                ),
+            )
+        )
+
+    def _latest_routing_decisions(
+        self, fact_refs: tuple[_FactRef, ...]
+    ) -> tuple[RiskRoutingDecision, ...]:
+        if not fact_refs:
+            return ()
+        grouped: dict[str, set[str]] = {}
+        for fact_type, fact_id in fact_refs:
+            subject_type = _FACT_SUBJECT_TYPES.get(fact_type)
+            if subject_type is None:
+                continue
+            grouped.setdefault(subject_type.value, set()).add(fact_id)
+
+        latest: dict[tuple[str, str], RiskRoutingDecision] = {}
+        for subject_type, subject_ids in grouped.items():
+            rows = self._session.execute(
+                select(RiskRoutingDecision)
+                .where(RiskRoutingDecision.subject_type == subject_type)
+                .where(RiskRoutingDecision.subject_id.in_(sorted(subject_ids)))
+                .order_by(
+                    RiskRoutingDecision.subject_type,
+                    RiskRoutingDecision.subject_id,
+                    RiskRoutingDecision.decided_at.desc(),
+                    RiskRoutingDecision.risk_routing_decision_id.desc(),
+                )
+            ).scalars()
+            for row in rows:
+                latest.setdefault((row.subject_type, row.subject_id), row)
+
+        decisions: list[RiskRoutingDecision] = []
+        for fact_type, fact_id in fact_refs:
+            subject_type = _FACT_SUBJECT_TYPES.get(fact_type)
+            if subject_type is None:
+                continue
+            decision = latest.get((subject_type.value, fact_id))
+            if decision is not None:
+                decisions.append(decision)
+        return tuple(decisions)
 
     # --- shared upsert + state-machine -----------------------------------
 
@@ -649,6 +1007,153 @@ class OutputAssemblyService:
             freshness_is_stale=is_stale,
             source_evidence_loaded=False,
         )
+
+
+def _dedupe_fact_refs(fact_refs: list[_FactRef] | tuple[_FactRef, ...]) -> tuple[_FactRef, ...]:
+    seen: set[_FactRef] = set()
+    refs: list[_FactRef] = []
+    for fact_type, fact_id in fact_refs:
+        if not fact_type or not fact_id:
+            continue
+        ref = (fact_type, fact_id)
+        if ref in seen:
+            continue
+        seen.add(ref)
+        refs.append(ref)
+    return tuple(refs)
+
+
+def _group_fact_refs(fact_refs: tuple[_FactRef, ...]) -> dict[str, list[str]]:
+    grouped: dict[str, set[str]] = {}
+    for fact_type, fact_id in fact_refs:
+        grouped.setdefault(fact_type, set()).add(fact_id)
+    return {
+        fact_type: sorted(fact_ids)
+        for fact_type, fact_ids in sorted(grouped.items())
+    }
+
+
+def _data_basis(links: tuple[FactSourceLink, ...]) -> str:
+    if not links:
+        return "unknown"
+    origins = [_data_origin(link.data_origin) for link in links]
+    has_real = any(origin in REAL_DATA_ORIGINS for origin in origins)
+    has_unknown = any(
+        origin is None or origin is DataOrigin.UNKNOWN_ORIGIN for origin in origins
+    )
+    has_other = any(
+        origin is not None
+        and origin is not DataOrigin.UNKNOWN_ORIGIN
+        and origin not in REAL_DATA_ORIGINS
+        for origin in origins
+    )
+    if has_real and not has_unknown and not has_other:
+        return "real_imported"
+    if has_real:
+        return "mixed"
+    return "unknown"
+
+
+def _data_origin(value: str | None) -> DataOrigin | None:
+    if not value:
+        return None
+    try:
+        return DataOrigin(value)
+    except ValueError:
+        return None
+
+
+def _freshness_status(
+    links: tuple[FactSourceLink, ...],
+    *,
+    outcome: BuildOutcome | None,
+) -> str:
+    if outcome is BuildOutcome.STALE:
+        return "stale"
+    if not links:
+        return "unknown"
+    stale_values = {FreshnessStatus.STALE.value, "stale"}
+    if any(
+        (link.freshness_status in stale_values)
+        or (link.observation_status in stale_values)
+        for link in links
+    ):
+        return "stale"
+    current_values = {FreshnessStatus.FRESH.value, "current", "fresh"}
+    if any(link.freshness_status in current_values for link in links):
+        return "current"
+    return "unknown"
+
+
+def _coverage_label(
+    outcome: BuildOutcome | None,
+    *,
+    source_backed: bool,
+) -> str:
+    if outcome is BuildOutcome.STALE:
+        return "Coverage stale"
+    if outcome is BuildOutcome.PARTIAL:
+        return "Partially covered"
+    if outcome is BuildOutcome.FRESH:
+        return "Coverage current"
+    if source_backed:
+        return "Coverage current"
+    return "Coverage unknown"
+
+
+def _ranking_allowed(
+    decisions: tuple[RiskRoutingDecision, ...],
+) -> bool | None:
+    if not decisions:
+        return None
+    if any(not decision.ranking_influence_allowed for decision in decisions):
+        return False
+    return True
+
+
+def _ranking_label(ranking_allowed: bool | None) -> str:
+    if ranking_allowed is True:
+        return "Ranking-safe"
+    if ranking_allowed is False:
+        return "Ranking excluded"
+    return "Ranking not assessed"
+
+
+def _trust_label(decisions: tuple[RiskRoutingDecision, ...]) -> str | None:
+    decision = _primary_decision(decisions)
+    if decision is None:
+        return None
+    try:
+        return TRUST_LABELS[TrustTier(decision.trust_tier)]
+    except ValueError:
+        return _title_label(decision.trust_tier)
+
+
+def _risk_label(decisions: tuple[RiskRoutingDecision, ...]) -> str | None:
+    decision = _primary_decision(decisions)
+    if decision is None:
+        return None
+    try:
+        return RISK_LABELS[RiskLevel(decision.risk_level)]
+    except ValueError:
+        return _title_label(decision.risk_level)
+
+
+def _primary_decision(
+    decisions: tuple[RiskRoutingDecision, ...],
+) -> RiskRoutingDecision | None:
+    if not decisions:
+        return None
+    for decision in decisions:
+        if not decision.ranking_influence_allowed:
+            return decision
+    return decisions[0]
+
+
+def _title_label(value: str | None) -> str | None:
+    if not value:
+        return None
+    return value.replace("_", " ").title()
 
 
 def _default_now() -> datetime:

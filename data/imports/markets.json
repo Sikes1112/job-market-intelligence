@@ -1,0 +1,90 @@
+[
+  {
+    "market_key": "nyc",
+    "region_id": "greater_nyc",
+    "display_name": "Greater NYC",
+    "dataset_path": "nyc",
+    "coverage_status": "curated",
+    "import_status": "ready",
+    "last_curated_at": "2026-06-15",
+    "peer_group": "priority_market",
+    "notes": "Layer 31 first curated market."
+  },
+  {
+    "market_key": "seattle",
+    "region_id": "greater_seattle",
+    "display_name": "Greater Seattle",
+    "dataset_path": "seattle",
+    "coverage_status": "curated",
+    "import_status": "ready",
+    "last_curated_at": "2026-06-20",
+    "peer_group": "major_tech_markets",
+    "notes": "Layer 32A second curated market proof fixture."
+  },
+  {
+    "market_key": "san_francisco_bay_area",
+    "region_id": "sf_bay_area",
+    "display_name": "San Francisco Bay Area",
+    "dataset_path": "san_francisco_bay_area",
+    "coverage_status": "partial_curated",
+    "import_status": "ready",
+    "last_curated_at": "2026-06-25",
+    "peer_group": "major_tech_markets",
+    "notes": "Layer 32B controlled Bay Area fixture."
+  },
+  {
+    "market_key": "boston",
+    "region_id": "greater_boston",
+    "display_name": "Greater Boston",
+    "dataset_path": "boston",
+    "coverage_status": "partial_curated",
+    "import_status": "ready",
+    "last_curated_at": "2026-06-25",
+    "peer_group": "east_coast_markets",
+    "notes": "Layer 32B controlled Boston fixture."
+  },
+  {
+    "market_key": "washington_dc",
+    "region_id": "washington_dc",
+    "display_name": "Washington DC",
+    "dataset_path": "washington_dc",
+    "coverage_status": "partial_curated",
+    "import_status": "ready",
+    "last_curated_at": "2026-06-25",
+    "peer_group": "east_coast_markets",
+    "notes": "Layer 32B controlled Washington DC fixture."
+  },
+  {
+    "market_key": "austin",
+    "region_id": "austin",
+    "display_name": "Austin",
+    "dataset_path": "austin",
+    "coverage_status": "partial_curated",
+    "import_status": "ready",
+    "last_curated_at": "2026-06-25",
+    "peer_group": "major_tech_markets",
+    "notes": "Layer 32B controlled Austin fixture."
+  },
+  {
+    "market_key": "atlanta",
+    "region_id": "atlanta",
+    "display_name": "Atlanta",
+    "dataset_path": "atlanta",
+    "coverage_status": "partial_curated",
+    "import_status": "ready",
+    "last_curated_at": "2026-06-25",
+    "peer_group": "southeast_markets",
+    "notes": "Layer 32B controlled Atlanta fixture."
+  },
+  {
+    "market_key": "chicago",
+    "region_id": "chicago",
+    "display_name": "Chicago",
+    "dataset_path": "chicago",
+    "coverage_status": "partial_curated",
+    "import_status": "ready",
+    "last_curated_at": "2026-06-25",
+    "peer_group": "finance_and_enterprise_markets",
+    "notes": "Layer 32B controlled Chicago fixture."
+  }
+]

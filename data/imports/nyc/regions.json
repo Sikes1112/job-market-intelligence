@@ -1,0 +1,11 @@
+[
+  {
+    "region_id": "greater_nyc",
+    "region_name": "Greater NYC",
+    "region_type": "greater_region",
+    "country": "US",
+    "state_codes": ["NY", "NJ", "CT"],
+    "primary_city": "New York",
+    "source_ref": "src_nyc_region_fixture_2026_06"
+  }
+]

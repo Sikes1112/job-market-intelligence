@@ -33,6 +33,17 @@ import {
   getDataStandardsPartnerSchema,
   getDataStandardsPartners,
   getDataStandardsQualityLabels,
+  getImportedMarketDiffPreview,
+  getImportedMarketFacts,
+  getImportedMarketGaps,
+  getImportedMarketHealth,
+  getImportedMarketHealthOverview,
+  getImportedMarketOperationDetails,
+  getImportedMarketOperationsView,
+  getImportedMarketRankingDiagnostics,
+  getImportedMarketRefreshReadiness,
+  getImportedMarketSources,
+  getImportedMarkets,
   getInstitutionCurrentOrganizations,
   getInstitutionDashboard,
   getPartnerImport,
@@ -123,6 +134,98 @@ describe("frontend API client auth boundary", () => {
     const [, init] = fetchMock.mock.calls[0];
     expect(fetchMock.mock.calls[0][0]).toBe("/regions");
     expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
+  });
+
+  test("imported market coverage request stays public and read-only", async () => {
+    const fetchMock = mockFetch({ markets: [], market_count: 0 });
+
+    await getImportedMarkets();
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(fetchMock.mock.calls[0][0]).toBe("/markets/imported");
+    expect((init as RequestInit).method).toBeUndefined();
+    expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
+  });
+
+  test("imported market operations helpers use public read-only Layer 33 routes", async () => {
+    const fetchMock = mockFetch({});
+
+    await getImportedMarketHealthOverview();
+    await getImportedMarketHealth("atlanta");
+    await getImportedMarketSources("atlanta");
+    await getImportedMarketFacts("atlanta");
+    await getImportedMarketGaps("atlanta");
+    await getImportedMarketRankingDiagnostics("atlanta");
+    await getImportedMarketRefreshReadiness("atlanta");
+    await getImportedMarketDiffPreview("atlanta");
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/markets/imported/health",
+      "/markets/imported/atlanta/health",
+      "/markets/imported/atlanta/sources",
+      "/markets/imported/atlanta/facts",
+      "/markets/imported/atlanta/gaps",
+      "/markets/imported/atlanta/ranking-diagnostics",
+      "/markets/imported/atlanta/refresh-readiness",
+      "/markets/imported/atlanta/diff-preview",
+    ]);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).method).toBeUndefined();
+      expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
+    }
+  });
+
+  test("imported market operations bundle follows backend route contract without write calls", async () => {
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input) => {
+      const path = String(input);
+      const data = path === "/markets/imported/health"
+        ? {
+          summary: {
+            registered_market_count: 1,
+            healthy_market_count: 1,
+            markets_needing_refresh: 0,
+            markets_with_limited_coverage: 0,
+            markets_with_stale_sources: 0,
+            total_stale_source_count: 0,
+            total_ranking_excluded_fact_count: 0,
+            highest_priority_maintenance_market: "atlanta",
+            recommended_next_maintenance_action: "No immediate maintenance action.",
+            overall_health_status: "healthy",
+          },
+          markets: [{ market_key: "atlanta", market_name: "Atlanta", health_status: "healthy" }],
+        }
+        : { market_key: "atlanta" };
+      return new Response(JSON.stringify(envelope(data)), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const details = await getImportedMarketOperationDetails("atlanta");
+    const view = await getImportedMarketOperationsView();
+
+    expect(details.diff).toEqual({ market_key: "atlanta" });
+    expect(view.data?.overview.summary.registered_market_count).toBe(1);
+    expect(view.data?.details_by_market.atlanta.diff).toEqual({ market_key: "atlanta" });
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/markets/imported/atlanta/sources",
+      "/markets/imported/atlanta/facts",
+      "/markets/imported/atlanta/gaps",
+      "/markets/imported/atlanta/ranking-diagnostics",
+      "/markets/imported/atlanta/refresh-readiness",
+      "/markets/imported/atlanta/diff-preview",
+      "/markets/imported/health",
+      "/markets/imported/atlanta/sources",
+      "/markets/imported/atlanta/facts",
+      "/markets/imported/atlanta/gaps",
+      "/markets/imported/atlanta/ranking-diagnostics",
+      "/markets/imported/atlanta/refresh-readiness",
+      "/markets/imported/atlanta/diff-preview",
+    ]);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).method).toBeUndefined();
+    }
   });
 
   test("recommendation API calls stay public and structured", async () => {

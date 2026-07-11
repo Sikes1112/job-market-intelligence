@@ -1,0 +1,11 @@
+[
+  {
+    "region_id": "austin",
+    "region_name": "Austin",
+    "region_type": "greater_region",
+    "country": "US",
+    "state_codes": ["TX"],
+    "primary_city": "Austin",
+    "source_ref": "src_austin_region_2026_06"
+  }
+]
