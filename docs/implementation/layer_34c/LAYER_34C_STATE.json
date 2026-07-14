@@ -65,6 +65,6 @@
   "layer": "34C",
   "remediation_cycle": 4,
   "starting_commit": "a6058e318c29bdc523764c01dd5611c8637297b9",
-  "status": "COMPLETE_PENDING_COMMIT",
-  "working_commit": null
+  "status": "LOCKED",
+  "working_commit": "4e245027d1703425e4c8e92f969b03639b8f63da"
 }
