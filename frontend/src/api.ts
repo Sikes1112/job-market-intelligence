@@ -58,7 +58,11 @@ import type {
   ImportedRankingExclusionReport,
   ImportedRefreshReadinessReport,
   ImportedSourceAgingReport,
+  MarketComparisonReport,
+  MarketIntelligenceGoal,
+  MarketIntelligenceProfile,
   MarketCoverageListPayload,
+  PlatformMarketIntelligencePayload,
   EconomicDevelopmentProfile,
   EducationWorkforceAlignmentProfile,
   MonetizationAccessPreviewPayload,
@@ -394,6 +398,43 @@ export function getImportedMarketRefreshReadiness(marketKey: string) {
 export function getImportedMarketDiffPreview(marketKey: string) {
   return request<ImportedDiffPreview>(
     `/markets/imported/${encodeURIComponent(marketKey)}/diff-preview`,
+  );
+}
+
+export function getMarketIntelligence(goal?: MarketIntelligenceGoal | string) {
+  const params = new URLSearchParams();
+  appendOptionalParam(params, "goal", goal);
+  const query = params.toString();
+  return request<PlatformMarketIntelligencePayload>(
+    `/market-intelligence${query ? `?${query}` : ""}`,
+  );
+}
+
+export function getMarketIntelligenceProfile(marketKey: string) {
+  return request<MarketIntelligenceProfile>(
+    `/market-intelligence/${encodeURIComponent(marketKey)}`,
+  );
+}
+
+export function getMarketComparisonRanking(goal?: MarketIntelligenceGoal | string) {
+  const params = new URLSearchParams();
+  appendOptionalParam(params, "goal", goal);
+  const query = params.toString();
+  return request<PlatformMarketIntelligencePayload["default_ranking"]>(
+    `/market-comparisons${query ? `?${query}` : ""}`,
+  );
+}
+
+export function getMarketComparison(
+  marketA: string,
+  marketB: string,
+  goal?: MarketIntelligenceGoal | string,
+) {
+  const params = new URLSearchParams();
+  appendOptionalParam(params, "goal", goal);
+  const query = params.toString();
+  return request<MarketComparisonReport>(
+    `/market-comparisons/${encodeURIComponent(marketA)}/${encodeURIComponent(marketB)}${query ? `?${query}` : ""}`,
   );
 }
 

@@ -1,0 +1,48 @@
+{
+  "allowed_audit_decisions": [
+    "PASS",
+    "REMEDIATION_REQUIRED",
+    "HUMAN_ESCALATION"
+  ],
+  "auto_commit_after_pass": false,
+  "commit_subject": "Harden market intelligence quality and calibration",
+  "layer": "34C",
+  "maximum_remediation_cycles": 4,
+  "maximum_transport_retries": 1,
+  "next_layer_handoff_path": "docs/roadmap/LAYER_35_HANDOFF.md",
+  "require_clean_worktree_after_finalization": true,
+  "required_checks": [
+    "targeted_backend",
+    "targeted_frontend",
+    "backend_contracts",
+    "frontend_contracts",
+    "layer_31_regression",
+    "layer_32_regression",
+    "layer_33_regression",
+    "layer_34_regression",
+    "full_backend",
+    "full_frontend",
+    "backend_lint",
+    "frontend_lint",
+    "frontend_build",
+    "compile",
+    "public_demo_smoke",
+    "git_diff_check",
+    "adversarial_audit",
+    "post_commit_verification"
+  ],
+  "required_steps": [
+    "34C.1",
+    "34C.2",
+    "34C.3",
+    "34C.4",
+    "34C.5",
+    "34C.6",
+    "34C.7",
+    "34C.8",
+    "34C.9",
+    "34C.10",
+    "34C.11",
+    "34C.12"
+  ]
+}

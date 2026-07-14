@@ -107,6 +107,7 @@ import {
   ImportedMarketCoveragePanel,
 } from "./ImportedMarketDisplay";
 import { ImportedMarketOperationsPanel } from "./ImportedMarketOperations";
+import { MarketIntelligencePage } from "./MarketIntelligencePage";
 import { formatCountStatus } from "./importedMarketFormat";
 import type {
   ApiEnvelope,
@@ -270,6 +271,7 @@ import {
   institutionReportsUrl,
   isProductPage,
   landingUrl,
+  marketIntelligenceUrl,
   opportunityRoutesUrl,
   policyLandingUrl,
   parseRoute,
@@ -554,6 +556,7 @@ const INTEGRATION_EXPORT_OPTIONS: Array<{
 const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
   { id: "dashboard", label: "Dashboard", kicker: "User intelligence" },
   { id: "explore", label: "Explore Markets", kicker: "Market map" },
+  { id: "intelligence", label: "Market Intelligence", kicker: "Goal rankings" },
   { id: "region", label: "Region Detail", kicker: "Regional output" },
   { id: "company", label: "Company Geography", kicker: "Presence and hiring" },
   { id: "compare", label: "Compare Markets", kicker: "Score comparison" },
@@ -661,6 +664,7 @@ function getNavigationUrl(
   discoveryFilters: DiscoveryFilters,
 ): string {
   if (page === "dashboard") return userIntelligenceDashboardUrl();
+  if (page === "intelligence") return marketIntelligenceUrl();
   if (page === "region") return regionDetailUrl(selectedRegionId);
   if (page === "company") return companyGeographyUrl(selectedCompanyId);
   if (page === "compare") return compareMarketsUrl(comparisonA, comparisonB);
@@ -12691,6 +12695,13 @@ function App() {
 
         {route.page === "dashboard" ? (
           <UserIntelligenceDashboardPage />
+        ) : null}
+
+        {route.page === "intelligence" ? (
+          <MarketIntelligencePage
+            onNavigate={navigateTo}
+            state={route.intelligence}
+          />
         ) : null}
 
         {route.page === "region" ? (

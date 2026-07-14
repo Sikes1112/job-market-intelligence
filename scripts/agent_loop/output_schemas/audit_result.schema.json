@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "stage",
+    "decision",
+    "confidence",
+    "summary",
+    "blocking_findings",
+    "major_findings",
+    "minor_findings",
+    "verification_gaps",
+    "required_remediations",
+    "lock_recommendation"
+  ],
+  "properties": {
+    "stage": {
+      "const": "audit",
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "PASS",
+        "REMEDIATION_REQUIRED",
+        "HUMAN_ESCALATION"
+      ],
+      "type": "string"
+    },
+    "confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "blocking_findings": {
+      "$ref": "#/$defs/findings"
+    },
+    "major_findings": {
+      "$ref": "#/$defs/findings"
+    },
+    "minor_findings": {
+      "$ref": "#/$defs/findings"
+    },
+    "verification_gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_remediations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "lock_recommendation": {
+      "enum": [
+        "LOCK_READY",
+        "NOT_LOCK_READY",
+        "HUMAN_REVIEW_REQUIRED"
+      ],
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "severity",
+          "requirement",
+          "evidence",
+          "affected_area",
+          "remediation",
+          "regression_test",
+          "acceptance_condition"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "blocking",
+              "major",
+              "minor"
+            ],
+            "type": "string"
+          },
+          "requirement": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "affected_area": {
+            "type": "string"
+          },
+          "remediation": {
+            "type": "string"
+          },
+          "regression_test": {
+            "type": "string"
+          },
+          "acceptance_condition": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

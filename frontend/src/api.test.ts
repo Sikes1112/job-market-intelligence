@@ -44,6 +44,10 @@ import {
   getImportedMarketRefreshReadiness,
   getImportedMarketSources,
   getImportedMarkets,
+  getMarketComparison,
+  getMarketComparisonRanking,
+  getMarketIntelligence,
+  getMarketIntelligenceProfile,
   getInstitutionCurrentOrganizations,
   getInstitutionDashboard,
   getPartnerImport,
@@ -225,6 +229,26 @@ describe("frontend API client auth boundary", () => {
     ]);
     for (const [, init] of fetchMock.mock.calls) {
       expect((init as RequestInit).method).toBeUndefined();
+    }
+  });
+
+  test("market intelligence helpers use public read-only Layer 34 routes", async () => {
+    const fetchMock = mockFetch({});
+
+    await getMarketIntelligence("ai_ml");
+    await getMarketIntelligenceProfile("atlanta");
+    await getMarketComparisonRanking("product_management");
+    await getMarketComparison("atlanta", "boston", "data_science");
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/market-intelligence?goal=ai_ml",
+      "/market-intelligence/atlanta",
+      "/market-comparisons?goal=product_management",
+      "/market-comparisons/atlanta/boston?goal=data_science",
+    ]);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).method).toBeUndefined();
+      expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
     }
   });
 

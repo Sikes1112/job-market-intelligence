@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "stage",
+    "decision",
+    "summary",
+    "accepted_findings",
+    "rejected_findings",
+    "changed_files",
+    "tests_added",
+    "commands",
+    "unresolved_findings"
+  ],
+  "properties": {
+    "stage": {
+      "const": "remediation",
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "REMEDIATION_COMPLETE",
+        "REMEDIATION_BLOCKED"
+      ],
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "accepted_findings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rejected_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "changed_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tests_added": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "command",
+          "exit_code",
+          "summary"
+        ],
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "unresolved_findings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1993,6 +1993,180 @@ legend {
   margin-top: 0.18rem;
 }
 
+.market-intelligence-page {
+  gap: 1rem;
+}
+
+.market-intelligence-hero,
+.market-profile-card,
+.market-comparison-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.market-intelligence-goal {
+  max-width: 24rem;
+}
+
+.market-intelligence-summary,
+.confidence-block,
+.contradiction-block,
+.decision-usefulness-panel,
+.limitations-block,
+.opportunity-environment {
+  background: rgb(255 255 255 / 62%);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.85rem;
+}
+
+.market-intelligence-summary p,
+.confidence-block p,
+.decision-state-help {
+  margin-bottom: 0;
+}
+
+.decision-usefulness-panel {
+  gap: 0.85rem;
+}
+
+.decision-panel-header {
+  align-items: start;
+  display: flex;
+  gap: 0.85rem;
+  justify-content: space-between;
+}
+
+.decision-state-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.decision-section-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.decision-section,
+.abstention-notice {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.decision-section h4,
+.abstention-notice h4 {
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+.decision-section ul {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.decision-section p,
+.abstention-notice p {
+  margin-bottom: 0;
+}
+
+.contradiction-block {
+  border-color: rgb(151 58 48 / 36%);
+}
+
+.contradiction-block h3 {
+  margin-bottom: 0;
+}
+
+.contradiction-block ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.contradiction-block li {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.contradiction-block span {
+  color: var(--muted);
+}
+
+.compact-contradictions {
+  padding: 0.7rem;
+}
+
+.compact-contradictions h3 {
+  font-size: 0.95rem;
+}
+
+.market-intelligence-ranking {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.intelligence-rank-card {
+  background: var(--paper-strong);
+}
+
+.selected-rank-card {
+  border-color: rgb(23 63 49 / 48%);
+  box-shadow: 0 0 0 2px rgb(23 63 49 / 10%);
+}
+
+.driver-list,
+.limitations-block ul,
+.inline-intel-list ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.driver-list li {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.driver-list span,
+.inline-intel-list > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.driver-list p,
+.inline-intel-list p {
+  margin-bottom: 0;
+}
+
+.inline-intel-list {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.compact-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.market-comparison-panel .source-compare-card {
+  display: grid;
+  gap: 0.6rem;
+}
+
 .imported-market-metrics {
   grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
 }
@@ -2833,6 +3007,7 @@ legend {
   .health-card,
   .detail-hero,
   .classification-layout,
+  .decision-panel-header,
   .upgrade-prompt {
     align-items: start;
     display: grid;
@@ -2841,6 +3016,7 @@ legend {
   .overview-grid,
   .quick-region-grid,
   .split-grid,
+  .decision-section-grid,
   .entry-grid,
   .policy-grid,
   .toolbar,

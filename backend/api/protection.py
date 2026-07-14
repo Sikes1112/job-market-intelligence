@@ -25,6 +25,9 @@ PUBLIC_DEMO_EXACT_ALLOWLIST = frozenset(
         ("GET", "/regions/search"),
         ("GET", "/markets/imported"),
         ("GET", "/markets/imported/health"),
+        ("GET", "/market-intelligence"),
+        ("GET", "/market-comparisons"),
+        ("GET", "/career-goal-comparisons"),
         ("GET", "/companies/search"),
         ("GET", "/compare"),
         ("POST", "/discover/personalized"),
@@ -234,6 +237,12 @@ def _public_demo_route_allowed(method: str, path: str) -> bool:
     ):
         return True
     if len(parts) == 3 and parts[0] == "regions" and parts[1] and parts[2] == "sources":
+        return True
+    if len(parts) == 2 and parts[0] == "market-intelligence" and parts[1]:
+        return True
+    if len(parts) == 2 and parts[0] == "career-goal-comparisons" and parts[1]:
+        return True
+    if len(parts) == 3 and parts[0] == "market-comparisons" and parts[1] and parts[2]:
         return True
     if (
         len(parts) == 4

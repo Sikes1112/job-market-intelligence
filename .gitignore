@@ -35,3 +35,6 @@ tmp/
 /demo.db-*
 /jmi.db
 /jmi.db-*
+
+# Local Codex implementation-loop runtime
+.agent_loop/

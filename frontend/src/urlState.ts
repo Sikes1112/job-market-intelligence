@@ -9,6 +9,7 @@ export const CAREER_STAGE_OPTIONS = ["entry_level"];
 export type ProductPage =
   | "dashboard"
   | "explore"
+  | "intelligence"
   | "region"
   | "company"
   | "compare"
@@ -78,6 +79,13 @@ export type DiscoveryFilters = {
   limit: number;
 };
 
+export type MarketIntelligenceUrlState = {
+  goal: string;
+  marketKey?: string;
+  compareA?: string;
+  compareB?: string;
+};
+
 export type RouteState = {
   page: AppPage;
   regionId?: string;
@@ -91,6 +99,7 @@ export type RouteState = {
   institutionView?: InstitutionView;
   comparison: ComparisonUrlState;
   discovery: DiscoveryFilters;
+  intelligence: MarketIntelligenceUrlState;
   recommendationGoalMode: string;
   unknownPath?: string;
 };
@@ -138,6 +147,7 @@ export const PUBLIC_PAGE_PATHS: Record<Exclude<PublicPage, "landing">, string> =
 const PRODUCT_PAGES: ProductPage[] = [
   "dashboard",
   "explore",
+  "intelligence",
   "region",
   "company",
   "compare",
@@ -151,6 +161,7 @@ const PRODUCT_PAGES: ProductPage[] = [
   "account",
 ];
 const DEFAULT_RECOMMENDATION_GOAL_MODE = "maximize_entry_level_access";
+const DEFAULT_MARKET_INTELLIGENCE_GOAL = "software_engineering";
 
 export function isProductPage(page: AppPage): page is ProductPage {
   return PRODUCT_PAGES.includes(page as ProductPage);
@@ -221,6 +232,15 @@ function parseComparison(params: URLSearchParams): ComparisonUrlState {
   };
 }
 
+function parseMarketIntelligence(params: URLSearchParams): MarketIntelligenceUrlState {
+  return {
+    goal: cleanToken(params.get("goal")) ?? DEFAULT_MARKET_INTELLIGENCE_GOAL,
+    marketKey: cleanToken(params.get("market")),
+    compareA: cleanToken(params.get("compare_a") ?? params.get("a")),
+    compareB: cleanToken(params.get("compare_b") ?? params.get("b")),
+  };
+}
+
 function parseDiscovery(params: URLSearchParams): DiscoveryFilters {
   return {
     selectedRegions: parseListParam(
@@ -276,6 +296,7 @@ function baseRoute(
     page,
     comparison: parseComparison(params),
     discovery: parseDiscovery(params),
+    intelligence: parseMarketIntelligence(params),
     recommendationGoalMode: cleanToken(params.get("goal")) ?? DEFAULT_RECOMMENDATION_GOAL_MODE,
     ...extra,
   };
@@ -353,9 +374,10 @@ export function parseRoute(pathname: string, search: string): RouteState {
   }
 
   if (section === "compare") return baseRoute("compare", params);
-  if (section === "dashboard" || section === "intelligence") {
+  if (section === "dashboard") {
     return baseRoute("dashboard", params);
   }
+  if (section === "intelligence") return baseRoute("intelligence", params);
   if (section === "discovery") return baseRoute("discovery", params);
   if (section === "recommendations") return baseRoute("recommendations", params);
   if (section === "career-agent" || section === "agent") {
@@ -438,6 +460,16 @@ export function exploreUrl(): string {
 
 export function userIntelligenceDashboardUrl(): string {
   return `${PRODUCT_ROOT}/dashboard`;
+}
+
+export function marketIntelligenceUrl(state?: Partial<MarketIntelligenceUrlState>): string {
+  const params = new URLSearchParams();
+  if (state?.goal) params.set("goal", state.goal);
+  if (state?.marketKey) params.set("market", state.marketKey);
+  if (state?.compareA) params.set("compare_a", state.compareA);
+  if (state?.compareB) params.set("compare_b", state.compareB);
+  const query = params.toString();
+  return `${PRODUCT_ROOT}/intelligence${query ? `?${query}` : ""}`;
 }
 
 export function landingUrl(): string {

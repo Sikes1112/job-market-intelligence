@@ -16,6 +16,7 @@ from backend.api.exceptions import router as exceptions_router
 from backend.api.external import router as external_router
 from backend.api.institutions import router as institutions_router
 from backend.api.integrations import router as integrations_router
+from backend.api.market_intelligence import router as market_intelligence_router
 from backend.api.monetization import router as monetization_router
 from backend.api.observability import RequestObservabilityMiddleware
 from backend.api.opportunities import router as opportunities_router
@@ -110,6 +111,7 @@ def create_app(
         )
 
     app.include_router(read_router)
+    app.include_router(market_intelligence_router)
     app.include_router(personalized_router)
     app.include_router(recommendations_router)
     app.include_router(career_agent_router)

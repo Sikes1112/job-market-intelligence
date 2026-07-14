@@ -796,8 +796,8 @@ function CareerAgentToolPanel({
         <section className="route-section">
           <h3>Warnings / uncertainty</h3>
           <ul className="warning-list">
-            {[...preview.warnings, ...preview.uncertainty.limitations].map((warning) => (
-              <li className="warning-item" key={warning}>
+            {[...preview.warnings, ...preview.uncertainty.limitations].map((warning, index) => (
+              <li className="warning-item" key={`preview-warning-${index}-${warning}`}>
                 {warning}
               </li>
             ))}
@@ -1005,8 +1005,8 @@ function CareerAgentAnswerPanel({ answer }: { answer: CareerAgentAnswer }) {
         </div>
         {answer.limitations.length || answer.guardrails.warnings.length ? (
           <ul className="warning-list career-agent-warning-list">
-            {[...answer.limitations, ...answer.guardrails.warnings].map((warning) => (
-              <li className="warning-item" key={warning}>
+            {[...answer.limitations, ...answer.guardrails.warnings].map((warning, index) => (
+              <li className="warning-item" key={`answer-warning-${index}-${warning}`}>
                 {warning}
               </li>
             ))}
@@ -1259,8 +1259,8 @@ function CareerAgentRecommendationCard({
         <section className="route-section">
           <h3>Warnings / limitations</h3>
           <ul className="warning-list">
-            {[...recommendation.warnings, ...recommendation.limitations].map((warning) => (
-              <li className="warning-item" key={warning}>
+            {[...recommendation.warnings, ...recommendation.limitations].map((warning, index) => (
+              <li className="warning-item" key={`recommendation-warning-${index}-${warning}`}>
                 {warning}
               </li>
             ))}

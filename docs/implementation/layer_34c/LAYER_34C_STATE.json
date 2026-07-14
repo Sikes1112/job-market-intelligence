@@ -1,0 +1,70 @@
+{
+  "artifacts": {
+    "audit_reports": [
+      ".agent_loop/layer_34c/20260714T003345Z_audit.json",
+      ".agent_loop/layer_34c/20260714T005924Z_audit.json",
+      ".agent_loop/layer_34c/20260714T013330Z_audit.json",
+      ".agent_loop/layer_34c/20260714T015211Z_audit.json",
+      ".agent_loop/layer_34c/20260714T123956Z_audit.json",
+      ".agent_loop/layer_34c/20260714T130437Z_audit.json"
+    ],
+    "implementation_reports": [
+      ".agent_loop/layer_34c/20260713T211404Z_34C_1_implementation.json",
+      ".agent_loop/layer_34c/20260713T212155Z_34C_2_implementation.json",
+      ".agent_loop/layer_34c/20260713T213227Z_34C_3_implementation.json",
+      ".agent_loop/layer_34c/20260713T214613Z_34C_4_implementation.json",
+      ".agent_loop/layer_34c/20260713T224632Z_34C_5_implementation.json",
+      ".agent_loop/layer_34c/20260713T225751Z_34C_6_implementation.json",
+      ".agent_loop/layer_34c/20260713T230959Z_34C_7_implementation.json",
+      ".agent_loop/layer_34c/20260713T232323Z_34C_8_implementation.json",
+      ".agent_loop/layer_34c/20260713T233739Z_34C_9_implementation.json",
+      ".agent_loop/layer_34c/20260713T234946Z_34C_10_implementation.json",
+      ".agent_loop/layer_34c/20260713T235810Z_34C_11_implementation.json",
+      ".agent_loop/layer_34c/20260714T001036Z_34C_12_implementation.json"
+    ],
+    "remediation_reports": [
+      ".agent_loop/layer_34c/20260714T004018Z_remediation_1.json",
+      ".agent_loop/layer_34c/20260714T010802Z_remediation_2.json",
+      ".agent_loop/layer_34c/20260714T013941Z_remediation_3.json",
+      ".agent_loop/layer_34c/20260714T124620Z_remediation_4.json"
+    ],
+    "verification_reports": [
+      ".agent_loop/layer_34c/20260714T003345Z_verification.json",
+      ".agent_loop/layer_34c/20260714T005924Z_verification.json",
+      ".agent_loop/layer_34c/20260714T013330Z_verification.json",
+      ".agent_loop/layer_34c/20260714T015211Z_verification.json",
+      ".agent_loop/layer_34c/20260714T123956Z_verification.json",
+      ".agent_loop/layer_34c/20260714T130437Z_verification.json"
+    ]
+  },
+  "completed_steps": [
+    "34C.1",
+    "34C.2",
+    "34C.3",
+    "34C.4",
+    "34C.5",
+    "34C.6",
+    "34C.7",
+    "34C.8",
+    "34C.9",
+    "34C.10",
+    "34C.11",
+    "34C.12"
+  ],
+  "current_step": null,
+  "human_authorizations": [
+    {
+      "authorization": "LAYER_34C_HUMAN_AUTHORIZATION_01",
+      "authorized_at": "2026-07-14T12:36:18.495020+00:00",
+      "authorized_cycle": 4,
+      "reason": "Narrow remediation for Product Management direct/proxy evidence classification and unsupported-ranking winner presentation."
+    }
+  ],
+  "last_audit_decision": "PASS",
+  "last_run_id": "2026-07-14T13:09:33.705422+00:00-fa3e2804",
+  "layer": "34C",
+  "remediation_cycle": 4,
+  "starting_commit": "a6058e318c29bdc523764c01dd5611c8637297b9",
+  "status": "COMPLETE_PENDING_COMMIT",
+  "working_commit": null
+}

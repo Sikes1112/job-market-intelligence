@@ -1547,6 +1547,281 @@ export type ImportedMarketOperationsViewPayload = {
   details_by_market: Record<string, ImportedMarketOperationDetails>;
 };
 
+export type MarketIntelligenceGoal =
+  | "software_engineering"
+  | "product_management"
+  | "ai_ml"
+  | "cybersecurity"
+  | "data_science"
+  | (string & {});
+
+export type MarketIntelligenceConfidence =
+  | "high"
+  | "moderate"
+  | "low"
+  | "limited"
+  | (string & {});
+
+export type MarketIntelligenceFreshness =
+  | "current"
+  | "aging"
+  | "stale"
+  | "unknown"
+  | (string & {});
+
+export type MarketComparisonOutcome =
+  | "market_a"
+  | "market_b"
+  | "tie"
+  | "no_winner"
+  | (string & {});
+
+export type MarketEvidenceSufficiency =
+  | "comparison_ready"
+  | "limited_evidence"
+  | "insufficient_evidence"
+  | "not_supported"
+  | (string & {});
+
+export type MarketEvidenceBasis =
+  | "direct"
+  | "proxy"
+  | "direct_and_proxy"
+  | "no_qualifying_evidence"
+  | (string & {});
+
+export type MarketRankingStabilityStatus =
+  | "stable"
+  | "sensitive"
+  | "unstable"
+  | "indeterminate"
+  | (string & {});
+
+export type MarketContradictionStatus =
+  | "clear"
+  | "warnings"
+  | "blocking"
+  | (string & {});
+
+export type MarketContradictionSeverity =
+  | "warning"
+  | "blocking"
+  | (string & {});
+
+export type MarketContradictionCode =
+  | "high_confidence_insufficient_evidence"
+  | "strong_internship_missing_evidence"
+  | "current_freshness_stale_primary_source"
+  | "winner_with_lower_score"
+  | "opposite_weakness_and_driver"
+  | "specific_role_recommendation_without_direct_evidence"
+  | "comparison_ready_without_qualifying_evidence"
+  | "no_limitations_despite_critical_gaps"
+  | "alphabetical_tie_displayed_as_winner"
+  | (string & {});
+
+export type MarketContradictionFinding = {
+  code: MarketContradictionCode;
+  severity: MarketContradictionSeverity;
+  message: string;
+  evidence: string;
+  blocks_recommendation: boolean;
+};
+
+export type MarketIntelligenceGoalDefinition = {
+  goal: MarketIntelligenceGoal;
+  label: string;
+  description: string;
+  direct_signals: string[];
+  limitations: string[];
+};
+
+export type MarketIntelligenceInsight = {
+  code: string;
+  message: string;
+  evidence: string;
+  impact: string;
+};
+
+export type MarketOpportunityEnvironment = {
+  hiring_activity: string;
+  employer_diversity: string;
+  internship_ecosystem: string;
+  coop_ecosystem: string;
+  early_career_support: string;
+  hiring_momentum: string;
+  overall: string;
+};
+
+export type MarketIntelligenceSupportingMetrics = Record<
+  string,
+  number | string | null | undefined
+>;
+
+export type MarketEvidenceGrounding = {
+  evidence_areas_used: string[];
+  evidence_areas_missing: string[];
+  direct_evidence_summary: string[];
+  proxy_evidence_summary: string[];
+  freshness: MarketIntelligenceFreshness;
+  coverage: string;
+  excluded_fact_summary: string;
+  confidence_constraints: string[];
+  score_margin: number | null;
+  stability_status: MarketRankingStabilityStatus;
+  stability_scenarios?: MarketRobustnessScenarioResult[];
+};
+
+export type MarketRobustnessScenarioRankingResult = {
+  market_key: string;
+  rank: number;
+  score: number;
+  confidence: MarketIntelligenceConfidence;
+  freshness: MarketIntelligenceFreshness;
+  evidence_sufficiency: MarketEvidenceSufficiency;
+  top_market_key: string | null;
+};
+
+export type MarketRobustnessScenarioResult = {
+  scenario: string;
+  label: string;
+  status: MarketRankingStabilityStatus;
+  baseline_result: MarketRobustnessScenarioRankingResult;
+  scenario_result: MarketRobustnessScenarioRankingResult;
+  rank_change: number;
+  winner_change: boolean;
+  score_delta: number;
+  confidence_delta: number;
+  sufficiency_delta: string;
+  explanation: string;
+};
+
+export type MarketIntelligenceProfile = {
+  market_key: string;
+  market_name: string;
+  region_id: string;
+  overview: string;
+  strengths: MarketIntelligenceInsight[];
+  weaknesses: MarketIntelligenceInsight[];
+  hiring_summary: string;
+  employer_summary: string;
+  internship_summary: string;
+  coop_summary: string;
+  early_career_summary: string;
+  opportunity_environment: MarketOpportunityEnvironment;
+  confidence: MarketIntelligenceConfidence;
+  confidence_score: number;
+  freshness: MarketIntelligenceFreshness;
+  coverage_summary: string;
+  limitations: string[];
+  supporting_metrics: MarketIntelligenceSupportingMetrics;
+  grounding: MarketEvidenceGrounding | null;
+};
+
+export type MarketRankingDriver = {
+  code: string;
+  label: string;
+  contribution: number;
+  evidence: string;
+};
+
+export type ExplainableRankingItem = {
+  rank: number;
+  market_key: string;
+  market_name: string;
+  goal: MarketIntelligenceGoal;
+  score: number;
+  raw_score: number;
+  confidence: MarketIntelligenceConfidence;
+  freshness: MarketIntelligenceFreshness;
+  ranking_drivers: MarketRankingDriver[];
+  strengths: string[];
+  weaknesses: string[];
+  limitations: string[];
+  supporting_metrics: MarketIntelligenceSupportingMetrics;
+  evidence_sufficiency: MarketEvidenceSufficiency;
+  evidence_basis: MarketEvidenceBasis;
+  is_provisional: boolean;
+  abstention_reason: string | null;
+  contradiction_status: MarketContradictionStatus;
+  contradictions: MarketContradictionFinding[];
+  grounding: MarketEvidenceGrounding | null;
+};
+
+export type ExplainableRankingReport = {
+  goal: MarketIntelligenceGoal;
+  goal_definition: MarketIntelligenceGoalDefinition;
+  ranked_markets: ExplainableRankingItem[];
+  top_market_key: string | null;
+  explanation: string;
+  limitations: string[];
+  tie_breaker: string;
+  evidence_sufficiency: MarketEvidenceSufficiency;
+  is_provisional: boolean;
+  abstention_reason: string | null;
+  contradiction_status: MarketContradictionStatus;
+  contradictions: MarketContradictionFinding[];
+  grounding: MarketEvidenceGrounding | null;
+};
+
+export type MarketComparisonSide = {
+  market_key: string;
+  market_name: string;
+  score: number;
+  confidence: MarketIntelligenceConfidence;
+  strengths: string[];
+  weaknesses: string[];
+  supporting_metrics: MarketIntelligenceSupportingMetrics;
+  evidence_sufficiency: MarketEvidenceSufficiency;
+  evidence_basis: MarketEvidenceBasis;
+  grounding: MarketEvidenceGrounding | null;
+};
+
+export type MarketComparisonReport = {
+  goal: MarketIntelligenceGoal;
+  market_a: MarketComparisonSide;
+  market_b: MarketComparisonSide;
+  outcome: MarketComparisonOutcome;
+  winner_market_key: string | null;
+  explanation: string;
+  confidence: MarketIntelligenceConfidence;
+  supporting_metrics: MarketIntelligenceSupportingMetrics;
+  limitations: string[];
+  evidence_sufficiency: MarketEvidenceSufficiency;
+  is_provisional: boolean;
+  abstention_reason: string | null;
+  contradiction_status: MarketContradictionStatus;
+  contradictions: MarketContradictionFinding[];
+  grounding: MarketEvidenceGrounding | null;
+};
+
+export type CareerGoalComparisonReport = {
+  goal: MarketIntelligenceGoal;
+  goal_definition: MarketIntelligenceGoalDefinition;
+  ranking: ExplainableRankingReport;
+  recommended_market_key: string | null;
+  recommendation_summary: string;
+  confidence: MarketIntelligenceConfidence;
+  limitations: string[];
+  evidence_sufficiency: MarketEvidenceSufficiency;
+  is_provisional: boolean;
+  abstention_reason: string | null;
+  contradiction_status: MarketContradictionStatus;
+  contradictions: MarketContradictionFinding[];
+  grounding: MarketEvidenceGrounding | null;
+};
+
+export type PlatformMarketIntelligencePayload = {
+  market_count: number;
+  profile_count: number;
+  supported_goals: MarketIntelligenceGoalDefinition[];
+  profiles: MarketIntelligenceProfile[];
+  default_ranking: ExplainableRankingReport;
+  highest_confidence_market: string | null;
+  public_summary: string;
+  limitations: string[];
+};
+
 export type RegionCompany = {
   company_id: string;
   company_name: string;
