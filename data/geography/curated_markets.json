@@ -1,0 +1,115 @@
+{
+  "version": "2026-10-07",
+  "provenance": {
+    "identity": "Repository-controlled reconciliation of data/imports/markets.json and each curated regions.json file.",
+    "state_membership": "Copied from the source-controlled state_codes fields in curated regions.json.",
+    "map_metadata": "No trustworthy coordinates or bounds existed in the repository at Layer 41A; centroid and focus_bounds remain null intentionally."
+  },
+  "markets": [
+    {
+      "region_id": "greater_boston",
+      "public_slug": "boston",
+      "primary_city": "Boston",
+      "state_codes": ["MA"],
+      "market_support_status": "supported",
+      "centroid": null,
+      "focus_bounds": null,
+      "aliases": [
+        {"value": "boston", "type": "import_key"},
+        {"value": "Greater Boston", "type": "alternate_name"},
+        {"value": "Boston-Cambridge", "type": "alternate_name"}
+      ]
+    },
+    {
+      "region_id": "greater_nyc",
+      "public_slug": "new-york",
+      "primary_city": "New York",
+      "state_codes": ["CT", "NJ", "NY"],
+      "market_support_status": "supported",
+      "centroid": null,
+      "focus_bounds": null,
+      "aliases": [
+        {"value": "nyc", "type": "import_key"},
+        {"value": "Greater NYC", "type": "alternate_name"},
+        {"value": "New York", "type": "city_alias"}
+      ]
+    },
+    {
+      "region_id": "greater_seattle",
+      "public_slug": "seattle",
+      "primary_city": "Seattle",
+      "state_codes": ["WA"],
+      "market_support_status": "supported",
+      "centroid": null,
+      "focus_bounds": null,
+      "aliases": [
+        {"value": "seattle", "type": "import_key"},
+        {"value": "Greater Seattle", "type": "alternate_name"}
+      ]
+    },
+    {
+      "region_id": "sf_bay_area",
+      "public_slug": "san-francisco-bay-area",
+      "primary_city": "San Francisco",
+      "state_codes": ["CA"],
+      "market_support_status": "supported",
+      "centroid": null,
+      "focus_bounds": null,
+      "aliases": [
+        {"value": "san_francisco_bay_area", "type": "import_key"},
+        {"value": "greater_sf", "type": "legacy_id"},
+        {"value": "Bay Area", "type": "alternate_name"},
+        {"value": "SF Bay Area", "type": "abbreviation"},
+        {"value": "San Francisco", "type": "city_alias"}
+      ]
+    },
+    {
+      "region_id": "washington_dc",
+      "public_slug": "washington-dc",
+      "primary_city": "Washington",
+      "state_codes": ["DC", "MD", "VA"],
+      "market_support_status": "supported",
+      "centroid": null,
+      "focus_bounds": null,
+      "aliases": [
+        {"value": "Washington DC", "type": "import_key"},
+        {"value": "dc_nova", "type": "legacy_id"},
+        {"value": "DC/NoVA", "type": "abbreviation"}
+      ]
+    },
+    {
+      "region_id": "atlanta",
+      "public_slug": "atlanta",
+      "primary_city": "Atlanta",
+      "state_codes": ["GA"],
+      "market_support_status": "supported",
+      "centroid": null,
+      "focus_bounds": null,
+      "aliases": [
+        {"value": "greater_atlanta", "type": "legacy_id"}
+      ]
+    },
+    {
+      "region_id": "austin",
+      "public_slug": "austin",
+      "primary_city": "Austin",
+      "state_codes": ["TX"],
+      "market_support_status": "supported",
+      "centroid": null,
+      "focus_bounds": null,
+      "aliases": [
+        {"value": "greater_austin", "type": "legacy_id"}
+      ]
+    },
+    {
+      "region_id": "chicago",
+      "public_slug": "chicago",
+      "primary_city": "Chicago",
+      "state_codes": ["IL"],
+      "market_support_status": "supported",
+      "centroid": null,
+      "focus_bounds": null,
+      "aliases": []
+    }
+  ]
+}

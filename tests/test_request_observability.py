@@ -51,6 +51,7 @@ def test_request_logging_includes_observability_fields(client: TestClient) -> No
     assert fields["request_id"] == response.headers["x-request-id"]
     assert fields["method"] == "GET"
     assert fields["path"] == "/health"
+    assert fields["route"] == "/health"
     assert fields["status_code"] == 200
     assert isinstance(fields["duration_ms"], float)
     assert fields["duration_ms"] >= 0
@@ -79,6 +80,7 @@ def test_request_logging_path_excludes_query_string(client: TestClient) -> None:
     assert response.status_code == 200
     fields = handler.records[-1].extra_fields
     assert fields["path"] == "/health"
+    assert fields["route"] == "/health"
     assert "secret" not in fields["path"]
 
 
@@ -134,6 +136,7 @@ def test_request_logging_includes_error_type_for_unhandled_exception(
     assert fields["request_id"]
     assert fields["method"] == "GET"
     assert fields["path"] == "/boom"
+    assert fields["route"] == "/boom"
     assert fields["status_code"] == 500
     assert fields["error_type"] == "ValueError"
     assert get_request_id() is None

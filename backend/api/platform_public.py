@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 
 from backend.api.dependencies import get_output_service, get_session
 from backend.api.envelope import error_envelope, lightweight_success_envelope
+from backend.api.geographic_identity import require_canonical_region_id
+from backend.geography.exceptions import GeographicResolutionError
 from backend.outputs.exceptions import (
     InvalidComparisonInput,
     MissingCompanyForOutput,
@@ -167,8 +169,9 @@ def public_region_scores(
         )
 
     try:
+        region_id = require_canonical_region_id(session, region_id)
         envelope = _service(session, output_service).region_scores(region_id)
-    except MissingRegionForOutput:
+    except (GeographicResolutionError, MissingRegionForOutput):
         return _deny_authorized_platform_request(
             session=session,
             access=access,
@@ -257,8 +260,9 @@ def public_early_career_access(
         )
 
     try:
+        region_id = require_canonical_region_id(session, region_id)
         envelope = _service(session, output_service).early_career_access(region_id)
-    except MissingRegionForOutput:
+    except (GeographicResolutionError, MissingRegionForOutput):
         return _deny_authorized_platform_request(
             session=session,
             access=access,
@@ -357,6 +361,8 @@ def public_market_compare(
         )
 
     try:
+        region_a = require_canonical_region_id(session, region_a)
+        region_b = require_canonical_region_id(session, region_b)
         envelope = _service(session, output_service).market_comparison(region_a, region_b)
     except InvalidComparisonInput as exc:
         return _deny_authorized_platform_request(
@@ -367,7 +373,7 @@ def public_market_compare(
             message=str(exc),
             decision_reason="validation_error",
         )
-    except MissingRegionForOutput:
+    except (GeographicResolutionError, MissingRegionForOutput):
         return _deny_authorized_platform_request(
             session=session,
             access=access,

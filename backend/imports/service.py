@@ -18,6 +18,7 @@ from backend.companies.types import PublicOrPrivate
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.entry_level.repository import EntryLevelRepository
 from backend.entry_level.types import EntryLevelConfidence
+from backend.geography.catalog import apply_curated_geography, load_curated_geographies
 from backend.geography.repository import RegionRepository
 from backend.geography.service import GeographyService, RegionDefinition
 from backend.geography.types import RegionType
@@ -223,6 +224,7 @@ def _run_import(
 
     for region in dataset.regions:
         row, outcome = geography_service.upsert_for_build(_region_definition(region))
+        apply_curated_geography(region_repo, row.region_id)
         _record(counts, "regions", outcome)
         _link_fact(
             provenance_service,
@@ -396,13 +398,21 @@ def _link_fact(
 
 
 def _region_definition(region: dict[str, Any]) -> RegionDefinition:
+    region_id = _required_text(region, "region_id")
+    curated = load_curated_geographies().get(region_id)
     return RegionDefinition(
-        region_id=_required_text(region, "region_id"),
+        region_id=region_id,
         region_name=_required_text(region, "region_name"),
         display_name=_required_text(region, "region_name"),
         region_type=RegionType(_required_text(region, "region_type")),
-        labor_market_group=_required_text(region, "region_id"),
+        labor_market_group=region_id,
         normalization_profile_id=None,
+        public_slug=curated.public_slug if curated else None,
+        primary_city=curated.primary_city if curated else region.get("primary_city"),
+        centroid_latitude=curated.centroid_latitude if curated else None,
+        centroid_longitude=curated.centroid_longitude if curated else None,
+        focus_bounds=curated.focus_bounds if curated else None,
+        market_support_status=curated.market_support_status if curated else "unknown",
     )
 
 

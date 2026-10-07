@@ -207,9 +207,7 @@ def test_signal_strength_rules_and_evidence_windows(session: Session) -> None:
             region_id,
             created_at=NOW,
         )
-        emerging = next(
-            signal for signal in signals if signal.signal_type == "emerging_market"
-        )
+        emerging = next(signal for signal in signals if signal.signal_type == "emerging_market")
         assert emerging.status == "active"
         assert emerging.signal_strength == expected_strength
         assert emerging.snapshot_count == count
@@ -368,9 +366,7 @@ def test_index_version_changes_create_new_versions_and_preserve_old_scores(
 
     assert new_score.index_version_id == new_version.market_index_version_id
     assert old_score.index_version_id != new_score.index_version_id
-    assert session.get(MarketIndexScore, old_score.market_index_score_id).score == (
-        old_score.score
-    )
+    assert session.get(MarketIndexScore, old_score.market_index_score_id).score == (old_score.score)
     with pytest.raises(ValueError, match="append-only"):
         old_score.score = 0.0
         session.flush()
@@ -475,6 +471,15 @@ def test_platform_intelligence_apis_return_safe_summaries(api_client, session: S
 def test_public_demo_allows_only_safe_platform_intelligence_gets(
     session: Session,
 ) -> None:
+    session.add(
+        Region(
+            region_id="greater_boston",
+            region_name="greater_boston",
+            display_name="Greater Boston",
+            region_type="greater_region",
+        )
+    )
+    session.flush()
     app = create_app(
         engine=session.bind,
         settings=Settings(

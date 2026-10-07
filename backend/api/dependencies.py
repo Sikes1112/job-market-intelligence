@@ -40,6 +40,7 @@ from backend.outputs.repository import OutputMetadataRepository
 from backend.outputs.service import OutputAssemblyService
 from backend.presence.repository import PresenceRepository
 from backend.scoring.repository import RegionScoreRepository
+from backend.users.exceptions import DeactivatedUserAuthenticationBlocked
 from backend.users.models import ExternalAuthIdentity, User, UserProfile
 from backend.users.repository import UserRepository
 from backend.users.service import UserIdentityService
@@ -115,9 +116,15 @@ def get_current_user(
             detail="Invalid verified auth claims",
         ) from exc
 
-    resolved = UserIdentityService(UserRepository(session)).resolve_external_principal(
-        principal
-    )
+    try:
+        resolved = UserIdentityService(UserRepository(session)).resolve_external_principal(
+            principal
+        )
+    except DeactivatedUserAuthenticationBlocked as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        ) from exc
     return CurrentUser(
         user=resolved.user,
         identity=resolved.identity,

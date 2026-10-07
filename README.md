@@ -151,5 +151,6 @@ cd frontend && npm run build
 - `docs/AUTH_USER_FOUNDATION.md`
 - `docs/DATA_MODEL.md`
 - `docs/API_SURFACES.md`
+- `docs/LAYER_39B_OPERATIONS.md`
 - `docs/architecture/ENGINEERING_IMPLEMENTATION_BLUEPRINT.md`
 - `docs/runbooks/neon_backup_restore.md`

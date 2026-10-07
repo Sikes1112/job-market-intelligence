@@ -1166,10 +1166,16 @@ export type PriorityMarket = {
 
 export type RegionListItem = {
   region_id: string;
+  public_slug?: string | null;
   display_name: string;
   region_type: string;
   parent_region_id: string | null;
   labor_market_group: string | null;
+  primary_city?: string | null;
+  state_codes?: string[];
+  centroid?: { latitude: number; longitude: number } | null;
+  focus_bounds?: Record<string, number> | null;
+  market_support_status?: "supported" | "unsupported" | "unknown" | string;
   state: string;
   version?: number;
   coverage?: CoverageMetadata;
@@ -1237,7 +1243,10 @@ export type ImportDisplayMetadata = {
 export type MarketCoverageSummary = {
   market_key: string;
   region_id: string;
+  public_slug?: string | null;
   display_name: string;
+  primary_city?: string | null;
+  state_codes?: string[];
   coverage_status: string;
   import_status: string;
   company_count: number;
@@ -1860,10 +1869,16 @@ export type EntryLevelSummary = {
 
 export type RegionDetail = {
   region_id: string;
+  public_slug?: string | null;
   display_name: string;
   region_type: string;
   parent_region_id: string | null;
   labor_market_group: string | null;
+  primary_city?: string | null;
+  state_codes?: string[];
+  centroid?: { latitude: number; longitude: number } | null;
+  focus_bounds?: Record<string, number> | null;
+  market_support_status?: "supported" | "unsupported" | "unknown" | string;
   coverage?: CoverageMetadata;
   sector_coverage?: SectorCoverageMap;
   priority_market?: PriorityMarket | null;
@@ -2025,6 +2040,908 @@ export type PersonalizedRequest = {
   brand_preference: string;
   region_ids: string[];
   limit: number;
+};
+
+export type CareerIdentityFactType =
+  | "education"
+  | "experience"
+  | "skill"
+  | "project"
+  | "credential"
+  | "career_goal"
+  | "role_preference"
+  | "industry_preference"
+  | "geographic_constraint"
+  | "compensation_constraint"
+  | "timing_preference"
+  | "work_arrangement_preference";
+
+export type CareerIdentityFactState = "explicit" | "imported" | "inferred" | "confirmed";
+
+export type CareerIdentityFact = {
+  career_identity_fact_id: string;
+  fact_type: CareerIdentityFactType;
+  normalized_key: string;
+  state: CareerIdentityFactState;
+  payload: Record<string, unknown>;
+  provenance: Record<string, unknown>;
+  source_import_id: string | null;
+  source_label: string | null;
+  confirmed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CareerIdentityPrivacy = {
+  ingestion_consent_granted: boolean;
+  inference_consent_granted: boolean;
+  downstream_personalization_consent_granted: boolean;
+  retain_import_metadata: boolean;
+  privacy_visibility: "private" | string;
+};
+
+export type CareerIdentityCompletenessSection = {
+  section: string;
+  score: number;
+  status: string;
+  present_signals: string[];
+  missing_signals: string[];
+  weak_signals: string[];
+  reason_codes: string[];
+};
+
+export type CareerIdentityCompleteness = {
+  identity_version: number;
+  overall_score: number;
+  completeness_state: "empty" | "minimal" | "partial" | "complete" | string;
+  sufficiency_state: "insufficient" | "sufficient" | string;
+  sufficient: boolean;
+  strong_required_signal_count: number;
+  sections: CareerIdentityCompletenessSection[];
+  missing_categories: string[];
+  weak_categories: string[];
+  actionable_reason_codes: string[];
+};
+
+export type CareerIdentity = {
+  career_identity_id: string;
+  user_id: string;
+  current_version: number;
+  completeness_state: string;
+  sufficiency_state: string;
+  privacy: CareerIdentityPrivacy;
+  completeness: CareerIdentityCompleteness | null;
+  facts: Record<CareerIdentityFactType, CareerIdentityFact[]>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CareerIdentityFactInput = {
+  fact_type: CareerIdentityFactType;
+  payload: Record<string, unknown>;
+  state?: CareerIdentityFactState;
+  provenance?: {
+    source_type?: string | null;
+    source_label?: string | null;
+    source_ref?: string | null;
+    extraction_method?: string | null;
+    confidence?: string | null;
+    notes?: string | null;
+  } | null;
+  normalized_key?: string | null;
+  expected_version?: number | null;
+};
+
+export type CareerIdentityFactUpdateInput = {
+  payload?: Record<string, unknown> | null;
+  state?: CareerIdentityFactState | null;
+  provenance?: CareerIdentityFactInput["provenance"];
+  normalized_key?: string | null;
+  expected_version?: number | null;
+};
+
+export type CareerIdentityPrivacyInput = Partial<Omit<CareerIdentityPrivacy, "privacy_visibility">> & {
+  expected_version?: number | null;
+};
+
+export type CareerIdentityIngestionRequest = {
+  source_type: "resume_text" | "profile_text" | "structured_profile";
+  source_label?: string | null;
+  text?: string | null;
+  structured_profile?: Record<string, unknown> | null;
+  consent_granted: boolean;
+  expected_version?: number | null;
+};
+
+export type CareerIdentityIngestionResult = {
+  career_identity_import_id: string | null;
+  identity_version: number;
+  status: "completed" | "failed" | "duplicate";
+  imported_fact_count: number;
+  created_fact_count: number;
+  updated_fact_count: number;
+  protected_fact_count: number;
+  duplicate_fact_count: number;
+  diagnostics: Array<Record<string, unknown>>;
+  completeness: CareerIdentityCompleteness;
+};
+
+export type CareerIdentityFactMutationResult = {
+  career_identity_fact_id: string;
+  outcome: string;
+  version_changed: boolean;
+  identity: CareerIdentity;
+};
+
+export type CareerIdentityPrivacyPayload = {
+  career_identity_id: string;
+  identity_version: number;
+  privacy: CareerIdentityPrivacy;
+};
+
+export type CareerDecisionType =
+  | "role_choice"
+  | "company_choice"
+  | "location_choice"
+  | "career_strategy"
+  | "job_search_strategy"
+  | "education_skill_investment"
+  | "offer_comparison"
+  | "career_path";
+
+export type CareerDecisionStatus =
+  | "draft"
+  | "evaluating"
+  | "decided"
+  | "reconsidering"
+  | "completed"
+  | "abandoned";
+
+export type DecisionOptionStatus = "active" | "selected" | "rejected" | "archived";
+export type DecisionRecommendationStatus = "ready" | "abstained";
+export type EvidenceSufficiency =
+  | "comparison_ready"
+  | "limited_evidence"
+  | "insufficient_evidence"
+  | "not_supported";
+export type CareerDecisionConfidence = "high" | "medium" | "low" | "unknown";
+export type CareerActionStatus = "open" | "in_progress" | "completed" | "skipped" | "blocked";
+export type CareerActionType =
+  | "research"
+  | "application"
+  | "skill_work"
+  | "company_targeting"
+  | "networking_follow_up"
+  | "preparation"
+  | "timing_checkpoint"
+  | "review_task"
+  | "other";
+export type CareerApplicationStatus =
+  | "considering"
+  | "preparing"
+  | "applied"
+  | "response"
+  | "interview"
+  | "final_round"
+  | "rejected"
+  | "withdrawn"
+  | "offer"
+  | "accepted"
+  | "declined";
+export type CareerOutcomeType =
+  | "application_progress"
+  | "offer"
+  | "rejection"
+  | "withdrawal"
+  | "skill_development"
+  | "research_completed"
+  | "networking"
+  | "strategy_change"
+  | "education"
+  | "decision_completed"
+  | "other";
+export type CareerOutcomeStatus = "observed" | "reflected" | "superseded";
+
+export type CareerDecisionPriorityInput = {
+  key: string;
+  label?: string | null;
+  weight?: number | null;
+  hard?: boolean;
+};
+
+export type CareerDecisionConstraintInput = {
+  key: string;
+  field: string;
+  operator?: string;
+  value: unknown;
+  hard?: boolean;
+  label?: string | null;
+};
+
+export type CareerDecisionOptionInput = {
+  title: string;
+  description?: string | null;
+  scenario?: Record<string, unknown>;
+  position?: number;
+};
+
+export type CareerDecisionCreateInput = {
+  decision_type: CareerDecisionType;
+  title: string;
+  description?: string | null;
+  target_date?: string | null;
+  planned_review_at?: string | null;
+  time_horizon?: string | null;
+  priorities?: CareerDecisionPriorityInput[];
+  constraints?: CareerDecisionConstraintInput[];
+  options?: CareerDecisionOptionInput[];
+};
+
+export type CareerDecisionUpdateInput = Partial<Omit<CareerDecisionCreateInput, "decision_type" | "options">> & {
+  status?: CareerDecisionStatus | null;
+  user_note?: string | null;
+};
+
+export type CareerDecisionContext = {
+  context_snapshot_id: string;
+  career_identity_id: string;
+  career_identity_version: number;
+  completeness_state: string;
+  sufficiency_state: string;
+  privacy_scope: string;
+  context: Record<string, unknown>;
+  fact_refs: Array<Record<string, unknown>>;
+  created_at: string;
+};
+
+export type CareerDecisionOption = {
+  option_id: string;
+  decision_id: string;
+  title: string;
+  description: string | null;
+  scenario: Record<string, unknown>;
+  status: DecisionOptionStatus;
+  position: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DecisionChallenge = {
+  code: string;
+  severity: "info" | "warning" | "critical" | string;
+  message: string;
+  scope_type?: string | null;
+  scope_id?: string | null;
+  details?: Record<string, unknown>;
+};
+
+export type DecisionFitOption = {
+  option_id: string;
+  title?: string;
+  assessment?: string;
+  confidence?: CareerDecisionConfidence | string;
+  dimensions?: Array<Record<string, unknown>>;
+  constraints?: Array<Record<string, unknown>>;
+  hard_violations?: Array<Record<string, unknown>>;
+  advantages?: string[];
+  disadvantages?: string[];
+  tradeoffs?: string[];
+  important_unknowns?: string[];
+  [key: string]: unknown;
+};
+
+export type DecisionRecommendation = {
+  recommendation_id: string;
+  decision_id: string;
+  context_snapshot_id: string;
+  recommended_option_id: string | null;
+  recommendation_status: DecisionRecommendationStatus;
+  evidence_sufficiency: EvidenceSufficiency;
+  confidence: CareerDecisionConfidence;
+  summary: string | null;
+  fit: {
+    options?: DecisionFitOption[];
+    [key: string]: unknown;
+  };
+  comparison: Record<string, unknown>;
+  evidence: {
+    supporting?: Array<Record<string, unknown>>;
+    contrary?: Array<Record<string, unknown>>;
+    unavailable?: Array<Record<string, unknown>>;
+    [key: string]: unknown;
+  };
+  challenges: DecisionChallenge[];
+  limitations: string[];
+  generated_at: string;
+};
+
+export type CareerAction = {
+  action_id: string;
+  action_plan_id: string | null;
+  decision_id: string | null;
+  option_id: string | null;
+  action_type: CareerActionType;
+  status: CareerActionStatus;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  priority: number | null;
+  position: number;
+  completed_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CareerActionInput = {
+  action_type: CareerActionType;
+  title: string;
+  description?: string | null;
+  option_id?: string | null;
+  due_at?: string | null;
+  priority?: number | null;
+  position?: number;
+  metadata?: Record<string, unknown>;
+};
+
+export type CareerActionPlan = {
+  action_plan_id: string;
+  decision_id: string;
+  selected_option_id: string | null;
+  title: string;
+  status: "active" | "completed" | "archived";
+  plan: Record<string, unknown>;
+  actions: CareerAction[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type CareerApplicationTransition = {
+  transition_id: string;
+  application_id: string;
+  from_status: CareerApplicationStatus | null;
+  to_status: CareerApplicationStatus;
+  reason: string | null;
+  metadata: Record<string, unknown>;
+  transitioned_at: string;
+};
+
+export type CareerApplication = {
+  application_id: string;
+  decision_id: string | null;
+  action_id: string | null;
+  option_id: string | null;
+  company_id: string | null;
+  region_id: string | null;
+  role_title: string | null;
+  status: CareerApplicationStatus;
+  status_started_at: string;
+  applied_at: string | null;
+  follow_up_at: string | null;
+  source_url: string | null;
+  notes: string | null;
+  metadata: Record<string, unknown>;
+  transitions: CareerApplicationTransition[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type CareerApplicationCreateInput = {
+  decision_id?: string | null;
+  action_id?: string | null;
+  option_id?: string | null;
+  company_id?: string | null;
+  region_id?: string | null;
+  role_title?: string | null;
+  status?: CareerApplicationStatus;
+  applied_at?: string | null;
+  follow_up_at?: string | null;
+  source_url?: string | null;
+  notes?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type CareerOutcome = {
+  outcome_id: string;
+  decision_id: string | null;
+  action_id: string | null;
+  application_id: string | null;
+  option_id: string | null;
+  recommendation_id: string | null;
+  outcome_type: CareerOutcomeType;
+  status: CareerOutcomeStatus;
+  title: string;
+  description: string | null;
+  occurred_at: string;
+  reflection: string | null;
+  evidence: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CareerOutcomeCreateInput = {
+  outcome_type: CareerOutcomeType;
+  title: string;
+  status?: CareerOutcomeStatus;
+  decision_id?: string | null;
+  action_id?: string | null;
+  application_id?: string | null;
+  option_id?: string | null;
+  recommendation_id?: string | null;
+  description?: string | null;
+  occurred_at?: string | null;
+  reflection?: string | null;
+  evidence?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
+
+export type RecommendationFeedbackCreateInput = {
+  decision_id: string;
+  recommendation_id: string;
+  useful: boolean;
+  surprising: boolean;
+  changed_decision: boolean;
+  missing_alternative: boolean;
+  missing_alternative_category?: string | null;
+  confidence_calibration: "too_high" | "too_low" | "about_right" | "unsure";
+  feedback_comment?: string | null;
+  cohort_key?: string | null;
+  experiment_key?: string | null;
+  variant_key?: string | null;
+};
+
+export type RecommendationFeedback = RecommendationFeedbackCreateInput & {
+  feedback_id: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DecisionReflectionCreateInput = {
+  decision_id: string;
+  recommendation_id?: string | null;
+  outcome_id?: string | null;
+  would_make_same_decision: "yes" | "no" | "unsure" | "not_applicable";
+  view_changed: boolean;
+  satisfaction_rating?: number | null;
+  regret_level?: "none" | "low" | "medium" | "high" | "unsure" | null;
+  reflection_comment?: string | null;
+};
+
+export type DecisionReflection = DecisionReflectionCreateInput & {
+  reflection_id: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StrategyChangeCreateInput = {
+  decision_id?: string | null;
+  recommendation_id?: string | null;
+  change_type: "target_role" | "geography" | "company_strategy" | "opportunity_type" | "application_strategy" | "other";
+  previous_state?: Record<string, unknown> | null;
+  new_state: Record<string, unknown>;
+  reason_category?: string | null;
+  note?: string | null;
+};
+
+export type StrategyChange = StrategyChangeCreateInput & {
+  strategy_change_id: string;
+  user_id: string;
+  occurred_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SupportCaseType =
+  | "product_issue"
+  | "bad_data"
+  | "recommendation_issue"
+  | "privacy_issue"
+  | "account_access_issue"
+  | "billing_issue"
+  | "other";
+
+export type SupportCaseCreateInput = {
+  case_type: SupportCaseType;
+  title: string;
+  description?: string | null;
+  subject_type?: string | null;
+  subject_id?: string | null;
+  decision_id?: string | null;
+  recommendation_id?: string | null;
+  current_opportunity_id?: string | null;
+  privacy_request_type?: string | null;
+  priority?: string;
+};
+
+export type SupportCase = SupportCaseCreateInput & {
+  support_case_id: string;
+  user_id: string;
+  status: "open" | "investigating" | "awaiting_user" | "resolved" | "closed";
+  assigned_operator_id: string | null;
+  resolution: string | null;
+  resolved_at: string | null;
+  closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FeatureAccessDecision = {
+  feature_key: string;
+  allowed: boolean;
+  reason: string;
+  cohort_keys: string[];
+  access_mode: string | null;
+  entitlement_source: string | null;
+  configuration: Record<string, unknown>;
+};
+
+export type BetaAccessPayload = {
+  cohorts: Array<{
+    cohort_key: string;
+    name: string;
+    status: string;
+    membership_status: string;
+    configuration: Record<string, unknown>;
+  }>;
+  feature_gates: Array<Record<string, unknown>>;
+};
+
+export type CommercialExperimentSignalCreateInput = {
+  experiment_key: string;
+  variant_key: string;
+  offer_key: "one_time_decision_report" | "active_search_subscription" | "premium_scenarios" | "university_advisor_access";
+  signal_type: "exposed" | "interested" | "not_interested" | "learn_more" | "converted" | "activated" | "canceled";
+  product_surface?: string | null;
+  conversion_ref?: string | null;
+  qualitative_feedback?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type ProductEventCreateInput = {
+  event_type:
+    | "recommendation_viewed"
+    | "coverage_limitation_viewed"
+    | "trust_explanation_viewed";
+  event_source: "frontend";
+  schema_version?: number;
+  anonymous_session_id?: string | null;
+  product_surface?: string | null;
+  decision_id?: string | null;
+  recommendation_id?: string | null;
+  current_opportunity_id?: string | null;
+  career_identity_id?: string | null;
+  career_identity_version?: number | null;
+  cohort_key?: string | null;
+  experiment_key?: string | null;
+  variant_key?: string | null;
+  confidence_bucket?: string | null;
+  coverage_status?: string | null;
+  recommendation_state?: string | null;
+  payload?: Record<string, unknown>;
+};
+
+export type CareerDecision = {
+  decision_id: string;
+  decision_type: CareerDecisionType;
+  status: CareerDecisionStatus;
+  title: string;
+  description: string | null;
+  decision_date: string | null;
+  target_date: string | null;
+  planned_review_at: string | null;
+  time_horizon: string | null;
+  priorities: Array<Record<string, unknown>>;
+  constraints: Array<Record<string, unknown>>;
+  selected_option_id: string | null;
+  career_identity_id: string | null;
+  current_context_snapshot_id: string | null;
+  current_recommendation_id: string | null;
+  current_version: number;
+  context: CareerDecisionContext | null;
+  options: CareerDecisionOption[];
+  recommendation: DecisionRecommendation | null;
+  action_plan: CareerActionPlan | null;
+  applications: CareerApplication[];
+  outcomes: CareerOutcome[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type CareerDecisionVersion = {
+  decision_version_id: string;
+  version_number: number;
+  version_reason: string;
+  selected_option_id: string | null;
+  context_snapshot_id: string | null;
+  decision_snapshot: Record<string, unknown>;
+  options_snapshot: Array<Record<string, unknown>>;
+  recommendation_snapshot: Record<string, unknown> | null;
+  user_note: string | null;
+  created_at: string;
+};
+
+export type WeeklyCareerReview = {
+  window_start: string;
+  window_end: string;
+  happened: Array<Record<string, unknown>>;
+  changed: Array<Record<string, unknown>>;
+  worked: Array<Record<string, unknown>>;
+  did_not_work: Array<Record<string, unknown>>;
+  stalled: Array<Record<string, unknown>>;
+  invalidated_assumptions: Array<Record<string, unknown>>;
+  reconsider: Array<Record<string, unknown>>;
+  next_actions: Array<Record<string, unknown>>;
+  reminders: Array<Record<string, unknown>>;
+};
+
+export type DecisionFactorCategory =
+  | "benefit"
+  | "cost"
+  | "risk"
+  | "time"
+  | "confidence"
+  | "uncertainty"
+  | "user_importance"
+  | "evidence_strength"
+  | "reversibility";
+
+export type DecisionFactorDirection = "positive" | "negative" | "neutral" | "mixed" | "unknown";
+
+export type DecisionFactorEvidenceKind =
+  | "direct"
+  | "derived"
+  | "inferred"
+  | "proxy"
+  | "unavailable"
+  | "conflicting";
+
+export type DecisionFactorFreshness = "fresh" | "stale" | "partial" | "unknown";
+
+export type DecisionFactor = {
+  factor_id: string;
+  decision_id: string;
+  option_id: string | null;
+  recommendation_id: string | null;
+  context_snapshot_id: string | null;
+  domain: string;
+  category: DecisionFactorCategory;
+  factor_key: string;
+  label: string;
+  normalized_value: Record<string, unknown> | null;
+  raw_value: Record<string, unknown> | null;
+  direction: DecisionFactorDirection;
+  importance: number | null;
+  confidence: CareerDecisionConfidence;
+  uncertainty: string;
+  evidence_strength: string;
+  evidence_kind: DecisionFactorEvidenceKind;
+  source_type: string | null;
+  source_id: string | null;
+  provenance: Record<string, unknown>;
+  explanation: string;
+  caveats: string[];
+  freshness_status: DecisionFactorFreshness;
+  freshness_expires_at: string | null;
+  generated_at: string;
+};
+
+export type LongitudinalContext = {
+  longitudinal_context_id: string;
+  decision_id: string | null;
+  window_start: string | null;
+  window_end: string;
+  record_count: number;
+  context: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  generated_at: string;
+};
+
+export type RecommendationEvolution = {
+  evolution_id: string;
+  decision_id: string;
+  previous_recommendation_id: string | null;
+  current_recommendation_id: string | null;
+  change_type:
+    | "none"
+    | "user_changed"
+    | "goal_changed"
+    | "career_identity_changed"
+    | "market_changed"
+    | "evidence_changed"
+    | "outcome_changed"
+    | "confidence_changed"
+    | "stale_prior"
+    | "superseded";
+  meaningful_changes: Array<Record<string, unknown>>;
+  confidence_before: CareerDecisionConfidence | null;
+  confidence_after: CareerDecisionConfidence | null;
+  evidence_basis: Record<string, unknown>;
+  uncertainty: string;
+  explanation: string;
+  generated_at: string;
+};
+
+export type AdvisoryFinding = {
+  advisory_finding_id: string;
+  decision_id: string | null;
+  finding_type: string;
+  severity: "info" | "watch" | "warning" | "blocking";
+  support_status: "supported" | "weakly_supported" | "unresolved";
+  confidence: CareerDecisionConfidence;
+  uncertainty: string;
+  window_start: string | null;
+  window_end: string;
+  affected_goal: string | null;
+  supporting_evidence: Array<Record<string, unknown>>;
+  counter_evidence: Array<Record<string, unknown>>;
+  explanation: string;
+  suggested_action: string | null;
+  acknowledged_at: string | null;
+  dismissed_at: string | null;
+  generated_at: string;
+};
+
+export type StrategicCareerReview = {
+  strategic_review_id: string;
+  decision_id: string | null;
+  longitudinal_context_id: string;
+  status: string;
+  window_start: string | null;
+  window_end: string;
+  goals: Record<string, unknown>;
+  strategy_performance: Record<string, unknown>;
+  application_summary: Record<string, unknown>;
+  outcome_summary: Record<string, unknown>;
+  identity_changes: Array<Record<string, unknown>>;
+  market_changes: Array<Record<string, unknown>>;
+  recommendation_changes: Array<Record<string, unknown>>;
+  active_risks: Array<Record<string, unknown>>;
+  blind_spots: Array<Record<string, unknown>>;
+  suggested_next_actions: Array<Record<string, unknown>>;
+  confidence: CareerDecisionConfidence;
+  uncertainty: string;
+  generated_at: string;
+};
+
+export type DeepDecisionAnalysisRequest = {
+  include_domains?: string[];
+  window_start?: string | null;
+  window_end?: string | null;
+};
+
+export type DeepDecisionAnalysis = {
+  decision_id: string;
+  factors: DecisionFactor[];
+  longitudinal_context: LongitudinalContext;
+  recommendation_evolution: RecommendationEvolution | null;
+  advisory_findings: AdvisoryFinding[];
+  strategic_review: StrategicCareerReview;
+};
+
+export type CurrentOpportunityFreshnessState = "fresh" | "aging" | "stale" | "unknown" | string;
+export type CurrentOpportunityCoverageStatus =
+  | "production_ready"
+  | "limited"
+  | "experimental"
+  | "unsupported"
+  | string;
+export type CurrentOpportunityConfidence = "high" | "medium" | "low" | "unknown" | string;
+export type CurrentOpportunityWorkArrangement =
+  | "remote"
+  | "hybrid"
+  | "onsite"
+  | "mixed"
+  | "unknown"
+  | string;
+
+export type CurrentOpportunityPayload = {
+  opportunity_id: string;
+  company_id: string | null;
+  company_name: string;
+  original_title: string;
+  normalized_title: string;
+  role_family: string;
+  seniority_level: string;
+  market_id: string | null;
+  market_label: string | null;
+  location_text: string | null;
+  location_resolution_status?: "resolved" | "unresolved" | "ambiguous" | string;
+  location_resolution_source?: string | null;
+  work_arrangement: CurrentOpportunityWorkArrangement;
+  compensation_min: number | null;
+  compensation_max: number | null;
+  compensation_currency: string | null;
+  compensation_interval: string;
+  employment_type: string;
+  opportunity_type: string;
+  posting_date: string | null;
+  closing_date: string | null;
+  application_url: string | null;
+  source_url: string | null;
+  description_text: string | null;
+  skills: string[];
+  requirements: string[];
+  status: string;
+  freshness_state: CurrentOpportunityFreshnessState;
+  freshness_age_hours: number | null;
+  first_observed_at: string | null;
+  last_observed_at: string | null;
+  last_collected_at: string | null;
+  canonical_updated_at: string;
+  normalization_confidence: CurrentOpportunityConfidence;
+  identity_confidence: CurrentOpportunityConfidence;
+  ranking_eligible: boolean;
+  ranking_ineligible_reasons: string[];
+  coverage_status: CurrentOpportunityCoverageStatus;
+  coverage_limitations: string[];
+  provenance: {
+    source_count?: number;
+    sources?: Array<{
+      source_id: string;
+      provider_record_id?: string;
+      first_observed_at?: string | null;
+      last_observed_at?: string | null;
+      last_collected_at?: string | null;
+      active?: boolean;
+      source_trust?: string;
+      display_use_allowed?: boolean;
+      ranking_use_allowed?: boolean;
+    }>;
+    [key: string]: unknown;
+  };
+  warnings: string[];
+};
+
+export type CurrentOpportunityMatchPayload = {
+  opportunity: CurrentOpportunityPayload;
+  match_score: number;
+  strategic_relevance: string;
+  contributing_factors: string[];
+  warnings: string[];
+  limitations: string[];
+  ranking_eligible: boolean;
+};
+
+export type CurrentOpportunityCoveragePayload = {
+  market_key: string;
+  role_family: string;
+  opportunity_type: string;
+  status: CurrentOpportunityCoverageStatus;
+  effective_status: CurrentOpportunityCoverageStatus;
+  rationale: string;
+  limitations: string[];
+  source_basis: Record<string, unknown>;
+  minimum_expected_sources: number;
+  freshness_max_age_hours: number | null;
+  last_evaluated_at: string | null;
+};
+
+export type CurrentOpportunityDiagnostic = {
+  code: string;
+  severity: "info" | "warning" | "blocking" | string;
+  message: string;
+  scope: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+};
+
+export type CurrentOpportunityRefreshRun = {
+  run_id: string;
+  source_id: string;
+  status: string;
+  acquired_count: number;
+  normalized_count: number;
+  promoted_count: number;
+  duplicate_count: number;
+  rejected_count: number;
+  warning_count: number;
+  failure_count: number;
+  started_at: string;
+  completed_at: string | null;
+  warnings: string[];
+  failure_details: Record<string, unknown>;
 };
 
 export type PersonalizedResult = {

@@ -171,10 +171,16 @@ class RegionOutputBody(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     region_id: str
+    public_slug: str | None = None
     display_name: str
     region_type: str
     parent_region_id: str | None = None
     labor_market_group: str | None = None
+    primary_city: str | None = None
+    state_codes: tuple[str, ...] = ()
+    centroid: dict[str, float] | None = None
+    focus_bounds: dict[str, float] | None = None
+    market_support_status: str = "unknown"
     priority_market: PriorityMarket | None = None
     coverage: CoverageMetadataPayload = Field(
         default_factory=placeholder_coverage_metadata

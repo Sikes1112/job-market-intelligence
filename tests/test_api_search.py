@@ -262,8 +262,9 @@ def test_regions_search_returns_stable_schema(api_client, session: Session) -> N
     }
     assert row["coverage"]["heuristic"] is True
     assert row["coverage"]["coverage_tier"] == row["coverage"]["tier"]
-    assert row["coverage"]["coverage_quality_score"]["overall_score"] == (
-        row["coverage"]["quality_score"]
+    assert (
+        row["coverage"]["coverage_quality_score"]["overall_score"]
+        == (row["coverage"]["quality_score"])
     )
     assert row["coverage"]["tier"] in {"tier_1", "tier_2", "tier_3", "tier_4"}
     assert row["priority_market"] is None
@@ -295,18 +296,12 @@ def test_search_routes_are_not_shadowed_by_dynamic_id_routes(api_client) -> None
     assert companies.json()["data"] == {"companies": [], "count": 0}
 
 
-def test_regions_search_filters_query_region_type_and_score(
-    api_client, session: Session
-) -> None:
+def test_regions_search_filters_query_region_type_and_score(api_client, session: Session) -> None:
     _seed_region_search_fixture(session)
 
     query = api_client.get("/regions/search", params={"query": "boston"}).json()
-    region_type = api_client.get(
-        "/regions/search", params={"region_type": "state"}
-    ).json()
-    score = api_client.get(
-        "/regions/search", params={"min_opportunity_score": "0.9"}
-    ).json()
+    region_type = api_client.get("/regions/search", params={"region_type": "state"}).json()
+    score = api_client.get("/regions/search", params={"min_opportunity_score": "0.9"}).json()
     boundary_score = api_client.get(
         "/regions/search", params={"min_opportunity_score": "0.91"}
     ).json()
@@ -314,14 +309,10 @@ def test_regions_search_filters_query_region_type_and_score(
     assert [r["region_id"] for r in query["data"]["regions"]] == ["greater_boston"]
     assert [r["region_id"] for r in region_type["data"]["regions"]] == ["tri_state"]
     assert [r["region_id"] for r in score["data"]["regions"]] == ["greater_boston"]
-    assert [r["region_id"] for r in boundary_score["data"]["regions"]] == [
-        "greater_boston"
-    ]
+    assert [r["region_id"] for r in boundary_score["data"]["regions"]] == ["greater_boston"]
 
 
-def test_regions_search_empty_and_unknown_filters_are_clear(
-    api_client, session: Session
-) -> None:
+def test_regions_search_empty_and_unknown_filters_are_clear(api_client, session: Session) -> None:
     _seed_region_search_fixture(session)
 
     empty_query = api_client.get("/regions/search", params={"query": ""})
@@ -341,27 +332,19 @@ def test_regions_search_empty_and_unknown_filters_are_clear(
     assert invalid_freshness.status_code == 422
 
 
-def test_regions_search_filters_real_data_and_freshness(
-    api_client, session: Session
-) -> None:
+def test_regions_search_filters_real_data_and_freshness(api_client, session: Session) -> None:
     _seed_region_search_fixture(session)
 
     real = api_client.get("/regions/search", params={"has_real_data": "true"}).json()
-    fresh = api_client.get(
-        "/regions/search", params={"freshness_status": "fresh"}
-    ).json()
-    demo = api_client.get(
-        "/regions/search", params={"freshness_status": "seeded_demo"}
-    ).json()
+    fresh = api_client.get("/regions/search", params={"freshness_status": "fresh"}).json()
+    demo = api_client.get("/regions/search", params={"freshness_status": "seeded_demo"}).json()
 
     assert [r["region_id"] for r in real["data"]["regions"]] == ["greater_boston"]
     assert [r["region_id"] for r in fresh["data"]["regions"]] == ["greater_boston"]
     assert [r["region_id"] for r in demo["data"]["regions"]] == ["greater_sf"]
 
 
-def test_regions_search_distinguishes_placeholder_coverage(
-    api_client, session: Session
-) -> None:
+def test_regions_search_distinguishes_placeholder_coverage(api_client, session: Session) -> None:
     _seed_region_search_fixture(session)
 
     body = api_client.get("/regions/search", params={"query": "tri"}).json()
@@ -512,9 +495,7 @@ def test_companies_search_filters_query_sector_industry_and_role_family(
     query = api_client.get("/companies/search", params={"query": "platform"}).json()
     sector = api_client.get("/companies/search", params={"sector": "biotech"}).json()
     industry = api_client.get("/companies/search", params={"industry": "cloud"}).json()
-    role = api_client.get(
-        "/companies/search", params={"role_family": "product"}
-    ).json()
+    role = api_client.get("/companies/search", params={"role_family": "product"}).json()
 
     assert [c["company_id"] for c in query["data"]["companies"]] == ["comp_ai"]
     assert [c["company_id"] for c in sector["data"]["companies"]] == ["comp_bio"]
@@ -522,16 +503,12 @@ def test_companies_search_filters_query_sector_industry_and_role_family(
     assert [c["company_id"] for c in role["data"]["companies"]] == ["comp_ai"]
 
 
-def test_companies_search_empty_and_unknown_filters_are_clear(
-    api_client, session: Session
-) -> None:
+def test_companies_search_empty_and_unknown_filters_are_clear(api_client, session: Session) -> None:
     _seed_company_search_fixture(session)
 
     empty_query = api_client.get("/companies/search", params={"query": ""})
     whitespace_query = api_client.get("/companies/search", params={"query": "  "})
-    unknown_region = api_client.get(
-        "/companies/search", params={"region_id": "missing_region"}
-    )
+    unknown_region = api_client.get("/companies/search", params={"region_id": "missing_region"})
     unknown_presence = api_client.get(
         "/companies/search", params={"presence_status": "not_a_presence_status"}
     )
@@ -539,8 +516,8 @@ def test_companies_search_empty_and_unknown_filters_are_clear(
     assert empty_query.status_code == 422
     assert whitespace_query.status_code == 200
     assert whitespace_query.json()["data"]["companies"] == []
-    assert unknown_region.status_code == 200
-    assert unknown_region.json()["data"] == {"companies": [], "count": 0}
+    assert unknown_region.status_code == 404
+    assert unknown_region.json()["error"]["code"] == "NOT_FOUND"
     assert unknown_presence.status_code == 200
     assert unknown_presence.json()["data"] == {"companies": [], "count": 0}
 
@@ -550,18 +527,10 @@ def test_companies_search_filters_region_hiring_entry_level_and_presence(
 ) -> None:
     _seed_company_search_fixture(session)
 
-    region = api_client.get(
-        "/companies/search", params={"region_id": "greater_boston"}
-    ).json()
-    hiring = api_client.get(
-        "/companies/search", params={"current_hiring": "true"}
-    ).json()
-    entry = api_client.get(
-        "/companies/search", params={"has_entry_level_access": "true"}
-    ).json()
-    presence = api_client.get(
-        "/companies/search", params={"presence_status": "watchlist"}
-    ).json()
+    region = api_client.get("/companies/search", params={"region_id": "greater_boston"}).json()
+    hiring = api_client.get("/companies/search", params={"current_hiring": "true"}).json()
+    entry = api_client.get("/companies/search", params={"has_entry_level_access": "true"}).json()
+    presence = api_client.get("/companies/search", params={"presence_status": "watchlist"}).json()
 
     assert [c["company_id"] for c in region["data"]["companies"]] == ["comp_ai"]
     assert region["data"]["companies"][0]["matched_region_ids"] == ["greater_boston"]
@@ -570,14 +539,10 @@ def test_companies_search_filters_region_hiring_entry_level_and_presence(
     assert [c["company_id"] for c in presence["data"]["companies"]] == ["comp_bio"]
 
 
-def test_companies_search_false_filters_are_deterministic(
-    api_client, session: Session
-) -> None:
+def test_companies_search_false_filters_are_deterministic(api_client, session: Session) -> None:
     _seed_company_search_fixture(session)
 
-    not_hiring = api_client.get(
-        "/companies/search", params={"current_hiring": "false"}
-    ).json()
+    not_hiring = api_client.get("/companies/search", params={"current_hiring": "false"}).json()
     no_entry_level = api_client.get(
         "/companies/search", params={"has_entry_level_access": "false"}
     ).json()
@@ -678,9 +643,7 @@ def test_company_geography_returns_canonical_regions_and_freshness(
     assert row["coverage"]["coverage_tier"] == row["coverage"]["tier"]
     assert row["coverage"]["tier"] in {"tier_1", "tier_2", "tier_3", "tier_4"}
     assert row["sector_coverage"]
-    assert {item["coverage_level"] for item in row["sector_coverage"].values()} == {
-        "unknown"
-    }
+    assert {item["coverage_level"] for item in row["sector_coverage"].values()} == {"unknown"}
     assert row["freshness"]["data_basis"] == "real_imported"
     assert row["freshness"]["freshness_status"] == "fresh"
     assert row["freshness"]["source_count"] == 1
@@ -715,9 +678,7 @@ def test_company_geography_does_not_label_seeded_demo_as_real_imported(
     assert row["has_real_data"] is False
 
 
-def test_company_geography_preserves_missing_relation_fields(
-    api_client, session: Session
-) -> None:
+def test_company_geography_preserves_missing_relation_fields(api_client, session: Session) -> None:
     _seed_region(session, region_id="greater_boston", display_name="Greater Boston")
     _seed_company(session, company_id="hiring_only_company", name="Hiring Only Co")
     hiring = _seed_hiring(
@@ -772,9 +733,7 @@ def test_company_geography_does_not_infer_regions_from_output_metadata(
     assert body["data"]["count"] == 0
 
 
-def test_region_sources_returns_explicit_source_evidence(
-    api_client, session: Session
-) -> None:
+def test_region_sources_returns_explicit_source_evidence(api_client, session: Session) -> None:
     _seed_region_search_fixture(session)
 
     response = api_client.get("/regions/greater_boston/sources")
@@ -801,9 +760,7 @@ def test_region_sources_returns_explicit_source_evidence(
     assert source["data_basis"] == "real_imported"
 
 
-def test_region_sources_without_source_records_are_honest(
-    api_client, session: Session
-) -> None:
+def test_region_sources_without_source_records_are_honest(api_client, session: Session) -> None:
     _seed_region(session, region_id="unverified_region", display_name="Unverified")
 
     response = api_client.get("/regions/unverified_region/sources")
@@ -817,9 +774,7 @@ def test_region_sources_without_source_records_are_honest(
     assert body["data"]["warnings"] == ["Source evidence is unknown or incomplete."]
 
 
-def test_region_sources_label_seeded_demo_not_real_imported(
-    api_client, session: Session
-) -> None:
+def test_region_sources_label_seeded_demo_not_real_imported(api_client, session: Session) -> None:
     _seed_region_search_fixture(session)
 
     body = api_client.get("/regions/greater_sf/sources").json()
@@ -836,9 +791,7 @@ def test_region_sources_unknown_region_returns_not_found(api_client) -> None:
     assert response.json()["error"]["code"] == "NOT_FOUND"
 
 
-def test_company_sources_returns_explicit_source_evidence(
-    api_client, session: Session
-) -> None:
+def test_company_sources_returns_explicit_source_evidence(api_client, session: Session) -> None:
     _seed_company_search_fixture(session)
 
     response = api_client.get("/companies/comp_ai/sources")
@@ -855,9 +808,7 @@ def test_company_sources_returns_explicit_source_evidence(
     assert body["data"]["sources"][0]["data_basis"] == "real_imported"
 
 
-def test_company_sources_without_source_records_are_honest(
-    api_client, session: Session
-) -> None:
+def test_company_sources_without_source_records_are_honest(api_client, session: Session) -> None:
     _seed_company(session, company_id="unverified_company", name="Unverified Co")
 
     response = api_client.get("/companies/unverified_company/sources")
@@ -871,9 +822,7 @@ def test_company_sources_without_source_records_are_honest(
     assert body["data"]["warnings"] == ["Source evidence is unknown or incomplete."]
 
 
-def test_company_sources_label_seeded_demo_not_real_imported(
-    api_client, session: Session
-) -> None:
+def test_company_sources_label_seeded_demo_not_real_imported(api_client, session: Session) -> None:
     _seed_company_search_fixture(session)
 
     body = api_client.get("/companies/comp_demo/sources").json()

@@ -69,6 +69,7 @@ def build_region_output(
     presence_rows: Iterable[CompanyRegionPresence],
     hiring_rows: Iterable[CompanyRegionHiring],
     entry_level_rows: Iterable[CompanyRegionEntryLevel],
+    state_codes: tuple[str, ...] = (),
     now: datetime | None = None,
 ) -> RegionBuildResult:
     if now is None:
@@ -309,10 +310,24 @@ def build_region_output(
 
     body = RegionOutputBody(
         region_id=region.region_id,
+        public_slug=region.public_slug,
         display_name=region.display_name,
         region_type=region.region_type,
         parent_region_id=region.parent_region_id,
         labor_market_group=region.labor_market_group,
+        primary_city=region.primary_city,
+        state_codes=state_codes,
+        centroid=(
+            {
+                "latitude": region.centroid_latitude,
+                "longitude": region.centroid_longitude,
+            }
+            if region.centroid_latitude is not None
+            and region.centroid_longitude is not None
+            else None
+        ),
+        focus_bounds=region.focus_bounds,
+        market_support_status=region.market_support_status,
         priority_market=priority_market_by_id(region.region_id),
         coverage=coverage,
         sector_coverage=unknown_sector_coverage_metadata(),

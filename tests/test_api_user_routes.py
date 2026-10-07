@@ -15,7 +15,7 @@ from backend.career_agent.models import (
     CareerMemoryPermissionRecord,
 )
 from backend.companies.models import Company
-from backend.geography.models import Region
+from backend.geography.models import Region, RegionAlias
 from backend.hiring.models import CompanyRegionHiring
 from backend.ingestion.models import RawIngestionRecord
 from backend.monetization.accounts import (
@@ -85,6 +85,31 @@ def _assign_paid_plan(
 
 def _alert_service(session: Session) -> AlertService:
     return AlertService(AlertRepository(session))
+
+
+def _seed_region_identity(session: Session) -> None:
+    if session.get(Region, "greater_boston") is None:
+        session.add(
+            Region(
+                region_id="greater_boston",
+                region_name="greater_boston",
+                display_name="Greater Boston",
+                region_type="greater_region",
+                public_slug="boston",
+            )
+        )
+        session.flush()
+    if session.get(RegionAlias, "test_boston_alias") is None:
+        session.add(
+            RegionAlias(
+                region_alias_id="test_boston_alias",
+                region_id="greater_boston",
+                alias="Boston Metro",
+                normalized_alias="boston metro",
+                alias_type="alternate_name",
+            )
+        )
+        session.flush()
 
 
 def _seed_market_rows(session: Session) -> None:
@@ -224,7 +249,11 @@ def test_get_current_user_profile_requires_verified_claims(api_client) -> None:
     assert body["data"]["profile"]["email"] == "user_a@example.com"
 
 
-def test_preferences_get_update_delete_for_current_user(api_client) -> None:
+def test_preferences_get_update_delete_for_current_user(
+    api_client,
+    session: Session,
+) -> None:
+    _seed_region_identity(session)
     headers = _auth_headers()
 
     initial = api_client.get("/me/preferences", headers=headers)
@@ -264,6 +293,67 @@ def test_preferences_get_update_delete_for_current_user(api_client) -> None:
     assert api_client.get("/me/preferences", headers=headers).json()["data"]["persisted"] is False
 
 
+def test_geographic_user_writes_fail_closed_and_canonicalize_aliases(
+    api_client,
+    session: Session,
+) -> None:
+    _seed_region_identity(session)
+    session.add_all(
+        [
+            Region(
+                region_id="springfield_il",
+                region_name="Springfield",
+                display_name="Springfield",
+                region_type="city",
+            ),
+            Region(
+                region_id="springfield_ma",
+                region_name="Springfield",
+                display_name="Springfield",
+                region_type="city",
+            ),
+        ]
+    )
+    session.flush()
+    headers = _auth_headers()
+    _assign_paid_plan(api_client, session)
+
+    for invalid in ("Not A Real Place", "Springfield"):
+        preference = api_client.put(
+            "/me/preferences",
+            headers=headers,
+            json={"preferred_regions": [invalid]},
+        )
+        saved = api_client.post(
+            "/me/saved-market-artifacts",
+            headers=headers,
+            json={"artifact_type": "region", "artifact_ref": invalid},
+        )
+        assert preference.status_code == 400
+        assert saved.status_code == 400
+
+    assert api_client.get("/me/preferences", headers=headers).json()["data"]["persisted"] is False
+    assert (
+        api_client.get("/me/saved-market-artifacts", headers=headers).json()["data"][
+            "saved_market_artifacts"
+        ]
+        == []
+    )
+
+    preference = api_client.put(
+        "/me/preferences",
+        headers=headers,
+        json={"preferred_regions": ["Boston Metro"]},
+    )
+    saved = api_client.post(
+        "/me/saved-market-artifacts",
+        headers=headers,
+        json={"artifact_type": "region", "artifact_ref": "boston"},
+    )
+    assert preference.json()["data"]["preferred_regions"] == ["greater_boston"]
+    assert saved.json()["data"]["artifact_ref"] == "greater_boston"
+
+
 def test_saved_market_artifacts_create_list_get_delete_for_current_user(
     api_client,
     session: Session,
@@ -288,8 +378,7 @@ def test_saved_market_artifacts_create_list_get_delete_for_current_user(
 
     listed = api_client.get("/me/saved-market-artifacts", headers=headers)
     listed_ids = [
-        row["saved_artifact_id"]
-        for row in listed.json()["data"]["saved_market_artifacts"]
+        row["saved_artifact_id"] for row in listed.json()["data"]["saved_market_artifacts"]
     ]
     assert listed_ids == [artifact["saved_artifact_id"]]
 
@@ -305,9 +394,12 @@ def test_saved_market_artifacts_create_list_get_delete_for_current_user(
         headers=headers,
     )
     assert deleted.status_code == 200
-    assert api_client.get("/me/saved-market-artifacts", headers=headers).json()["data"][
-        "saved_market_artifacts"
-    ] == []
+    assert (
+        api_client.get("/me/saved-market-artifacts", headers=headers).json()["data"][
+            "saved_market_artifacts"
+        ]
+        == []
+    )
 
 
 def test_saved_market_artifact_rejects_unsafe_snapshot_payload(
@@ -410,7 +502,11 @@ def test_alert_feed_list_read_and_dismiss_for_current_user(
     assert len(included.json()["data"]["alerts"]) == 1
 
 
-def test_recommendation_snapshots_create_list_get_for_current_user(api_client) -> None:
+def test_recommendation_snapshots_create_list_get_for_current_user(
+    api_client,
+    session: Session,
+) -> None:
+    _seed_region_identity(session)
     headers = _auth_headers()
     user_id = _current_user_id(api_client)
     api_client.put(
@@ -430,9 +526,7 @@ def test_recommendation_snapshots_create_list_get_for_current_user(api_client) -
             "personalized_output": {"ranked_regions": [{"region_id": "greater_boston"}]},
             "recommendation_version": "personalized_rec_v1",
             "source_version_bundle": {"region_market_scores": {"greater_boston": 3}},
-            "objective_output_refs": [
-                {"output_type": "region", "subject_id": "greater_boston"}
-            ],
+            "objective_output_refs": [{"output_type": "region", "subject_id": "greater_boston"}],
             "recommendation_inputs_hash": "sha256:user-a-inputs",
             "generated_at": _NOW.isoformat(),
         },
@@ -445,9 +539,10 @@ def test_recommendation_snapshots_create_list_get_for_current_user(api_client) -
 
     listed = api_client.get("/me/recommendation-snapshots", headers=headers)
     assert listed.status_code == 200
-    assert [row["recommendation_snapshot_id"] for row in listed.json()["data"][
-        "personalized_recommendation_snapshots"
-    ]] == [snapshot["recommendation_snapshot_id"]]
+    assert [
+        row["recommendation_snapshot_id"]
+        for row in listed.json()["data"]["personalized_recommendation_snapshots"]
+    ] == [snapshot["recommendation_snapshot_id"]]
 
     fetched = api_client.get(
         f"/me/recommendation-snapshots/{snapshot['recommendation_snapshot_id']}",
@@ -625,7 +720,11 @@ def test_export_and_deactivate_current_user_data(api_client, session) -> None:
                 {
                     "category": "career_constraints",
                     "value": "hybrid only",
-                }
+                },
+                {
+                    "category": "career_constraints",
+                    "value": "Bearer route-secret-token",
+                },
             ],
             "replace_categories": ["career_constraints"],
         },
@@ -671,24 +770,43 @@ def test_export_and_deactivate_current_user_data(api_client, session) -> None:
     assert exported.json()["data"]["user"]["user_id"] == user_id
     assert exported.json()["data"]["preference_profile"]["role_interests"] == ["product"]
     assert exported.json()["data"]["saved_market_artifacts"][0]["artifact_ref"] == "comp_a"
+    memory_export = exported.json()["data"]["career_agent_memory"]
+    assert memory_export["permissions"][0]["category"] == "career_constraints"
+    assert {entry["value"] for entry in memory_export["entries"]} == {
+        "hybrid only",
+        "[REDACTED]",
+    }
+    tool_export = exported.json()["data"]["career_agent_tools"][0]
+    assert tool_export["tool_request_id"] == tool_id
+    assert tool_export["tool_type"] == "reminder"
+    assert tool_export["audit_events"][0]["event_type"] == "preview_created"
     exported_text = json.dumps(exported.json())
-    assert "hybrid only" not in exported_text
-    assert tool_id not in exported_text
-    assert "career_memory" not in exported_text
-    assert "career_agent_tool" not in exported_text
+    assert "route-secret-token" not in exported_text
+    assert "career_agent_tool_audit_event_id" not in exported_text
 
     deactivated = api_client.delete("/me", headers=headers)
     assert deactivated.status_code == 200
     assert deactivated.json()["data"]["user_status"] == "deactivated"
     assert session.get(User, user_id).status == "deactivated"
-    assert UserRepository(session).list_external_identities(user_id) == []
+    retained_identity = UserRepository(session).list_external_identities(user_id)[0]
+    assert retained_identity.email is None
+    assert retained_identity.email_verified is None
+    assert retained_identity.provider == "auth0"
+    assert retained_identity.issuer == "https://jmi.us.auth0.com/"
+    assert retained_identity.subject == "auth0|user_a"
+    assert retained_identity.last_seen_at != _NOW
     assert session.query(CareerMemoryPermissionRecord).filter_by(user_id=user_id).all() == []
     assert session.query(CareerMemoryEntryRecord).filter_by(user_id=user_id).all() == []
     assert session.query(CareerAgentToolAuditEventRecord).filter_by(user_id=user_id).all() == []
     assert session.query(CareerAgentToolRecord).filter_by(user_id=user_id).all() == []
 
+    replay = api_client.get("/me", headers=headers)
+    assert replay.status_code == 401
+    assert session.query(User).count() == 1
+
 
 def test_cross_user_route_access_is_blocked_or_excluded(api_client, session: Session) -> None:
+    _seed_region_identity(session)
     user_a_headers = _auth_headers("auth0|user_a")
     user_b_headers = _auth_headers("auth0|user_b")
     user_b_id = _assign_paid_plan(api_client, session, "auth0|user_b")
@@ -716,23 +834,36 @@ def test_cross_user_route_access_is_blocked_or_excluded(api_client, session: Ses
         },
     ).json()["data"]
 
-    assert api_client.get("/me/preferences", headers=user_a_headers).json()["data"][
-        "persisted"
-    ] is False
-    assert api_client.get("/me/saved-market-artifacts", headers=user_a_headers).json()[
-        "data"
-    ]["saved_market_artifacts"] == []
-    assert api_client.get("/me/recommendation-snapshots", headers=user_a_headers).json()[
-        "data"
-    ]["personalized_recommendation_snapshots"] == []
-    assert api_client.get(
-        f"/me/saved-market-artifacts/{user_b_artifact['saved_artifact_id']}",
-        headers=user_a_headers,
-    ).status_code == 404
-    assert api_client.get(
-        f"/me/recommendation-snapshots/{user_b_snapshot['recommendation_snapshot_id']}",
-        headers=user_a_headers,
-    ).status_code == 404
+    assert (
+        api_client.get("/me/preferences", headers=user_a_headers).json()["data"]["persisted"]
+        is False
+    )
+    assert (
+        api_client.get("/me/saved-market-artifacts", headers=user_a_headers).json()["data"][
+            "saved_market_artifacts"
+        ]
+        == []
+    )
+    assert (
+        api_client.get("/me/recommendation-snapshots", headers=user_a_headers).json()["data"][
+            "personalized_recommendation_snapshots"
+        ]
+        == []
+    )
+    assert (
+        api_client.get(
+            f"/me/saved-market-artifacts/{user_b_artifact['saved_artifact_id']}",
+            headers=user_a_headers,
+        ).status_code
+        == 404
+    )
+    assert (
+        api_client.get(
+            f"/me/recommendation-snapshots/{user_b_snapshot['recommendation_snapshot_id']}",
+            headers=user_a_headers,
+        ).status_code
+        == 404
+    )
 
 
 def test_public_market_routes_remain_unauthenticated(api_client, session) -> None:
@@ -794,9 +925,7 @@ def test_protected_user_routes_do_not_mutate_canonical_market_rows(
             },
             "recommendation_version": "personalized_rec_v1",
             "source_version_bundle": {"region_market_scores": {"greater_boston": 3}},
-            "objective_output_refs": [
-                {"output_type": "region", "subject_id": "greater_boston"}
-            ],
+            "objective_output_refs": [{"output_type": "region", "subject_id": "greater_boston"}],
             "recommendation_inputs_hash": "sha256:boundary",
             "generated_at": _NOW.isoformat(),
         },

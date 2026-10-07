@@ -36,6 +36,10 @@ Not covered:
 - Existing production databases without Alembic history require a separate,
   explicit migration-adoption plan. Do not use local/demo schema stamping for
   production adoption.
+- `alembic stamp` is not a general failed-migration recovery command. Use it
+  only when schema equivalence has been independently established and the
+  operator can explain why Alembic history, rather than schema structure, is the
+  only missing state.
 - Store `DATABASE_URL` and other secrets only in deployment platform secret
   storage. Do not commit connection strings, backup credentials, or exported
   data.
@@ -79,7 +83,7 @@ Use role placeholders until named production owners are assigned.
 - Confirm the latest successful deployment and expected Alembic revision.
 - Confirm whether the database already has Alembic history. If it does not,
   stop and use a dedicated production migration-adoption procedure before
-  attempting promotion.
+  attempting promotion. Do not stamp an arbitrary production schema to `head`.
 - If the database is reachable, inspect the current Alembic revision:
 
   ```bash
@@ -207,6 +211,9 @@ Do not promote the restored database if any of these are true:
 ## Testing Cadence
 
 - Test restore before major production launch.
+- Before production launch, perform an isolated Neon/PostgreSQL restore into a
+  separate branch/database and verify application compatibility against that
+  restored target.
 - Test restore before high-risk migrations.
 - Periodically test restore using a staging environment or restored Neon branch.
 - Record the last successful restore drill date, operator, restore source, and
@@ -214,10 +221,13 @@ Do not promote the restored database if any of these are true:
 
 Last successful restore drill:
 
-- Date: `<not yet recorded>`
-- Operator: `<role/name>`
-- Restore target: `<staging/restored branch>`
-- Result: `<pass/fail and notes>`
+- Date: `2026-09-02`
+- Operator: `Layer 39B local verification`
+- Restore target: `isolated SQLite backup/restore target under pytest tmp_path`
+- Result: `partial production-equivalence proof; representative Layer 35-39A
+  records, FK integrity, Alembic revision, and app readiness verified locally.
+  Neon/PostgreSQL restored-branch proof remains required before external
+  production launch.`
 
 ## Layer 2 Slice 2.8 Completion
 

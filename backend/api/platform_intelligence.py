@@ -19,6 +19,8 @@ from backend.api.envelope import (
     error_envelope,
     lightweight_success_envelope,
 )
+from backend.api.geographic_identity import require_canonical_region_id
+from backend.geography.exceptions import GeographicResolutionError
 from backend.institutions.repository import InstitutionRepository
 from backend.platform_intelligence.contributions import (
     ContributionNotFound,
@@ -49,6 +51,13 @@ def region_history(
     limit: int = Query(default=100, ge=1, le=500),
     session: Session = Depends(get_session),
 ) -> dict:
+    try:
+        region_id = require_canonical_region_id(session, region_id)
+    except GeographicResolutionError:
+        return JSONResponse(
+            status_code=404,
+            content=error_envelope(code=NOT_FOUND, message="Region not found."),
+        )
     service = HistoricalSnapshotService(HistoryRepository(session))
     payload = service.region_history(region_id, limit=limit)
     return lightweight_success_envelope(data=payload.model_dump(mode="json"))
@@ -71,6 +80,13 @@ def region_signals(
     limit: int = Query(default=100, ge=1, le=500),
     session: Session = Depends(get_session),
 ) -> dict:
+    try:
+        region_id = require_canonical_region_id(session, region_id)
+    except GeographicResolutionError:
+        return JSONResponse(
+            status_code=404,
+            content=error_envelope(code=NOT_FOUND, message="Region not found."),
+        )
     service = PredictiveSignalService(HistoryRepository(session))
     payload = service.active_region_signals(region_id, limit=limit)
     return lightweight_success_envelope(data=payload.model_dump(mode="json"))
@@ -132,10 +148,18 @@ def predictive_reports(
     limit_per_subject: int = Query(default=500, ge=1, le=1_000),
     session: Session = Depends(get_session),
 ) -> dict:
+    canonical_region_ids: list[str] = []
+    try:
+        canonical_region_ids = [require_canonical_region_id(session, value) for value in region_id]
+    except GeographicResolutionError:
+        return JSONResponse(
+            status_code=404,
+            content=error_envelope(code=NOT_FOUND, message="Region not found."),
+        )
     repository = HistoryRepository(session)
     observations = export_predictive_observations(
         repository,
-        region_ids=region_id,
+        region_ids=tuple(dict.fromkeys(canonical_region_ids)),
         company_ids=company_id,
         limit_per_subject=limit_per_subject,
     )

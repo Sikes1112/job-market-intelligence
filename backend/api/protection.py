@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import math
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -58,6 +60,13 @@ PUBLIC_DEMO_EXACT_ALLOWLIST = frozenset(
 class RateLimitBucket:
     count: int
     reset_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class RateLimitPolicy:
+    name: str
+    requests: int
+    window_seconds: int
 
 
 class APIProtectionMiddleware:
@@ -128,10 +137,11 @@ class APIProtectionMiddleware:
 
         now = time.monotonic()
         self._prune_expired_rate_limits(now)
-        key = _client_key(scope)
+        policy = _rate_limit_policy(scope, self.settings)
+        key = _rate_limit_key(scope, policy.name)
         bucket = self._rate_limits.get(key)
-        limit = int(self.settings.rate_limit_requests or 1)
-        window_seconds = int(self.settings.rate_limit_window_seconds or 60)
+        limit = policy.requests
+        window_seconds = policy.window_seconds
         if bucket is None or bucket.reset_at <= now:
             self._rate_limits[key] = RateLimitBucket(
                 count=1,
@@ -197,11 +207,130 @@ def apply_security_headers(headers: MutableHeaders) -> None:
         headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
 
 
-def _client_key(scope: Scope) -> str:
+def _rate_limit_key(scope: Scope, policy_name: str) -> str:
+    return f"{policy_name}:{_principal_or_client_key(scope)}"
+
+
+def _principal_or_client_key(scope: Scope) -> str:
+    claims = scope.get("state", {}).get("verified_oidc_claims")
+    if isinstance(claims, dict):
+        identity = _stable_claim_identity(claims)
+        if identity:
+            return f"user:{identity}"
+    header_claims = _local_test_claims_from_header(scope)
+    if header_claims is not None:
+        identity = _stable_claim_identity(header_claims)
+        if identity:
+            return f"user:{identity}"
+
     client = scope.get("client")
     if client and client[0]:
-        return str(client[0])
-    return "unknown"
+        return f"ip:{client[0]}"
+    return "ip:unknown"
+
+
+def _stable_claim_identity(claims: dict[str, Any]) -> str | None:
+    issuer = claims.get("iss")
+    subject = claims.get("sub")
+    if (
+        isinstance(issuer, str)
+        and issuer.strip()
+        and isinstance(subject, str)
+        and subject.strip()
+    ):
+        return f"{issuer.strip()}|{subject.strip()}"
+    return None
+
+
+def _local_test_claims_from_header(scope: Scope) -> dict[str, Any] | None:
+    app = scope.get("app")
+    settings = getattr(getattr(app, "state", None), "settings", None)
+    app_env = getattr(settings, "app_env", None)
+    if str(app_env) not in {"local", "test", "AppEnv.LOCAL", "AppEnv.TEST"}:
+        return None
+    raw = Headers(scope=scope).get("x-verified-oidc-claims")
+    if raw is None:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _rate_limit_policy(scope: Scope, settings: Settings) -> RateLimitPolicy:
+    endpoint_class = _rate_limit_endpoint_class(scope)
+    if endpoint_class == "expensive":
+        return RateLimitPolicy(
+            "expensive",
+            int(settings.rate_limit_expensive_requests or 1),
+            int(settings.rate_limit_expensive_window_seconds or 60),
+        )
+    if endpoint_class == "mutation":
+        return RateLimitPolicy(
+            "mutation",
+            int(settings.rate_limit_mutation_requests or 1),
+            int(settings.rate_limit_mutation_window_seconds or 60),
+        )
+    if _has_authenticated_signal(scope):
+        return RateLimitPolicy(
+            "authenticated",
+            int(settings.rate_limit_authenticated_requests or 1),
+            int(settings.rate_limit_authenticated_window_seconds or 60),
+        )
+    return RateLimitPolicy(
+        "anonymous",
+        int(settings.rate_limit_anonymous_requests or settings.rate_limit_requests or 1),
+        int(
+            settings.rate_limit_anonymous_window_seconds
+            or settings.rate_limit_window_seconds
+            or 60
+        ),
+    )
+
+
+def _has_authenticated_signal(scope: Scope) -> bool:
+    if isinstance(scope.get("state", {}).get("verified_oidc_claims"), dict):
+        return True
+    return _local_test_claims_from_header(scope) is not None
+
+
+def _rate_limit_endpoint_class(scope: Scope) -> str:
+    method = str(scope.get("method", "")).upper()
+    path = _normalized_path(scope)
+    if _expensive_endpoint(method, path):
+        return "expensive"
+    if method in {"POST", "PUT", "PATCH", "DELETE"}:
+        return "mutation"
+    return "read"
+
+
+def _expensive_endpoint(method: str, path: str) -> bool:
+    if method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+        return False
+    parts = path.strip("/").split("/")
+    if path in {
+        "/discover/personalized",
+        "/me/discover/personalized",
+        "/recommendations/strategy",
+        "/me/export",
+    }:
+        return True
+    if len(parts) >= 2 and parts[0] == "career-agent":
+        return True
+    if len(parts) >= 3 and parts[0] == "me" and parts[1] == "career-agent":
+        return True
+    if len(parts) == 4 and parts[0] == "me" and parts[1] == "decisions":
+        return parts[3] in {"compare", "plan", "deep-analysis"}
+    if len(parts) >= 2 and parts[0] == "current-opportunities":
+        return parts[1] in {"matches", "diagnostics", "refresh-runs"}
+    if len(parts) >= 2 and parts[0] == "api" and parts[1] == "integrations":
+        return True
+    if len(parts) >= 2 and parts[0] == "integrations":
+        return True
+    if len(parts) >= 2 and parts[0] == "billing":
+        return method != "GET"
+    return False
 
 
 def _rate_limit_exempt(scope: Scope) -> bool:

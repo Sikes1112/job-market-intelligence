@@ -17,12 +17,45 @@ import type {
   DataQualityCertificationResult,
   DataQualityLabelListPayload,
   DataStandardDefinitionListPayload,
+  CareerIdentity,
+  CareerIdentityCompleteness,
+  CareerIdentityFactInput,
+  CareerIdentityFactMutationResult,
+  CareerIdentityFactUpdateInput,
+  CareerIdentityIngestionRequest,
+  CareerIdentityIngestionResult,
+  CareerIdentityPrivacyInput,
+  CareerIdentityPrivacyPayload,
+  CareerAction,
+  CareerActionInput,
+  CareerActionStatus,
+  CareerApplication,
+  CareerApplicationCreateInput,
+  CareerApplicationStatus,
+  CareerDecision,
+  CareerDecisionCreateInput,
+  CareerDecisionOptionInput,
+  CareerDecisionUpdateInput,
+  CareerDecisionVersion,
+  CareerOutcome,
+  CareerOutcomeCreateInput,
+  BetaAccessPayload,
+  CommercialExperimentSignalCreateInput,
+  DeepDecisionAnalysis,
+  DeepDecisionAnalysisRequest,
+  DecisionReflection,
+  DecisionReflectionCreateInput,
   CareerPlatformExportPayload,
   CareerPlatformExportRequest,
   CareerPlatformReferenceCreateRequest,
   CareerPlatformReferenceListPayload,
   CareerPlatformReferencePayload,
   CareerPlatformRegistryPayload,
+  CurrentOpportunityCoveragePayload,
+  CurrentOpportunityDiagnostic,
+  CurrentOpportunityMatchPayload,
+  CurrentOpportunityPayload,
+  CurrentOpportunityRefreshRun,
   CurrentUserProfile,
   GovernanceFrameworkPayload,
   ExplanationRequest,
@@ -88,6 +121,8 @@ import type {
   PersonalizedRecommendationSnapshotInput,
   PersonalizedRequest,
   PersonalizedResult,
+  FeatureAccessDecision,
+  ProductEventCreateInput,
   PlatformEmbedAccessPayload,
   PredictiveReportPayload,
   PublicBenchmark,
@@ -100,6 +135,8 @@ import type {
   RecommendationSnapshotList,
   RecommendationStrategyPayload,
   RecommendationStrategyRequest,
+  RecommendationFeedback,
+  RecommendationFeedbackCreateInput,
   RegionDetail,
   RegionListItem,
   RegionSearchResponse,
@@ -109,6 +146,10 @@ import type {
   ScoringPreviewRequest,
   ScoringPreviewResult,
   SourceExplanation,
+  StrategyChange,
+  StrategyChangeCreateInput,
+  SupportCase,
+  SupportCaseCreateInput,
   TrustExplanation,
   UserReportCreateRequest,
   UserReportSubmissionResult,
@@ -119,6 +160,8 @@ import type {
   UserPreferenceProfile,
   UserPreferenceProfileInput,
   WarningItem,
+  WeeklyCareerReview,
+  StrategicCareerReview,
 } from "./types";
 import type {
   OpportunityRouteRequest as TypedOpportunityRouteRequest,
@@ -138,6 +181,7 @@ import type {
   CareerMemoryProfile,
   CareerMemoryUpdateRequest,
 } from "./careerAgentTypes";
+import type { GeographicResolution } from "./geography";
 import { isFreshnessStatus, isRecord } from "./dataQuality";
 import { reportFrontendError } from "./errorMonitoring";
 
@@ -322,9 +366,10 @@ async function protectedRequest<T>(
     && !path.startsWith("/billing/")
     && !path.startsWith("/api/institutions/")
     && !path.startsWith("/api/integrations/")
+    && !path.startsWith("/current-opportunities")
   ) {
     throw new ApiError(
-      "Protected requests are restricted to /me, /monetization, /billing, /api/institutions, and /api/integrations routes",
+      "Protected requests are restricted to /me, /monetization, /billing, /api/institutions, /api/integrations, and /current-opportunities routes",
     );
   }
 
@@ -493,6 +538,11 @@ export function getRegion(regionId: string) {
   return request<RegionDetail>(`/regions/${encodeURIComponent(regionId)}`);
 }
 
+export function resolveGeography(input: string) {
+  const params = new URLSearchParams({ input });
+  return request<GeographicResolution>(`/regions/resolve?${params.toString()}`);
+}
+
 export function searchRegions(filters?: {
   query?: string;
   freshness_status?: FreshnessStatus;
@@ -642,6 +692,16 @@ export function evaluateDataQualityLabel(body: Record<string, unknown>) {
 
 export function discoverPersonalized(body: PersonalizedRequest) {
   return request<PersonalizedResult>("/discover/personalized", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function discoverPersonalizedFromCareerIdentity(
+  body: PersonalizedRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<PersonalizedResult>("/me/discover/personalized", auth, {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -1150,6 +1210,460 @@ export function getCurrentUser(auth: ProtectedRequestOptions) {
 
 export function getPreferences(auth: ProtectedRequestOptions) {
   return protectedRequest<UserPreferenceProfile>("/me/preferences", auth);
+}
+
+export function getCareerIdentity(auth: ProtectedRequestOptions) {
+  return protectedRequest<CareerIdentity>("/me/career-identity", auth);
+}
+
+export function initializeCareerIdentity(auth: ProtectedRequestOptions) {
+  return protectedRequest<CareerIdentity>("/me/career-identity", auth, {
+    method: "POST",
+  });
+}
+
+export function getCareerIdentityPrivacy(auth: ProtectedRequestOptions) {
+  return protectedRequest<CareerIdentityPrivacyPayload>("/me/career-identity/privacy", auth);
+}
+
+export function updateCareerIdentityPrivacy(
+  body: CareerIdentityPrivacyInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerIdentity>("/me/career-identity/privacy", auth, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function createCareerIdentityFact(
+  body: CareerIdentityFactInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerIdentityFactMutationResult>("/me/career-identity/facts", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateCareerIdentityFact(
+  factId: string,
+  body: CareerIdentityFactUpdateInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerIdentity>(`/me/career-identity/facts/${encodeURIComponent(factId)}`, auth, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function confirmCareerIdentityFact(
+  factId: string,
+  body: { expected_version?: number | null },
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerIdentity>(
+    `/me/career-identity/facts/${encodeURIComponent(factId)}/confirm`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function deleteCareerIdentityFact(
+  factId: string,
+  expectedVersion: number | null | undefined,
+  auth: ProtectedRequestOptions,
+) {
+  const params = new URLSearchParams();
+  if (expectedVersion) params.set("expected_version", String(expectedVersion));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return protectedRequest<{ deleted_career_identity_facts: number }>(
+    `/me/career-identity/facts/${encodeURIComponent(factId)}${suffix}`,
+    auth,
+    { method: "DELETE" },
+  );
+}
+
+export function getCareerIdentityEvaluation(auth: ProtectedRequestOptions) {
+  return protectedRequest<CareerIdentityCompleteness>("/me/career-identity/evaluation", auth);
+}
+
+export type CurrentOpportunityListFilters = {
+  market?: string | null;
+  role_family?: string | null;
+  opportunity_type?: string | null;
+  work_arrangement?: string | null;
+  include_ineligible?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
+export function getCurrentOpportunities(
+  filters: CurrentOpportunityListFilters,
+  auth: ProtectedRequestOptions,
+) {
+  const params = new URLSearchParams();
+  appendOptionalParam(params, "market", filters.market);
+  appendOptionalParam(params, "role_family", filters.role_family);
+  appendOptionalParam(params, "opportunity_type", filters.opportunity_type);
+  appendOptionalParam(params, "work_arrangement", filters.work_arrangement);
+  appendOptionalParam(params, "include_ineligible", filters.include_ineligible);
+  appendOptionalParam(params, "limit", filters.limit);
+  appendOptionalParam(params, "offset", filters.offset);
+  const query = params.toString();
+  return protectedRequest<{ opportunities: CurrentOpportunityPayload[] }>(
+    `/current-opportunities${query ? `?${query}` : ""}`,
+    auth,
+  );
+}
+
+export function getCurrentOpportunity(opportunityId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<CurrentOpportunityPayload>(
+    `/current-opportunities/${encodeURIComponent(opportunityId)}`,
+    auth,
+  );
+}
+
+export function getCurrentOpportunityMatches(
+  options: { decision_id?: string | null; include_ineligible?: boolean; limit?: number },
+  auth: ProtectedRequestOptions,
+) {
+  const params = new URLSearchParams();
+  appendOptionalParam(params, "decision_id", options.decision_id);
+  appendOptionalParam(params, "include_ineligible", options.include_ineligible);
+  appendOptionalParam(params, "limit", options.limit);
+  const query = params.toString();
+  return protectedRequest<{ matches: CurrentOpportunityMatchPayload[] }>(
+    `/current-opportunities/matches${query ? `?${query}` : ""}`,
+    auth,
+  );
+}
+
+export function getCurrentOpportunityCoverage(
+  filters: { market_key?: string | null; role_family?: string | null; opportunity_type?: string | null },
+  auth: ProtectedRequestOptions,
+) {
+  const params = new URLSearchParams();
+  appendOptionalParam(params, "market_key", filters.market_key);
+  appendOptionalParam(params, "role_family", filters.role_family);
+  appendOptionalParam(params, "opportunity_type", filters.opportunity_type);
+  const query = params.toString();
+  return protectedRequest<CurrentOpportunityCoveragePayload>(
+    `/current-opportunities/coverage${query ? `?${query}` : ""}`,
+    auth,
+  );
+}
+
+export function getCurrentOpportunityDiagnostics(auth: ProtectedRequestOptions) {
+  return protectedRequest<{ diagnostics: CurrentOpportunityDiagnostic[] }>(
+    "/current-opportunities/diagnostics",
+    auth,
+  );
+}
+
+export function getCurrentOpportunityRefreshRuns(
+  filters: { source_id?: string | null; limit?: number },
+  auth: ProtectedRequestOptions,
+) {
+  const params = new URLSearchParams();
+  appendOptionalParam(params, "source_id", filters.source_id);
+  appendOptionalParam(params, "limit", filters.limit);
+  const query = params.toString();
+  return protectedRequest<{ runs: CurrentOpportunityRefreshRun[] }>(
+    `/current-opportunities/refresh-runs${query ? `?${query}` : ""}`,
+    auth,
+  );
+}
+
+export function ingestCareerIdentity(
+  body: CareerIdentityIngestionRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<CareerIdentityIngestionResult>("/me/career-identity/ingest", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function listCareerDecisions(auth: ProtectedRequestOptions) {
+  return protectedRequest<{ decisions: CareerDecision[] }>("/me/decisions", auth);
+}
+
+export function createCareerDecision(
+  body: CareerDecisionCreateInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ decision: CareerDecision }>("/me/decisions", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getCareerDecision(decisionId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<{ decision: CareerDecision }>(
+    `/me/decisions/${encodeURIComponent(decisionId)}`,
+    auth,
+  );
+}
+
+export function updateCareerDecision(
+  decisionId: string,
+  body: CareerDecisionUpdateInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ decision: CareerDecision }>(
+    `/me/decisions/${encodeURIComponent(decisionId)}`,
+    auth,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function addCareerDecisionOption(
+  decisionId: string,
+  body: CareerDecisionOptionInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ decision: CareerDecision }>(
+    `/me/decisions/${encodeURIComponent(decisionId)}/options`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function compareCareerDecision(decisionId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<{ recommendation: CareerDecision["recommendation"] }>(
+    `/me/decisions/${encodeURIComponent(decisionId)}/compare`,
+    auth,
+    { method: "POST" },
+  );
+}
+
+export function getCareerDecisionJournal(decisionId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<{ journal: CareerDecisionVersion[] }>(
+    `/me/decisions/${encodeURIComponent(decisionId)}/journal`,
+    auth,
+  );
+}
+
+export function selectCareerDecisionOption(
+  decisionId: string,
+  body: { option_id: string; user_note?: string | null },
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ decision: CareerDecision }>(
+    `/me/decisions/${encodeURIComponent(decisionId)}/select`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function reopenCareerDecision(decisionId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<{ decision: CareerDecision }>(
+    `/me/decisions/${encodeURIComponent(decisionId)}/reopen`,
+    auth,
+    { method: "POST" },
+  );
+}
+
+export function createCareerActionPlan(
+  decisionId: string,
+  body: { title?: string | null; actions?: CareerActionInput[] },
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ action_plan: CareerDecision["action_plan"] }>(
+    `/me/decisions/${encodeURIComponent(decisionId)}/plan`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function updateCareerAction(
+  actionId: string,
+  body: {
+    status?: CareerActionStatus | null;
+    title?: string | null;
+    description?: string | null;
+    due_at?: string | null;
+    priority?: number | null;
+    metadata?: Record<string, unknown> | null;
+  },
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ action: CareerAction }>(`/me/actions/${encodeURIComponent(actionId)}`, auth, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export function createCareerApplication(
+  body: CareerApplicationCreateInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ application: CareerApplication }>(
+    "/me/applications",
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function transitionCareerApplication(
+  applicationId: string,
+  body: {
+    to_status: CareerApplicationStatus;
+    reason?: string | null;
+    transitioned_at?: string | null;
+    follow_up_at?: string | null;
+    metadata?: Record<string, unknown>;
+  },
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ application: CareerApplication }>(
+    `/me/applications/${encodeURIComponent(applicationId)}/transition`,
+    auth,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function createCareerOutcome(
+  body: CareerOutcomeCreateInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ outcome: CareerOutcome }>("/me/outcomes", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function submitRecommendationFeedback(
+  body: RecommendationFeedbackCreateInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ feedback: RecommendationFeedback }>("/me/recommendation-feedback", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function recordDecisionReflection(
+  body: DecisionReflectionCreateInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ reflection: DecisionReflection }>("/me/decision-reflections", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function recordStrategyChange(
+  body: StrategyChangeCreateInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ strategy_change: StrategyChange }>("/me/strategy-changes", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function createSupportCase(
+  body: SupportCaseCreateInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ support_case: SupportCase }>("/me/support-cases", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getMyBetaAccess(auth: ProtectedRequestOptions) {
+  return protectedRequest<BetaAccessPayload>("/me/beta-access", auth);
+}
+
+export function getMyFeatureAccess(featureKey: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<{ decision: FeatureAccessDecision }>(
+    `/me/feature-access/${encodeURIComponent(featureKey)}`,
+    auth,
+  );
+}
+
+export function recordCommercialExperimentSignal(
+  body: CommercialExperimentSignalCreateInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ signal: Record<string, unknown> }>("/me/commercial-signals", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function recordProductEvent(
+  body: ProductEventCreateInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ event: Record<string, unknown> }>("/me/product-events", auth, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getWeeklyCareerReview(auth: ProtectedRequestOptions) {
+  return protectedRequest<{ review: WeeklyCareerReview }>("/me/reviews/weekly", auth);
+}
+
+export function generateDeepDecisionAnalysis(
+  decisionId: string,
+  body: DeepDecisionAnalysisRequest,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ analysis: DeepDecisionAnalysis }>(
+    `/me/decisions/${encodeURIComponent(decisionId)}/deep-analysis`,
+    auth,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function getLatestDeepDecisionAnalysis(decisionId: string, auth: ProtectedRequestOptions) {
+  return protectedRequest<{ analysis: DeepDecisionAnalysis }>(
+    `/me/decisions/${encodeURIComponent(decisionId)}/deep-analysis`,
+    auth,
+  );
+}
+
+export function listStrategicCareerReviews(
+  auth: ProtectedRequestOptions,
+  options: { decisionId?: string | null; limit?: number } = {},
+) {
+  const params = new URLSearchParams();
+  appendOptionalParam(params, "decision_id", options.decisionId);
+  appendOptionalParam(params, "limit", options.limit);
+  const query = params.toString();
+  return protectedRequest<{ strategic_reviews: StrategicCareerReview[] }>(
+    `/me/strategic-reviews${query ? `?${query}` : ""}`,
+    auth,
+  );
 }
 
 export function updatePreferences(

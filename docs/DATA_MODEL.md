@@ -25,6 +25,62 @@ The backend separates three categories of data:
 
 Do not collapse these layers.
 
+### Layer 38A Addendum: Current Opportunity Backend
+
+Layer 38A adds production-current opportunity infrastructure while preserving
+the distinction between raw source observations and canonical opportunity
+records.
+
+Current opportunity entities:
+
+- `opportunity_data_sources`
+- `opportunity_acquisition_runs`
+- `opportunity_source_observations`
+- `current_opportunities`
+- `current_opportunity_source_links`
+- `current_opportunity_identity_evidence`
+- `opportunity_promotion_receipts`
+- `opportunity_coverage_contracts`
+
+`opportunity_data_sources` is the governed source registry. It records provider
+identity, source type, acquisition method, enabled/operational state,
+allowed-use and license/terms classifications, trust classification, freshness
+SLA, supported markets/opportunity types, display/ranking permissions, refresh
+configuration, and provenance requirements. Unknown or prohibited states fail
+closed for ranking.
+
+`opportunity_source_observations` stores raw provider observations by
+source/run/provider record id and payload hash. These rows preserve source
+truth for replay, audit, dispute, and re-normalization. They are not canonical
+market truth.
+
+`current_opportunities` stores normalized, deduplicated, product-usable current
+opportunities linked to existing `companies.company_id` and `regions.region_id`
+when mappings are available. Unknown company, role, location, compensation, or
+dates are represented explicitly rather than fabricated.
+
+`current_opportunity_source_links` connects source/provider records to a
+canonical opportunity and tracks source-specific lifecycle state. Removing one
+source record does not close the canonical opportunity while another active
+source link remains.
+
+`current_opportunity_identity_evidence` records the identity evidence and
+confidence used during resolution. Low-confidence potential duplicates remain
+separate.
+
+`opportunity_promotion_receipts` stores safe import/diff promotion receipts for
+refresh runs. Promotion is transactional; failed promotion does not leave
+partial canonical writes.
+
+`opportunity_coverage_contracts` classifies coverage by market, role family,
+and opportunity type as `production_ready`, `limited`, `experimental`, or
+`unsupported`. Unknown combinations default to unsupported semantics and must
+not be shown as exhaustive empty result sets.
+
+No real external provider is configured by this schema alone. Test/curated
+sources prove the path, but production coverage exists only where governed
+sources and coverage contracts are explicitly configured.
+
 ---
 
 ## Layer 7 Addendum: Auth/User Foundation And User-Owned Personalization
@@ -208,6 +264,108 @@ Required constraints:
 - nullable foreign key `preference_profile_id` →
   `user_preference_profiles.user_id`
 - retrieval must be scoped by internal `users.user_id`
+
+### Layer 35A Addendum: Career Identity Backend
+
+Layer 35A adds a canonical user-owned Career Identity domain. It is app-owned
+private career profile data keyed to the internal `users.user_id`; it does not
+replace Auth0 identity, `users`, `user_profiles`, canonical market truth, or
+recommendation output ownership.
+
+Career Identity entities:
+
+- `career_identities`: one aggregate root per user, with current version,
+  completeness/sufficiency state, consent flags, privacy visibility, and a
+  deterministic completeness snapshot.
+- `career_identity_facts`: normalized typed facts for education, experience,
+  skills, projects, credentials, career goals, role preferences, industry
+  preferences, geographic constraints, compensation constraints, timing
+  preferences, and work-arrangement preferences.
+- `career_identity_imports`: safe resume/profile import metadata and
+  diagnostics. Raw submitted resume/profile content is not retained or exposed
+  as ordinary identity data.
+
+Fact state values are `explicit`, `imported`, `inferred`, and `confirmed`.
+Precedence is `confirmed > explicit > imported > inferred`; weaker imported or
+inferred facts must not silently overwrite stronger user truth for the same
+normalized fact key.
+
+`career_identities.current_version` is incremented only by meaningful identity,
+fact, consent, privacy, confirmation, deletion, or ingestion mutations. Reads
+and no-op duplicate imports do not advance the version.
+
+Layer 35B makes Career Identity the authenticated user-facing authority for the
+career facts and preferences covered by Layer 35. Existing
+`user_preference_profiles` rows remain for legacy saved overlays, but
+recommendation personalization now reads Career Identity through a compatibility
+adapter into the existing in-memory preference shape instead of maintaining a
+second writable career-preference source of truth.
+
+### Layer 36A Addendum: Career Decision Lifecycle
+
+Layer 36A adds user-owned backend state for the personalized career decision
+loop. It consumes Career Identity snapshots and existing market/company/score
+truth, but it does not mutate those canonical systems.
+
+Lifecycle tables:
+- `career_decisions`
+- `decision_context_snapshots`
+- `decision_options`
+- `decision_recommendations`
+- `decision_versions`
+- `career_action_plans`
+- `career_actions`
+- `career_applications`
+- `career_application_transitions`
+- `career_outcomes`
+
+`career_decisions` is the aggregate root. It stores the owner, decision type,
+status, title, description, target/review timing, priorities, constraints,
+selected option id, current context snapshot id, current recommendation id,
+version, and timestamps.
+
+`decision_context_snapshots` is the canonical Career Identity to decision
+adapter. It stores the Career Identity id/version, completeness/sufficiency
+state, consent-aware decision context, and safe fact refs. Recommendation logic
+uses this snapshot, not raw Career Identity reinterpretation.
+
+`decision_options` stores multi-variable scenarios as structured JSON so one
+option can combine role, region, company, work arrangement, compensation, and
+other characteristics without creating one table per decision type.
+
+`decision_recommendations` stores reproducible fit/comparison snapshots:
+qualitative component fit, evidence buckets, challenges, limitations,
+confidence, sufficiency, abstention status, and the context snapshot used.
+Unknown evidence is preserved as unknown/unavailable and is not treated as
+zero.
+
+`decision_versions` is the append-only journal. Updates, recommendations,
+option selection, reopening, plan creation, and outcomes append historical
+snapshots instead of overwriting prior reasoning.
+
+`career_action_plans` and `career_actions` store career execution tasks only:
+research, applications, skill work, company targeting, networking/follow-up,
+preparation, timing checkpoints, review tasks, and other.
+
+`career_applications` and `career_application_transitions` store the user's
+personal application state and transition history. They are not employer ATS,
+recruiter pipeline, candidate ranking, interviewer assignment, or autonomous
+application-submission tables.
+
+`career_outcomes` stores observed outcomes from applications, actions,
+decisions, skill work, research, networking, education, strategy changes, and
+other career actions. Outcomes can link back to decisions, actions,
+applications, options, and recommendations while preserving history.
+
+All Layer 36A tables carry `user_id` and are owner-scoped by service/API logic.
+Cross-user linked writes are rejected before persistence. Weekly reviews and
+reminders are deterministic read models derived from stored decision/action/
+application/outcome state and due/review/follow-up timestamps; Layer 36A does
+not introduce a new scheduler.
+
+Layer 36B exposes this graph through the authenticated frontend route
+`/markets/decisions`. The route consumes aggregate read models and presents the
+lifecycle as one Decision Workspace, not as separate database concepts.
 
 ### Layer 16A Addendum: Institutional Foundation
 
@@ -901,11 +1059,15 @@ records, or region-expansion workflows.
 
 ### Layer 7 Batch D Privacy Controls
 
-App-level privacy controls operate only on Layer 7 user-owned data. They may:
+App-level privacy controls operate only on app-owned current-user data. As of
+Layer 39A, they may:
 
 - export the current user's `users`, `user_profiles`,
   `external_auth_identities`, `user_preference_profiles`,
   `saved_market_artifacts`, and `personalized_recommendation_snapshots` data
+- export the current user's Career Identity facts/import metadata, Career
+  Decisions, decision journals, applications, outcomes, Deep Decision
+  Intelligence factors, advisory findings, and strategic reviews
 - delete the current user's saved preference profile
 - delete the current user's saved market artifacts
 - delete the current user's personalized recommendation snapshots
@@ -919,10 +1081,16 @@ Privacy controls must not export, delete, or mutate canonical market truth:
 objective output metadata.
 
 App account deactivation is a soft-delete pattern for the internal `users`
-row. It deletes profile, external auth identity mapping, preference, saved
-artifact, and recommendation snapshot rows for the current user, then sets
+row. It deletes profile, preference, saved artifact, recommendation snapshot,
+alert, Career Identity, Career Decisions, Deep Decision Intelligence, Career
+Agent memory, and Career Agent tool rows for the current user, then sets
 `users.status = deactivated`. The internal `user_id` tombstone remains to avoid
 identifier reuse and preserve the app-owned identity boundary.
+
+External auth identity rows are not deleted during deactivation. They retain
+only the stable provider/issuer/subject mapping and scrub profile email fields
+so a still-valid upstream Auth0 token cannot silently recreate a new active app
+user after app-level deletion.
 
 Auth0/provider-side account deletion is outside Batch D and remains deferred
 until a protected provider-management integration exists.
@@ -2720,3 +2888,112 @@ Rules:
 4. Contribution review must not rewrite historical snapshots; corrections use
    later safe correction records or future governed refresh flows.
 5. Rejected contributions are preserved for auditability.
+
+⸻
+
+30. Layer 37A Deep Decision Intelligence
+Layer 37A adds persisted deep-decision analysis on top of the Layer 36 decision
+lifecycle. Layer 36 remains the canonical decision, option, recommendation,
+journal, action, application, outcome, and weekly-review graph.
+
+Deep decision tables:
+* `decision_factors`
+* `longitudinal_context_snapshots`
+* `decision_recommendation_evolutions`
+* `decision_advisory_findings`
+* `strategic_career_reviews`
+
+`decision_factors` stores shared factors for company, compensation, skill-gap,
+education ROI, relocation, and timing/pivot analysis. Factors carry category,
+label, normalized and raw values where appropriate, direction, importance,
+confidence, uncertainty, evidence strength, evidence kind, source/provenance,
+caveats, freshness, and links to user, decision, option, recommendation, and
+decision-context snapshot.
+
+`longitudinal_context_snapshots` stores bounded generated-at-time advisory
+context. It preserves explicit intent, observed behavior, prior system
+recommendations, outcomes, journal summaries, scenarios, record limits, and the
+safety rule that observed behavior does not rewrite explicit user intent.
+
+`decision_recommendation_evolutions` compares current and previous Layer 36
+recommendation snapshots. It records meaningful changes, change type,
+confidence before/after, evidence basis, uncertainty, and the rule that prior
+recommendations are not independent evidence.
+
+`decision_advisory_findings` stores typed, evidence-backed findings with
+severity, support status, confidence, uncertainty, supporting evidence,
+counter-evidence, affected goal, explanation, suggested action, and optional
+acknowledgment/dismissal timestamps.
+
+`strategic_career_reviews` stores persisted strategic review snapshots linked
+to longitudinal context. Reviews summarize goals, strategy performance,
+applications, outcomes, identity changes, market/company evidence signals,
+recommendation changes, active risks, blind spots, suggested next actions,
+confidence, and uncertainty.
+
+Rules:
+1. Layer 37A does not create separate domain decision engines.
+2. Career Identity remains canonical for user career facts.
+3. Missing data remains unknown or unavailable evidence, not negative evidence.
+4. Proxy, inferred, derived, direct, conflicting, and unavailable evidence stay
+   distinguishable.
+5. Observed behavior is advisory evidence and does not silently mutate goals,
+   preferences, constraints, or Career Identity facts.
+6. Strategic reviews and longitudinal snapshots are historical records and are
+   not retroactively rewritten.
+7. Cross-user linkage is rejected through user ownership checks and foreign-key
+   relationships to Layer 36 user-owned objects.
+
+⸻
+
+31. Layer 38 Current Opportunity Intelligence
+Layer 38 stores production-current opportunity data as a governed raw-to-
+canonical pipeline. Raw provider observations live separately from canonical
+opportunity rows so provenance, replay, source dispute, and future
+renormalization remain possible.
+
+Core tables:
+* `opportunity_data_sources`
+* `opportunity_acquisition_runs`
+* `opportunity_source_observations`
+* `current_opportunities`
+* `current_opportunity_source_links`
+* `current_opportunity_identity_evidence`
+* `opportunity_promotion_receipts`
+* `opportunity_coverage_contracts`
+
+Rules:
+1. Source governance controls acquisition, display, and ranking eligibility.
+2. Raw payloads are not exposed through user-facing APIs or frontend surfaces.
+3. Freshness is based on observed source data and source SLA, not canonical row
+   update time.
+4. Duplicate observations and syndicated records resolve to a single canonical
+   opportunity only when identity confidence is sufficient.
+5. Coverage status changes product semantics; unsupported or limited coverage
+   cannot be rendered as an exhaustive absence of opportunities.
+6. Frontend Current Opportunities and Operations views consume Layer 38A read
+   models and do not recompute matching, source health, or coverage truth.
+
+⸻
+
+32. Layer 41A Canonical Geographic Foundation
+
+`regions.region_id` remains the canonical geographic primary key. Layer 41A
+adds a stable unique `public_slug`, optional `primary_city`, optional centroid
+and focus bounds, and explicit market support status without replacing any
+existing Region ID or parent hierarchy.
+
+`region_aliases` maps a globally unique normalized lookup alias to one Region.
+Alias type and source distinguish public slugs, legacy IDs, import keys, city
+aliases, alternate names, and abbreviations. Alias normalization is a lookup
+mechanism, never a durable domain key.
+
+`region_state_memberships` is the authoritative many-to-many association
+between Regions and normalized two-letter state codes. It supports multi-state
+markets independently of `parent_region_id`.
+
+`current_opportunities` adds explicit location-resolution status and source.
+Its nullable `market_id` means a canonical Region FK only; raw
+`market_label`/`location_text` is preserved and never substituted as canonical
+geography. See `docs/CANONICAL_GEOGRAPHY.md` for resolution, compatibility, and
+map-data boundaries.

@@ -21,15 +21,23 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.geography.exceptions import (
     DuplicateRegion,
+    GeographicIdentityConflict,
     InvalidRegionHierarchy,
+    PublishedSlugImmutable,
     RegionNotFound,
 )
-from backend.geography.models import Region
+from backend.geography.models import Region, RegionAlias
 from backend.geography.repository import RegionRepository
+from backend.geography.resolver import (
+    MAX_PUBLIC_SLUG_LENGTH,
+    ensure_identity_token_available,
+    normalize_geographic_input,
+    normalize_public_slug,
+)
 from backend.geography.types import RegionType
 from backend.shared.state import ObjectState, validate_transition
 from backend.shared.versioning import next_version
@@ -55,6 +63,22 @@ class RegionDefinition(BaseModel):
     parent_region_id: str | None = None
     labor_market_group: str | None = None
     normalization_profile_id: str | None = None
+    public_slug: str | None = None
+    primary_city: str | None = None
+    centroid_latitude: float | None = Field(default=None, ge=-90, le=90)
+    centroid_longitude: float | None = Field(default=None, ge=-180, le=180)
+    focus_bounds: dict[str, float] | None = None
+    market_support_status: Literal["supported", "unsupported", "unknown"] = "unknown"
+
+    @field_validator("public_slug", mode="before")
+    @classmethod
+    def _normalize_public_slug(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        slug = normalize_public_slug(value)
+        if not slug or len(slug) > MAX_PUBLIC_SLUG_LENGTH:
+            raise ValueError("public_slug must normalize to 1-96 ASCII slug characters")
+        return slug
 
 
 class GeographyService:
@@ -77,6 +101,13 @@ class GeographyService:
     def create_region(self, definition: RegionDefinition) -> Region:
         if self._repo.exists(definition.region_id):
             raise DuplicateRegion(definition.region_id)
+        ensure_identity_token_available(
+            self._repo, definition.region_id, region_id=definition.region_id
+        )
+        if definition.public_slug is not None:
+            ensure_identity_token_available(
+                self._repo, definition.public_slug, region_id=definition.region_id
+            )
         self._validate_hierarchy(definition.region_id, definition.parent_region_id)
         region = Region(
             region_id=definition.region_id,
@@ -86,10 +117,46 @@ class GeographyService:
             parent_region_id=definition.parent_region_id,
             labor_market_group=definition.labor_market_group,
             normalization_profile_id=definition.normalization_profile_id,
+            public_slug=definition.public_slug,
+            primary_city=definition.primary_city,
+            centroid_latitude=definition.centroid_latitude,
+            centroid_longitude=definition.centroid_longitude,
+            focus_bounds=definition.focus_bounds,
+            market_support_status=definition.market_support_status,
         )
         self._repo.add(region)
         self._repo.flush()
         return region
+
+    def add_alias(
+        self,
+        *,
+        region_alias_id: str,
+        region_id: str,
+        alias: str,
+        alias_type: str,
+        source: str | None = None,
+    ) -> RegionAlias:
+        self.get_region(region_id)
+        normalized = ensure_identity_token_available(self._repo, alias, region_id=region_id)
+        existing = self._repo.alias_for_normalized(normalized)
+        if existing is not None:
+            if existing.region_id != region_id:
+                raise GeographicIdentityConflict(
+                    f"alias {alias!r} already belongs to {existing.region_id!r}"
+                )
+            return existing
+        row = RegionAlias(
+            region_alias_id=region_alias_id,
+            region_id=region_id,
+            alias=alias.strip(),
+            normalized_alias=normalize_geographic_input(alias),
+            alias_type=alias_type,
+            source=source,
+        )
+        self._repo.add_alias(row)
+        self._repo.flush()
+        return row
 
     def update_region(self, definition: RegionDefinition) -> Region:
         region = self.get_region(definition.region_id)
@@ -99,9 +166,7 @@ class GeographyService:
         self._repo.flush()
         return region
 
-    def upsert_for_build(
-        self, definition: RegionDefinition
-    ) -> tuple[Region, UpsertOutcome]:
+    def upsert_for_build(self, definition: RegionDefinition) -> tuple[Region, UpsertOutcome]:
         """Idempotent upsert used by the Geography Build job handler.
 
         * If the region does not exist, create it and walk it through
@@ -146,12 +211,27 @@ class GeographyService:
     # --- internals -------------------------------------------------------
 
     def _apply_definition(self, region: Region, definition: RegionDefinition) -> None:
+        if definition.public_slug is not None:
+            if region.public_slug is not None and region.public_slug != definition.public_slug:
+                raise PublishedSlugImmutable(
+                    f"published slug for {region.region_id!r} is immutable"
+                )
+            ensure_identity_token_available(
+                self._repo, definition.public_slug, region_id=region.region_id
+            )
         region.region_name = definition.region_name
         region.display_name = definition.display_name
         region.region_type = definition.region_type.value
         region.parent_region_id = definition.parent_region_id
         region.labor_market_group = definition.labor_market_group
         region.normalization_profile_id = definition.normalization_profile_id
+        if definition.public_slug is not None:
+            region.public_slug = definition.public_slug
+        region.primary_city = definition.primary_city
+        region.centroid_latitude = definition.centroid_latitude
+        region.centroid_longitude = definition.centroid_longitude
+        region.focus_bounds = definition.focus_bounds
+        region.market_support_status = definition.market_support_status
 
     def _set_state(self, region: Region, target: ObjectState) -> None:
         validate_transition(region.state, target)
@@ -165,15 +245,19 @@ class GeographyService:
             and region.parent_region_id == definition.parent_region_id
             and region.labor_market_group == definition.labor_market_group
             and region.normalization_profile_id == definition.normalization_profile_id
+            and (definition.public_slug is None or region.public_slug == definition.public_slug)
+            and region.primary_city == definition.primary_city
+            and region.centroid_latitude == definition.centroid_latitude
+            and region.centroid_longitude == definition.centroid_longitude
+            and region.focus_bounds == definition.focus_bounds
+            and region.market_support_status == definition.market_support_status
         )
 
     def _validate_hierarchy(self, region_id: str, parent_id: str | None) -> None:
         if parent_id is None:
             return
         if parent_id == region_id:
-            raise InvalidRegionHierarchy(
-                f"region {region_id!r} cannot be its own parent"
-            )
+            raise InvalidRegionHierarchy(f"region {region_id!r} cannot be its own parent")
 
         # Walk the proposed parent's ancestor chain. If we ever encounter
         # ``region_id``, accepting this parent would close a cycle.
@@ -192,9 +276,7 @@ class GeographyService:
             visited.add(current)
             depth += 1
             if depth > _MAX_ANCESTOR_DEPTH:
-                raise InvalidRegionHierarchy(
-                    f"ancestor chain exceeds depth limit at {region_id!r}"
-                )
+                raise InvalidRegionHierarchy(f"ancestor chain exceeds depth limit at {region_id!r}")
             ancestor = self._repo.get(current)
             if ancestor is None:
                 raise InvalidRegionHierarchy(f"parent region {current!r} not found")

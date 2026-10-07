@@ -1,5 +1,11 @@
+import {
+  geographicInputFromPath,
+  geographicRouteToken,
+  type GeographicRouteTarget,
+} from "./geography";
+
 export const DEFAULT_REGION_A = "greater_boston";
-export const DEFAULT_REGION_B = "greater_sf";
+export const DEFAULT_REGION_B = "sf_bay_area";
 
 export const ROLE_TARGETS = ["product", "ai_cloud_adjacent", "cybersecurity"];
 export const INDUSTRY_OPTIONS = ["software", "ai", "cloud", "data", "cybersecurity"];
@@ -14,9 +20,13 @@ export type ProductPage =
   | "company"
   | "compare"
   | "discovery"
+  | "career-identity"
+  | "decisions"
   | "recommendations"
   | "career-agent"
   | "opportunity-routes"
+  | "current-opportunities"
+  | "current-opportunity-operations"
   | "policy"
   | "plans"
   | "institution"
@@ -95,6 +105,7 @@ export type RouteState = {
   seoPageSlug?: string;
   policyView?: PolicyView;
   policyReportId?: string;
+  opportunityId?: string;
   organizationId?: string;
   institutionView?: InstitutionView;
   comparison: ComparisonUrlState;
@@ -152,9 +163,13 @@ const PRODUCT_PAGES: ProductPage[] = [
   "company",
   "compare",
   "discovery",
+  "career-identity",
+  "decisions",
   "recommendations",
   "career-agent",
   "opportunity-routes",
+  "current-opportunities",
+  "current-opportunity-operations",
   "policy",
   "plans",
   "institution",
@@ -287,6 +302,7 @@ function baseRoute(
     | "seoPageSlug"
     | "policyView"
     | "policyReportId"
+    | "opportunityId"
     | "organizationId"
     | "institutionView"
     | "unknownPath"
@@ -366,7 +382,9 @@ export function parseRoute(pathname: string, search: string): RouteState {
   if (!section) return baseRoute("explore", params);
 
   if (section === "region") {
-    return baseRoute("region", params, { regionId: cleanToken(segments[2]) });
+    return baseRoute("region", params, {
+      regionId: geographicInputFromPath(segments[2]),
+    });
   }
 
   if (section === "company") {
@@ -379,12 +397,29 @@ export function parseRoute(pathname: string, search: string): RouteState {
   }
   if (section === "intelligence") return baseRoute("intelligence", params);
   if (section === "discovery") return baseRoute("discovery", params);
+  if (section === "career-identity" || section === "profile") {
+    return baseRoute("career-identity", params);
+  }
+  if (section === "decisions" || section === "decision-workspace") {
+    return baseRoute("decisions", params);
+  }
   if (section === "recommendations") return baseRoute("recommendations", params);
   if (section === "career-agent" || section === "agent") {
     return baseRoute("career-agent", params);
   }
   if (section === "opportunity-routes" || section === "routes") {
     return baseRoute("opportunity-routes", params);
+  }
+  if (section === "current-opportunities" || section === "opportunities") {
+    if (segments[2] === "operations") {
+      return baseRoute("current-opportunity-operations", params);
+    }
+    if (segments[2]) {
+      return baseRoute("current-opportunities", params, {
+        opportunityId: cleanToken(segments[2]),
+      });
+    }
+    return baseRoute("current-opportunities", params);
   }
   if (section === "policy") {
     if (segments[2] === "regions") {
@@ -501,8 +536,10 @@ export function publicBenchmarkUrl(slug: string): string {
   return `${PUBLIC_PAGE_PATHS.benchmarks}/${encodePathValue(slug)}`;
 }
 
-export function regionDetailUrl(regionId?: string): string {
-  return regionId ? `${PRODUCT_ROOT}/region/${encodePathValue(regionId)}` : `${PRODUCT_ROOT}/region`;
+export function regionDetailUrl(region?: GeographicRouteTarget): string {
+  return region
+    ? `${PRODUCT_ROOT}/region/${encodePathValue(geographicRouteToken(region))}`
+    : `${PRODUCT_ROOT}/region`;
 }
 
 export function companyGeographyUrl(companyId?: string): string {
@@ -526,6 +563,14 @@ export function personalizedDiscoveryUrl(filters: DiscoveryFilters): string {
   return `${PRODUCT_ROOT}/discovery?${params.toString()}`;
 }
 
+export function careerIdentityUrl(): string {
+  return `${PRODUCT_ROOT}/career-identity`;
+}
+
+export function decisionsUrl(): string {
+  return `${PRODUCT_ROOT}/decisions`;
+}
+
 export function recommendationsUrl(goalMode = DEFAULT_RECOMMENDATION_GOAL_MODE): string {
   const params = new URLSearchParams({ goal: goalMode });
   return `${PRODUCT_ROOT}/recommendations?${params.toString()}`;
@@ -537,6 +582,18 @@ export function careerAgentUrl(): string {
 
 export function opportunityRoutesUrl(): string {
   return `${PRODUCT_ROOT}/opportunity-routes`;
+}
+
+export function currentOpportunitiesUrl(): string {
+  return `${PRODUCT_ROOT}/current-opportunities`;
+}
+
+export function currentOpportunityDetailUrl(opportunityId: string): string {
+  return `${PRODUCT_ROOT}/current-opportunities/${encodePathValue(opportunityId)}`;
+}
+
+export function currentOpportunityOperationsUrl(): string {
+  return `${PRODUCT_ROOT}/current-opportunities/operations`;
 }
 
 export function policyLandingUrl(): string {

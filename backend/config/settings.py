@@ -57,9 +57,13 @@ PUBLIC_DEMO_MAX_REQUEST_BODY_BYTES = 65_536
 DEFAULT_RATE_LIMIT_REQUESTS = 120
 PUBLIC_DEMO_RATE_LIMIT_REQUESTS = 60
 DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60
+DEFAULT_EXPENSIVE_RATE_LIMIT_REQUESTS = 20
+DEFAULT_MUTATION_RATE_LIMIT_REQUESTS = 60
 MAX_REQUEST_BODY_BYTES_LIMIT = 10 * 1024 * 1024
 RATE_LIMIT_REQUESTS_LIMIT = 10_000
 RATE_LIMIT_WINDOW_SECONDS_LIMIT = 3_600
+DEFAULT_JOB_STALE_AFTER_SECONDS = 3_600
+JOB_STALE_AFTER_SECONDS_LIMIT = 86_400
 
 
 class Settings(BaseSettings):
@@ -73,13 +77,25 @@ class Settings(BaseSettings):
     app_env: AppEnv = Field(default=AppEnv.LOCAL)
     log_level: str = Field(default="INFO")
     service_name: str = Field(default="jmi-backend")
+    release_id: str = Field(default="unknown")
     database_url: str = Field(default="", repr=False)
     cors_allowed_origins: str = Field(default="")
+    readiness_require_migration_current: bool | None = Field(default=None)
+    job_stale_after_seconds: int | None = Field(default=None)
+    error_monitoring_dsn: str = Field(default="", repr=False)
     rate_limit_enabled: bool | None = Field(default=None)
     security_headers_enabled: bool | None = Field(default=None)
     max_request_body_bytes: int | None = Field(default=None)
     rate_limit_requests: int | None = Field(default=None)
     rate_limit_window_seconds: int | None = Field(default=None)
+    rate_limit_anonymous_requests: int | None = Field(default=None)
+    rate_limit_anonymous_window_seconds: int | None = Field(default=None)
+    rate_limit_authenticated_requests: int | None = Field(default=None)
+    rate_limit_authenticated_window_seconds: int | None = Field(default=None)
+    rate_limit_expensive_requests: int | None = Field(default=None)
+    rate_limit_expensive_window_seconds: int | None = Field(default=None)
+    rate_limit_mutation_requests: int | None = Field(default=None)
+    rate_limit_mutation_window_seconds: int | None = Field(default=None)
     auth0_issuer: str = Field(default="")
     auth0_audience: str = Field(default="")
     auth0_jwks_url: str = Field(default="")
@@ -195,7 +211,12 @@ class Settings(BaseSettings):
             )
         return ",".join(origins)
 
-    @field_validator("rate_limit_enabled", "security_headers_enabled", mode="before")
+    @field_validator(
+        "rate_limit_enabled",
+        "security_headers_enabled",
+        "readiness_require_migration_current",
+        mode="before",
+    )
     @classmethod
     def _parse_optional_bool(cls, value: Any) -> bool | None:
         if value is None:
@@ -216,6 +237,15 @@ class Settings(BaseSettings):
         "max_request_body_bytes",
         "rate_limit_requests",
         "rate_limit_window_seconds",
+        "rate_limit_anonymous_requests",
+        "rate_limit_anonymous_window_seconds",
+        "rate_limit_authenticated_requests",
+        "rate_limit_authenticated_window_seconds",
+        "rate_limit_expensive_requests",
+        "rate_limit_expensive_window_seconds",
+        "rate_limit_mutation_requests",
+        "rate_limit_mutation_window_seconds",
+        "job_stale_after_seconds",
         mode="before",
     )
     @classmethod
@@ -233,7 +263,16 @@ class Settings(BaseSettings):
         limits = {
             "max_request_body_bytes": MAX_REQUEST_BODY_BYTES_LIMIT,
             "rate_limit_requests": RATE_LIMIT_REQUESTS_LIMIT,
+            "rate_limit_anonymous_requests": RATE_LIMIT_REQUESTS_LIMIT,
+            "rate_limit_authenticated_requests": RATE_LIMIT_REQUESTS_LIMIT,
+            "rate_limit_expensive_requests": RATE_LIMIT_REQUESTS_LIMIT,
+            "rate_limit_mutation_requests": RATE_LIMIT_REQUESTS_LIMIT,
             "rate_limit_window_seconds": RATE_LIMIT_WINDOW_SECONDS_LIMIT,
+            "rate_limit_anonymous_window_seconds": RATE_LIMIT_WINDOW_SECONDS_LIMIT,
+            "rate_limit_authenticated_window_seconds": RATE_LIMIT_WINDOW_SECONDS_LIMIT,
+            "rate_limit_expensive_window_seconds": RATE_LIMIT_WINDOW_SECONDS_LIMIT,
+            "rate_limit_mutation_window_seconds": RATE_LIMIT_WINDOW_SECONDS_LIMIT,
+            "job_stale_after_seconds": JOB_STALE_AFTER_SECONDS_LIMIT,
             "auth0_jwks_cache_seconds": 86_400,
         }
         limit = limits.get(info.field_name)
@@ -243,6 +282,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _apply_environment_defaults(self) -> Self:
+        self.release_id = self.release_id.strip() or "unknown"
+        self.error_monitoring_dsn = self.error_monitoring_dsn.strip()
+
         if not self.database_url:
             if self.app_env in NON_LOCAL_ENVS:
                 raise ValueError(
@@ -255,6 +297,12 @@ class Settings(BaseSettings):
             self.rate_limit_enabled = self.app_env in RATE_LIMIT_DEFAULT_ENABLED_ENVS
         if self.security_headers_enabled is None:
             self.security_headers_enabled = self.app_env in SECURITY_HEADERS_DEFAULT_ENABLED_ENVS
+        if self.readiness_require_migration_current is None:
+            self.readiness_require_migration_current = (
+                self.app_env in STRICT_DEFAULT_ENABLED_ENVS
+            )
+        if self.job_stale_after_seconds is None:
+            self.job_stale_after_seconds = DEFAULT_JOB_STALE_AFTER_SECONDS
         if self.max_request_body_bytes is None:
             self.max_request_body_bytes = (
                 PUBLIC_DEMO_MAX_REQUEST_BODY_BYTES
@@ -269,6 +317,28 @@ class Settings(BaseSettings):
             )
         if self.rate_limit_window_seconds is None:
             self.rate_limit_window_seconds = DEFAULT_RATE_LIMIT_WINDOW_SECONDS
+        if self.rate_limit_anonymous_requests is None:
+            self.rate_limit_anonymous_requests = self.rate_limit_requests
+        if self.rate_limit_anonymous_window_seconds is None:
+            self.rate_limit_anonymous_window_seconds = self.rate_limit_window_seconds
+        if self.rate_limit_authenticated_requests is None:
+            self.rate_limit_authenticated_requests = self.rate_limit_requests
+        if self.rate_limit_authenticated_window_seconds is None:
+            self.rate_limit_authenticated_window_seconds = self.rate_limit_window_seconds
+        if self.rate_limit_expensive_requests is None:
+            self.rate_limit_expensive_requests = min(
+                int(self.rate_limit_requests),
+                DEFAULT_EXPENSIVE_RATE_LIMIT_REQUESTS,
+            )
+        if self.rate_limit_expensive_window_seconds is None:
+            self.rate_limit_expensive_window_seconds = self.rate_limit_window_seconds
+        if self.rate_limit_mutation_requests is None:
+            self.rate_limit_mutation_requests = min(
+                int(self.rate_limit_requests),
+                DEFAULT_MUTATION_RATE_LIMIT_REQUESTS,
+            )
+        if self.rate_limit_mutation_window_seconds is None:
+            self.rate_limit_mutation_window_seconds = self.rate_limit_window_seconds
 
         if self.app_env == AppEnv.PUBLIC_DEMO:
             if not self.cors_allowed_origin_list:

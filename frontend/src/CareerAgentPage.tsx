@@ -125,7 +125,7 @@ const TOOL_TYPES: CareerAgentToolType[] = [
 const DEFAULT_CAREER_AGENT_REQUEST: CareerAgentRequest = {
   question_type: "what_should_i_do_this_month",
   user_goal: "Early-career software strategy.",
-  target_region_ids: ["greater_boston", "greater_atlanta"],
+  target_region_ids: ["greater_boston", "atlanta"],
   target_role_families: ["software_engineering", "product_management"],
   preferred_program_types: ["internship", "new_grad_role"],
   preferred_location_modes: ["hybrid", "remote"],

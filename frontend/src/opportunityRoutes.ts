@@ -5,7 +5,7 @@ import type {
   OpportunityRouteRequest,
 } from "./opportunityTypes";
 
-export const DEFAULT_ROUTE_REGIONS = ["greater_boston", "greater_atlanta"];
+export const DEFAULT_ROUTE_REGIONS = ["greater_boston", "atlanta"];
 export const DEFAULT_ROUTE_ROLE_FAMILIES = ["software_engineering", "product_management"];
 
 export const PROGRAM_TYPE_OPTIONS: OpportunityProgramType[] = [

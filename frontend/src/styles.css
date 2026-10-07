@@ -50,6 +50,29 @@ button:disabled {
   opacity: 0.65;
 }
 
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #0f6f5f;
+  outline-offset: 3px;
+}
+
+.skip-link {
+  background: var(--paper-strong);
+  border: 2px solid var(--green);
+  border-radius: 0.5rem;
+  color: var(--green);
+  font-weight: 900;
+  left: 1rem;
+  padding: 0.65rem 0.9rem;
+  position: fixed;
+  top: 1rem;
+  transform: translateY(-180%);
+  z-index: 20;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
 code {
   overflow-wrap: anywhere;
 }
@@ -130,6 +153,15 @@ legend {
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
   min-height: 100vh;
+}
+
+.route-loading-state {
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  color: var(--muted);
+  font-weight: 800;
+  padding: 1rem;
 }
 
 .sidebar {
@@ -1214,11 +1246,574 @@ legend {
   margin: 0;
 }
 
+.current-opportunities-view {
+  align-items: start;
+}
+
+.current-opportunity-hero,
+.current-opportunity-filters,
+.opportunity-match-card,
+.opportunity-detail-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.current-opportunity-hero .lead-copy,
+.current-opportunity-state p,
+.current-coverage-panel p {
+  max-width: 70rem;
+}
+
+.opportunity-link-row,
+.opportunity-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.opportunity-link-row a {
+  color: var(--green);
+  font-weight: 900;
+}
+
+.opportunity-filter-grid,
+.opportunity-detail-grid,
+.current-opportunity-ops-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.current-opportunity-filters-compact .opportunity-filter-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.current-opportunity-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.opportunity-match-card {
+  border-left: 5px solid var(--green-soft);
+}
+
+.opportunity-match-card.freshness-stale,
+.opportunity-match-card.freshness-unknown {
+  border-left-color: var(--ochre);
+}
+
+.opportunity-score-pill {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  display: grid;
+  min-width: 9rem;
+  padding: 0.75rem;
+  text-align: right;
+}
+
+.opportunity-score-pill strong {
+  color: var(--green);
+  font-size: 1.25rem;
+}
+
+.opportunity-score-pill small,
+.refresh-run-row small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.opportunity-section {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.opportunity-section h3,
+.opportunity-section h4 {
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.compact-list,
+.current-diagnostic-list {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.compact-list li {
+  background: rgb(255 255 255 / 54%);
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  padding: 0.55rem 0.65rem;
+}
+
+.opportunity-warning-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.coverage-success {
+  border-color: var(--green-soft);
+}
+
+.coverage-warning {
+  border-color: var(--ochre-soft);
+}
+
+.coverage-error,
+.freshness-stale,
+.freshness-unknown {
+  border-color: var(--red-soft);
+}
+
+.current-diagnostic-list li {
+  align-items: start;
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.current-diagnostic-list p,
+.current-diagnostic-list small {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.status-dot {
+  border-radius: 999px;
+  height: 0.75rem;
+  margin-top: 0.35rem;
+  width: 0.75rem;
+}
+
+.status-info {
+  background: var(--green-soft);
+}
+
+.status-warning {
+  background: var(--ochre);
+}
+
+.status-blocking {
+  background: var(--red);
+}
+
+.refresh-run-table {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.refresh-run-header,
+.refresh-run-row {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(110px, 0.7fr) minmax(220px, 1.5fr) minmax(150px, 1fr);
+}
+
+.refresh-run-header {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.refresh-run-row {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  padding: 0.65rem;
+}
+
+.refresh-run-row > span {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .refresh-run-header {
+    display: none;
+  }
+
+  .refresh-run-row {
+    grid-template-columns: 1fr;
+  }
+
+  .opportunity-score-pill {
+    text-align: left;
+  }
+}
+
 .winner-card small {
   color: var(--muted);
   display: block;
   font-size: 0.75rem;
   margin-top: 0.2rem;
+}
+
+.decision-workspace {
+  display: grid;
+  gap: 1rem;
+}
+
+.decision-identity-bridge,
+.decision-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+}
+
+.decision-identity-bridge {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.decision-workspace-grid {
+  align-items: start;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+}
+
+.decision-home-panel,
+.decision-flow {
+  display: grid;
+  gap: 1rem;
+}
+
+.decision-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.decision-list-item {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  text-align: left;
+}
+
+.decision-list-item-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.decision-list-item small,
+.decision-panel small,
+.decision-fact span,
+.decision-option-card dt {
+  color: var(--muted);
+}
+
+.decision-form,
+.scenario-form,
+.application-form,
+.outcome-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.decision-form label,
+.scenario-form label,
+.application-form label,
+.outcome-form label,
+.decision-panel label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.82rem;
+  font-weight: 800;
+  gap: 0.35rem;
+}
+
+.decision-checkbox-label {
+  align-items: center;
+  display: flex !important;
+  flex-direction: row;
+}
+
+.decision-form input,
+.decision-form select,
+.decision-form textarea,
+.scenario-form input,
+.scenario-form select,
+.scenario-form textarea,
+.application-form input,
+.application-form select,
+.application-form textarea,
+.outcome-form input,
+.outcome-form select,
+.outcome-form textarea,
+.decision-panel select,
+.decision-panel textarea {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  color: var(--text);
+  font: inherit;
+  min-width: 0;
+  padding: 0.6rem;
+}
+
+.decision-form textarea,
+.scenario-form textarea,
+.application-form textarea,
+.outcome-form textarea,
+.decision-panel textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+.decision-form-row {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.decision-panel-header,
+.decision-recommendation-result {
+  align-items: start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.decision-state-strip,
+.choice-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.decision-badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.74rem;
+  font-weight: 900;
+  line-height: 1.2;
+  padding: 0.32rem 0.55rem;
+}
+
+.decision-badge-neutral {
+  background: var(--field);
+  color: var(--muted);
+}
+
+.decision-badge-success {
+  background: rgba(47, 128, 91, 0.12);
+  border-color: rgba(47, 128, 91, 0.4);
+  color: var(--green);
+}
+
+.decision-badge-warning {
+  background: rgba(183, 122, 0, 0.12);
+  border-color: rgba(183, 122, 0, 0.35);
+  color: var(--orange);
+}
+
+.decision-badge-danger {
+  background: rgba(190, 60, 60, 0.12);
+  border-color: rgba(190, 60, 60, 0.4);
+  color: var(--red);
+}
+
+.decision-quick-facts,
+.deep-summary-strip,
+.decision-option-grid,
+.decision-evidence-grid,
+.weekly-review-grid,
+.scenario-comparison-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.decision-fact,
+.decision-option-card,
+.scenario-fit-card,
+.deep-domain-section,
+.deep-factor-card,
+.deep-subpanel,
+.advisor-finding,
+.context-card,
+.strategic-review-card,
+.decision-evidence-bucket,
+.weekly-review-section,
+.action-row,
+.application-row,
+.outcome-row,
+.decision-challenge {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.8rem;
+}
+
+.deep-advisor-panel {
+  border-color: rgba(48, 111, 130, 0.4);
+}
+
+.deep-factor-summary,
+.deep-domain-grid,
+.advisor-finding-list,
+.longitudinal-grid,
+.strategic-review-list,
+.evolution-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.deep-domain-grid,
+.longitudinal-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.deep-domain-section,
+.deep-subpanel {
+  background: transparent;
+}
+
+.deep-factor-topline {
+  align-items: start;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.deep-factor-card p,
+.advisor-finding p,
+.strategic-review-card p {
+  margin: 0;
+}
+
+.factor-cost,
+.factor-risk {
+  border-left: 3px solid var(--orange);
+}
+
+.factor-benefit {
+  border-left: 3px solid var(--green);
+}
+
+.factor-uncertainty,
+.factor-evidence_strength {
+  border-left: 3px solid var(--accent);
+}
+
+.compact-list {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.timeline-items ol {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.timeline-items li {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.evidence-object-list h5,
+.timeline-items h5,
+.context-card h5 {
+  margin: 0;
+}
+
+.decision-option-card > div,
+.action-row,
+.application-row {
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, auto);
+}
+
+.decision-option-card dl,
+.dimension-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.decision-option-card dl div,
+.dimension-list div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.decision-option-card dd,
+.decision-option-card dt,
+.dimension-list dd,
+.dimension-list dt {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.decision-abstention {
+  background: rgba(183, 122, 0, 0.1);
+  border: 1px solid rgba(183, 122, 0, 0.35);
+  border-radius: 0.65rem;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem;
+}
+
+.decision-challenge-list,
+.action-list,
+.application-list,
+.outcome-list,
+.decision-journal {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.decision-journal {
+  margin: 0;
+  padding-left: 1.3rem;
+}
+
+.decision-journal li {
+  padding-left: 0.25rem;
+}
+
+.hard-violation-list {
+  border-left: 3px solid var(--red);
+  padding-left: 0.75rem;
+}
+
+@media (max-width: 920px) {
+  .decision-workspace-grid,
+  .decision-identity-bridge,
+  .decision-form-row,
+  .decision-option-card > div,
+  .action-row,
+  .application-row {
+    grid-template-columns: 1fr;
+  }
+
+  .decision-panel-header,
+  .decision-recommendation-result {
+    display: grid;
+  }
 }
 
 .score-card {
@@ -3075,5 +3670,287 @@ legend {
   .user-report-form,
   .trust-evidence-columns {
     grid-template-columns: 1fr;
+  }
+}
+
+.career-identity-page {
+  display: grid;
+  gap: 20px;
+}
+
+.career-identity-hero {
+  align-items: center;
+  background: linear-gradient(135deg, rgba(20, 83, 45, 0.22), rgba(14, 116, 144, 0.18));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  padding: 22px;
+}
+
+.career-identity-hero h2 {
+  margin: 4px 0 8px;
+}
+
+.career-identity-layout {
+  align-items: start;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+}
+
+.career-identity-sidebar,
+.career-panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.career-identity-main {
+  display: grid;
+  gap: 18px;
+}
+
+.career-step-list {
+  display: grid;
+  gap: 8px;
+}
+
+.career-step {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.career-step-active {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.45);
+}
+
+.career-step small,
+.career-guidance p,
+.career-fact-row p,
+.muted-copy,
+.career-source-rule {
+  color: var(--muted);
+}
+
+.career-guidance {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.career-guidance ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.career-panel-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.career-panel-header h3 {
+  margin: 3px 0 0;
+}
+
+.career-form-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.career-field,
+.career-check,
+.career-consent-toggle {
+  display: grid;
+  gap: 6px;
+}
+
+.career-field-wide {
+  grid-column: 1 / -1;
+}
+
+.career-field span,
+.career-check span {
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.career-field input,
+.career-field select,
+.career-field textarea {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  min-height: 40px;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.career-field textarea {
+  resize: vertical;
+}
+
+.career-check,
+.career-consent-toggle {
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 10px;
+}
+
+.career-consent-toggle small {
+  color: var(--muted);
+  display: block;
+  margin-top: 3px;
+}
+
+.career-fact-form,
+.career-privacy-form {
+  display: grid;
+  gap: 14px;
+}
+
+.career-form-actions,
+.career-recommendation-controls {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.career-fact-groups,
+.career-review-list,
+.career-recommendation-list {
+  display: grid;
+  gap: 12px;
+}
+
+.career-fact-group {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.career-fact-group h4 {
+  margin: 0;
+}
+
+.career-fact-row,
+.career-recommendation-row,
+.career-import-result,
+.career-identity-empty {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.career-fact-row {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.career-fact-title {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.career-state-badge {
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 3px 8px;
+}
+
+.career-state-explicit {
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+}
+
+.career-state-imported {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fcd34d;
+}
+
+.career-state-inferred {
+  background: rgba(168, 85, 247, 0.2);
+  color: #d8b4fe;
+}
+
+.career-state-confirmed {
+  background: rgba(34, 197, 94, 0.18);
+  color: #86efac;
+}
+
+.career-fact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: end;
+}
+
+.danger-button {
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fca5a5;
+}
+
+.career-completeness-meter {
+  display: grid;
+  gap: 6px;
+}
+
+.career-completeness-meter strong {
+  font-size: 2rem;
+}
+
+.career-progress-track {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.career-progress-track span {
+  background: linear-gradient(90deg, #22c55e, #06b6d4);
+  display: block;
+  height: 100%;
+}
+
+@media (max-width: 900px) {
+  .career-identity-hero,
+  .career-identity-layout,
+  .career-form-grid,
+  .career-fact-row {
+    grid-template-columns: 1fr;
+  }
+
+  .career-fact-actions {
+    justify-content: start;
   }
 }

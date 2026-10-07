@@ -38,7 +38,18 @@ def _service(session: Session) -> UserPersonalizationPersistenceService:
 
 
 def _seed_users(session: Session) -> None:
-    session.add_all([User(user_id="user_a"), User(user_id="user_b")])
+    session.add_all(
+        [
+            User(user_id="user_a"),
+            User(user_id="user_b"),
+            Region(
+                region_id="greater_boston",
+                region_name="greater_boston",
+                display_name="Greater Boston",
+                region_type="greater_region",
+            ),
+        ]
+    )
     session.flush()
 
 
@@ -92,12 +103,6 @@ def _snapshot_input(
 def _seed_market_rows(session: Session) -> None:
     session.add_all(
         [
-            Region(
-                region_id="greater_boston",
-                region_name="greater_boston",
-                display_name="Greater Boston",
-                region_type="greater_region",
-            ),
             Company(
                 company_id="comp_a",
                 company_name="A",
@@ -177,9 +182,7 @@ def test_create_recommendation_snapshot_for_user(session: Session) -> None:
     assert snapshot.user_id == "user_a"
     assert snapshot.preference_profile_id == "user_a"
     assert snapshot.recommendation_snapshot_id.startswith("recommendation_snapshot_")
-    assert snapshot.personalized_output["ranked_regions"][0]["region_id"] == (
-        "greater_boston"
-    )
+    assert snapshot.personalized_output["ranked_regions"][0]["region_id"] == ("greater_boston")
     assert snapshot.recommendation_version == "personalized_rec_v1"
     assert snapshot.source_version_bundle == {
         "region_market_scores": {"greater_boston": 3},

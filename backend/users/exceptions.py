@@ -18,6 +18,14 @@ class UserNotFound(UserIdentityError):
         self.user_id = user_id
 
 
+class DeactivatedUserAuthenticationBlocked(UserIdentityError):
+    """Raised when a deactivated app account attempts to authenticate again."""
+
+    def __init__(self, user_id: str) -> None:
+        super().__init__(f"deactivated user cannot authenticate: {user_id!r}")
+        self.user_id = user_id
+
+
 class CrossUserAccessBlocked(UserIdentityError):
     """Raised when a caller attempts to access another user's owned data."""
 

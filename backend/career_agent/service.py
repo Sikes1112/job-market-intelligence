@@ -102,10 +102,11 @@ class CareerAgentGroundingService:
     ) -> CareerAgentAnswer:
         generated_at = _aware(now or datetime.now(UTC))
         preferences = _preference_snapshot(request)
-        regions = self._region_contexts(request.target_region_ids)
+        regions = self._region_contexts(request.target_region_ids, now=generated_at)
         companies = self._company_contexts(
             company_ids=request.target_company_ids,
             region_ids=request.target_region_ids,
+            now=generated_at,
         )
         forecasts_by_region, forecasts_by_company = self._forecast_evidence(
             request,
@@ -542,6 +543,8 @@ class CareerAgentGroundingService:
     def _region_contexts(
         self,
         region_ids: Iterable[str],
+        *,
+        now: datetime,
     ) -> tuple[_RegionContext, ...]:
         requested = tuple(dict.fromkeys(region_ids))
         stmt = select(Region).order_by(Region.region_id)
@@ -591,6 +594,7 @@ class CareerAgentGroundingService:
             freshness = _freshness_for_rows(
                 (*(([score] if score is not None else [])), *hiring_rows, *entry_rows),
                 data_basis="region_market_scores_and_canonical_market_rows",
+                now=now,
             )
             confidence = _confidence_from_labels(
                 *(
@@ -640,6 +644,7 @@ class CareerAgentGroundingService:
         *,
         company_ids: Iterable[str],
         region_ids: Iterable[str],
+        now: datetime,
     ) -> tuple[_CompanyContext, ...]:
         requested_companies = tuple(dict.fromkeys(company_ids))
         requested_regions = frozenset(region_ids)
@@ -690,6 +695,7 @@ class CareerAgentGroundingService:
             freshness = _freshness_for_rows(
                 (*presence_rows, *hiring_rows, *entry_rows),
                 data_basis="canonical_company_presence_hiring_entry_level",
+                now=now,
             )
             confidence = _confidence_from_labels(
                 company.classification_confidence,
@@ -1337,6 +1343,7 @@ def _freshness_for_rows(
     rows: Iterable[object],
     *,
     data_basis: str,
+    now: datetime,
 ) -> CareerAgentFreshness:
     row_tuple = tuple(row for row in rows if row is not None)
     expires_values = [
@@ -1358,7 +1365,7 @@ def _freshness_for_rows(
         status = CareerAgentFreshnessStatus.UNKNOWN
         warnings.append("Freshness expiry is unknown for available evidence.")
     else:
-        evaluated = [evaluate_freshness(value) for value in expires_values if value]
+        evaluated = [evaluate_freshness(value, now=now) for value in expires_values if value]
         if any(value is FreshnessStatus.STALE for value in evaluated):
             status = CareerAgentFreshnessStatus.STALE
             warnings.append("At least one evidence row is stale.")

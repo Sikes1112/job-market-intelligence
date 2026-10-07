@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import Request
+import json
+
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from backend.api.app import create_app
@@ -150,6 +152,41 @@ def test_rate_limiting_state_is_per_app_instance() -> None:
     assert second_client.get("/limited").status_code == 200
 
 
+def test_expensive_rate_limit_uses_principal_scoped_bucket() -> None:
+    client = TestClient(
+        _expensive_route_app(
+            rate_limit_requests=100,
+            rate_limit_expensive_requests=2,
+            rate_limit_window_seconds=60,
+        )
+    )
+    user_a = _verified_claim_headers("auth0|user_a")
+    user_b = _verified_claim_headers("auth0|user_b")
+
+    first = client.post("/me/decisions/decision_a/deep-analysis", headers=user_a)
+    second = client.post("/me/decisions/decision_a/deep-analysis", headers=user_a)
+    assert first.status_code == 200
+    assert second.status_code == 200
+    blocked = client.post("/me/decisions/decision_a/deep-analysis", headers=user_a)
+    assert blocked.status_code == 429
+
+    assert client.post("/me/decisions/decision_b/deep-analysis", headers=user_b).status_code == 200
+
+
+def test_mutation_rate_limit_uses_mutation_bucket_not_global_read_limit() -> None:
+    client = TestClient(
+        _mutation_route_app(
+            rate_limit_requests=100,
+            rate_limit_mutation_requests=1,
+            rate_limit_window_seconds=60,
+        )
+    )
+
+    assert client.post("/limited-mutation").status_code == 200
+    assert client.post("/limited-mutation").status_code == 429
+    assert client.get("/limited-read").status_code == 200
+
+
 def test_malformed_content_length_does_not_crash_size_check() -> None:
     middleware = APIProtectionMiddleware(
         app=lambda _scope, _receive, _send: None,
@@ -286,12 +323,76 @@ def _limited_get_app(
     return app
 
 
+def _expensive_route_app(
+    *,
+    rate_limit_requests: int,
+    rate_limit_expensive_requests: int,
+    rate_limit_window_seconds: int,
+):
+    settings = _settings(
+        rate_limit_enabled=True,
+        rate_limit_requests=rate_limit_requests,
+        rate_limit_expensive_requests=rate_limit_expensive_requests,
+        rate_limit_window_seconds=rate_limit_window_seconds,
+    )
+    app = FastAPI()
+    app.state.settings = settings
+    app.add_middleware(APIProtectionMiddleware, settings=settings)
+
+    @app.post("/me/decisions/{decision_id}/deep-analysis")
+    def expensive(decision_id: str) -> dict[str, str]:
+        return {"decision_id": decision_id}
+
+    return app
+
+
+def _mutation_route_app(
+    *,
+    rate_limit_requests: int,
+    rate_limit_mutation_requests: int,
+    rate_limit_window_seconds: int,
+):
+    settings = _settings(
+        rate_limit_enabled=True,
+        rate_limit_requests=rate_limit_requests,
+        rate_limit_mutation_requests=rate_limit_mutation_requests,
+        rate_limit_window_seconds=rate_limit_window_seconds,
+    )
+    app = FastAPI()
+    app.state.settings = settings
+    app.add_middleware(APIProtectionMiddleware, settings=settings)
+
+    @app.post("/limited-mutation")
+    def limited_mutation() -> dict[str, bool]:
+        return {"ok": True}
+
+    @app.get("/limited-read")
+    def limited_read() -> dict[str, bool]:
+        return {"ok": True}
+
+    return app
+
+
+def _verified_claim_headers(subject: str) -> dict[str, str]:
+    return {
+        "X-Verified-OIDC-Claims": json.dumps(
+            {
+                "iss": "https://jmi.us.auth0.com/",
+                "sub": subject,
+                "email": f"{subject.split('|')[-1]}@example.com",
+            }
+        )
+    }
+
+
 def _settings(
     *,
     security_headers_enabled: bool = False,
     rate_limit_enabled: bool = False,
     rate_limit_requests: int = 120,
     rate_limit_window_seconds: int = 60,
+    rate_limit_expensive_requests: int | None = None,
+    rate_limit_mutation_requests: int | None = None,
     max_request_body_bytes: int = 1_048_576,
 ) -> Settings:
     return Settings(
@@ -301,6 +402,8 @@ def _settings(
         rate_limit_enabled=rate_limit_enabled,
         rate_limit_requests=rate_limit_requests,
         rate_limit_window_seconds=rate_limit_window_seconds,
+        rate_limit_expensive_requests=rate_limit_expensive_requests,
+        rate_limit_mutation_requests=rate_limit_mutation_requests,
         max_request_body_bytes=max_request_body_bytes,
         _env_file=None,
     )

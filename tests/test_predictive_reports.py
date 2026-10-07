@@ -300,11 +300,7 @@ def test_predictive_report_api_returns_public_safe_payload(api_client, session: 
     assert data["report_type"] == "labor_market_forecast"
     assert data["sections"]
     assert any(section["forecasts"] for section in data["sections"])
-    forecast = next(
-        forecast
-        for section in data["sections"]
-        for forecast in section["forecasts"]
-    )
+    forecast = next(forecast for section in data["sections"] for forecast in section["forecasts"])
     for key in (
         "forecast_title",
         "forecast_type",
@@ -324,6 +320,7 @@ def test_predictive_report_api_returns_public_safe_payload(api_client, session: 
 
 
 def test_public_demo_allows_predictive_report_get(session: Session) -> None:
+    _seed_region(session, "greater_boston")
     app = create_app(
         engine=session.bind,
         settings=Settings(

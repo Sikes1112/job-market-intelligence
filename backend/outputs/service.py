@@ -202,6 +202,7 @@ class OutputAssemblyService:
             presence_rows=presence_rows,
             hiring_rows=hiring_rows,
             entry_level_rows=entry_level_rows,
+            state_codes=self._region_repo.state_codes(region_id),
             now=(now or _default_now)(),
         )
         payload = self._enrich_region_payload(

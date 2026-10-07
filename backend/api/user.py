@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
@@ -26,12 +26,17 @@ from backend.explanations.payloads import (
     ExplanationRequest,
 )
 from backend.explanations.service import ExplanationService
+from backend.geography.exceptions import (
+    GeographicInputAmbiguous,
+    GeographicInputUnknown,
+)
 from backend.geography.repository import RegionRepository
 from backend.monetization.features import MonetizationFeatureKey
 from backend.monetization.repository import MonetizationRepository
 from backend.personalization.exceptions import MissingRegionForPersonalization
 from backend.personalization.payloads import ScoringPreviewRequest
 from backend.personalization.service import PersonalizationService
+from backend.product_measurement.service import ProductMeasurementService
 from backend.scoring.repository import RegionScoreRepository
 from backend.users.exceptions import (
     CrossUserAccessBlocked,
@@ -66,7 +71,7 @@ class UserEnvelope(BaseModel):
 
 
 def _service(session: Session) -> UserPersonalizationPersistenceService:
-    return UserPersonalizationPersistenceService(UserRepository(session))
+    return UserPersonalizationPersistenceService(UserRepository(session), RegionRepository(session))
 
 
 def _personalization_service(session: Session) -> PersonalizationService:
@@ -85,10 +90,28 @@ def _explanation_service() -> ExplanationService:
     return ExplanationService()
 
 
+def _observe_authenticated_product_visit(
+    request: Request,
+    session: Session,
+    user_id: str,
+) -> None:
+    try:
+        with session.begin_nested():
+            ProductMeasurementService(session).observe_authenticated_product_visit(
+                user_id,
+                product_surface=str(request.url.path or "/me"),
+            )
+    except Exception:
+        return
+
+
 @router.get("")
 def get_current_user_profile(
+    request: Request,
     current: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
 ) -> dict:
+    _observe_authenticated_product_visit(request, session, current.user.user_id)
     return lightweight_success_envelope(
         data=UserEnvelope(
             user=_user_data(current.user),
@@ -112,10 +135,13 @@ def update_preferences(
     current: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
-    view = _service(session).upsert_preference_profile(
-        current.user.user_id,
-        profile,
-    )
+    try:
+        view = _service(session).upsert_preference_profile(
+            current.user.user_id,
+            profile,
+        )
+    except (GeographicInputUnknown, GeographicInputAmbiguous) as exc:
+        return _validation_error(str(exc))
     return lightweight_success_envelope(data=_preference_data(view))
 
 
@@ -175,7 +201,10 @@ def create_saved_market_artifact(
     )
     if isinstance(access, JSONResponse):
         return access
-    row = _service(session).save_market_artifact(current.user.user_id, artifact)
+    try:
+        row = _service(session).save_market_artifact(current.user.user_id, artifact)
+    except (GeographicInputUnknown, GeographicInputAmbiguous) as exc:
+        return _validation_error(str(exc))
     return lightweight_success_envelope(data=_saved_artifact_data(row))
 
 

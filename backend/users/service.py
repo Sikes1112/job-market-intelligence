@@ -11,13 +11,17 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.auth.boundary import ExternalAuthPrincipal
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolution, GeographicResolver
 from backend.personalization.controls import (
     ScoringWeightsInput,
     coerce_scoring_weights,
     default_scoring_weights,
 )
+from backend.shared.redaction import redact_sensitive
 from backend.users.exceptions import (
     CrossUserAccessBlocked,
+    DeactivatedUserAuthenticationBlocked,
     InvalidSavedMarketArtifactType,
     MissingUserForExternalIdentity,
     PreferenceProfileNotFound,
@@ -194,12 +198,18 @@ class UserIdentityResolution:
 class UserPrivacyDeletionResult:
     user_id: str
     user_status: str
+    deleted_career_identities: int
+    deleted_career_identity_facts: int
+    deleted_career_identity_imports: int
     deleted_preference_profiles: int
     deleted_saved_market_artifacts: int
     deleted_recommendation_snapshots: int
     deleted_user_alerts: int
+    deleted_career_decision_records: int
+    deleted_deep_decision_records: int
     deleted_profiles: int
     deleted_external_auth_identities: int
+    scrubbed_external_auth_identities: int
 
 
 class UserIdentityService:
@@ -221,6 +231,8 @@ class UserIdentityService:
             user = self._repo.get_user(identity.user_id)
             if user is None:
                 raise MissingUserForExternalIdentity(identity.user_id)
+            if user.status != "active":
+                raise DeactivatedUserAuthenticationBlocked(user.user_id)
             identity.email = principal.email
             identity.email_verified = principal.email_verified
             identity.last_seen_at = datetime.now(UTC)
@@ -428,8 +440,15 @@ class UserPersonalizationPersistenceService:
     market truth.
     """
 
-    def __init__(self, repository: UserRepository) -> None:
+    def __init__(
+        self,
+        repository: UserRepository,
+        region_repository: RegionRepository | None = None,
+    ) -> None:
         self._repo = repository
+        self._geographic_resolver = GeographicResolver(
+            region_repository or RegionRepository(repository.session)
+        )
 
     def get_preference_profile(
         self,
@@ -457,11 +476,23 @@ class UserPersonalizationPersistenceService:
     ) -> UserPreferenceProfileView:
         owner_user_id = self._owner_or_current(current_user_id, owner_user_id)
         self._ensure_user(current_user_id)
+        canonical_preferred_regions: list[str] = []
+        for value in profile.preferred_regions:
+            resolution = self._geographic_resolver.require(value)
+            assert resolution.region_id is not None
+            canonical_preferred_regions.append(resolution.region_id)
+        profile = profile.model_copy(
+            update={"preferred_regions": list(dict.fromkeys(canonical_preferred_regions))}
+        )
         row = self._repo.get_preference_profile(owner_user_id)
         if row is None:
             row = UserPreferenceProfile(user_id=owner_user_id)
             self._repo.add_preference_profile(row)
-        _apply_preference_input(row, profile)
+        _apply_preference_input(
+            row,
+            profile,
+            geographic_resolver=self._geographic_resolver,
+        )
         self._repo.flush()
         return _preference_view(row, persisted=True)
 
@@ -471,11 +502,16 @@ class UserPersonalizationPersistenceService:
         artifact: SavedMarketArtifactInput,
     ) -> SavedMarketArtifact:
         self._ensure_user(current_user_id)
+        artifact_ref = artifact.artifact_ref
+        if artifact.artifact_type == "region":
+            resolution = self._geographic_resolver.require(artifact_ref)
+            assert resolution.region_id is not None
+            artifact_ref = resolution.region_id
         row = SavedMarketArtifact(
             saved_artifact_id=_new_saved_artifact_id(),
             user_id=current_user_id,
             artifact_type=artifact.artifact_type,
-            artifact_ref=artifact.artifact_ref,
+            artifact_ref=artifact_ref,
             label=artifact.label,
             notes=artifact.notes,
             snapshot=artifact.snapshot,
@@ -483,6 +519,15 @@ class UserPersonalizationPersistenceService:
         self._repo.add_saved_market_artifact(row)
         self._repo.flush()
         return row
+
+    def resolve_saved_region_reference(
+        self, row: SavedMarketArtifact
+    ) -> GeographicResolution | None:
+        """Interpret a legacy region save without rewriting its historical row."""
+
+        if row.artifact_type != "region":
+            return None
+        return self._geographic_resolver.resolve(row.artifact_ref)
 
     def list_saved_market_artifacts(
         self,
@@ -592,26 +637,52 @@ class UserPersonalizationPersistenceService:
                 for identity in self._repo.list_external_identities(owner_user_id)
             ],
             "preference_profile": (
-                _export_preference_profile(preference)
-                if preference is not None
-                else None
+                _export_preference_profile(preference) if preference is not None else None
             ),
             "saved_market_artifacts": [
                 _export_saved_market_artifact(artifact)
-                for artifact in self._repo.list_saved_market_artifacts(
-                    user_id=owner_user_id
-                )
+                for artifact in self._repo.list_saved_market_artifacts(user_id=owner_user_id)
             ],
             "personalized_recommendation_snapshots": [
                 _export_recommendation_snapshot(snapshot)
-                for snapshot in self._repo.list_recommendation_snapshots(
-                    user_id=owner_user_id
-                )
+                for snapshot in self._repo.list_recommendation_snapshots(user_id=owner_user_id)
             ],
+            "career_identity": _export_career_identity(
+                self._repo.get_career_identity_for_user(owner_user_id),
+                self._repo.list_career_identity_facts_for_user(owner_user_id),
+                self._repo.list_career_identity_imports_for_user(owner_user_id),
+            ),
             "user_alerts": [
                 _export_user_alert(alert)
                 for alert in self._repo.list_user_alerts_for_user(owner_user_id)
             ],
+            "career_agent_memory": _export_career_agent_memory(
+                self._repo.list_career_memory_permissions_for_user(owner_user_id),
+                self._repo.list_career_memory_entries_for_user(owner_user_id),
+            ),
+            "career_agent_tools": _export_career_agent_tools(
+                self._repo.list_career_agent_tool_records_for_user(owner_user_id),
+                self._repo.list_career_agent_tool_audit_events_for_user(owner_user_id),
+            ),
+            "career_decisions": _export_career_decision_bundle(
+                self._repo.list_career_decisions_for_user(owner_user_id),
+                self._repo.list_decision_context_snapshots_for_user(owner_user_id),
+                self._repo.list_decision_options_for_user(owner_user_id),
+                self._repo.list_decision_recommendations_for_user(owner_user_id),
+                self._repo.list_decision_versions_for_user(owner_user_id),
+                self._repo.list_career_action_plans_for_user(owner_user_id),
+                self._repo.list_career_actions_for_user(owner_user_id),
+                self._repo.list_career_applications_for_user(owner_user_id),
+                self._repo.list_career_application_transitions_for_user(owner_user_id),
+                self._repo.list_career_outcomes_for_user(owner_user_id),
+            ),
+            "deep_decision_intelligence": _export_deep_decision_bundle(
+                self._repo.list_decision_factors_for_user(owner_user_id),
+                self._repo.list_longitudinal_context_snapshots_for_user(owner_user_id),
+                self._repo.list_recommendation_evolutions_for_user(owner_user_id),
+                self._repo.list_advisory_findings_for_user(owner_user_id),
+                self._repo.list_strategic_career_reviews_for_user(owner_user_id),
+            ),
         }
 
     def delete_preference_profile(
@@ -663,15 +734,18 @@ class UserPersonalizationPersistenceService:
     ) -> UserPrivacyDeletionResult:
         owner_user_id = self._owner_or_current(current_user_id, owner_user_id)
         user = self._ensure_user(current_user_id)
-        deleted_snapshots = self._repo.delete_recommendation_snapshots_for_user(
-            owner_user_id
-        )
+        deleted_snapshots = self._repo.delete_recommendation_snapshots_for_user(owner_user_id)
         deleted_user_alerts = self._repo.delete_user_alerts_for_user(owner_user_id)
         self._repo.delete_career_memory_for_user(owner_user_id)
         self._repo.delete_career_agent_tool_records_for_user(owner_user_id)
-        deleted_artifacts = self._repo.delete_saved_market_artifacts_for_user(
-            owner_user_id
-        )
+        deleted_deep_decisions = self._repo.delete_deep_decision_data_for_user(owner_user_id)
+        deleted_career_decisions = self._repo.delete_career_decision_data_for_user(owner_user_id)
+        (
+            deleted_career_identities,
+            deleted_career_identity_facts,
+            deleted_career_identity_imports,
+        ) = self._repo.delete_career_identity_for_user(owner_user_id)
+        deleted_artifacts = self._repo.delete_saved_market_artifacts_for_user(owner_user_id)
         preference = self._repo.get_preference_profile(owner_user_id)
         deleted_preferences = 0
         if preference is not None:
@@ -682,7 +756,7 @@ class UserPersonalizationPersistenceService:
         if profile is not None:
             self._repo.delete_profile(profile)
             deleted_profiles = 1
-        deleted_identities = self._repo.delete_external_identities_for_user(
+        scrubbed_identities = self._repo.scrub_external_identities_for_deactivated_user(
             owner_user_id
         )
         user.status = "deactivated"
@@ -690,12 +764,18 @@ class UserPersonalizationPersistenceService:
         return UserPrivacyDeletionResult(
             user_id=owner_user_id,
             user_status=user.status,
+            deleted_career_identities=deleted_career_identities,
+            deleted_career_identity_facts=deleted_career_identity_facts,
+            deleted_career_identity_imports=deleted_career_identity_imports,
             deleted_preference_profiles=deleted_preferences,
             deleted_saved_market_artifacts=deleted_artifacts,
             deleted_recommendation_snapshots=deleted_snapshots,
             deleted_user_alerts=deleted_user_alerts,
+            deleted_career_decision_records=deleted_career_decisions,
+            deleted_deep_decision_records=deleted_deep_decisions,
             deleted_profiles=deleted_profiles,
-            deleted_external_auth_identities=deleted_identities,
+            deleted_external_auth_identities=0,
+            scrubbed_external_auth_identities=scrubbed_identities,
         )
 
     def _owner_or_current(
@@ -777,10 +857,17 @@ def _normalize_snapshot_key(key: str) -> str:
 def _apply_preference_input(
     row: UserPreferenceProfile,
     profile: UserPreferenceProfileInput,
+    *,
+    geographic_resolver: GeographicResolver,
 ) -> None:
     row.role_interests = list(profile.role_interests)
     row.industry_interests = list(profile.industry_interests)
-    row.preferred_regions = list(profile.preferred_regions)
+    preferred_regions: list[str] = []
+    for value in profile.preferred_regions:
+        resolution = geographic_resolver.require(value)
+        assert resolution.region_id is not None
+        preferred_regions.append(resolution.region_id)
+    row.preferred_regions = list(dict.fromkeys(preferred_regions))
     row.prestige_weighting = profile.prestige_weighting
     row.brand_weighting = profile.brand_weighting
     row.career_stage = profile.career_stage
@@ -866,9 +953,9 @@ def _export_preference_profile(row: UserPreferenceProfile) -> dict[str, Any]:
         "brand_weighting": row.brand_weighting,
         "career_stage": row.career_stage,
         "remote_hybrid_preference": row.remote_hybrid_preference,
-        "scoring_weights": _stored_scoring_weights_or_default(
-            row.scoring_weights
-        ).model_dump(mode="json"),
+        "scoring_weights": _stored_scoring_weights_or_default(row.scoring_weights).model_dump(
+            mode="json"
+        ),
         "created_at": _export_datetime(row.created_at),
         "updated_at": _export_datetime(row.updated_at),
     }
@@ -906,6 +993,67 @@ def _export_recommendation_snapshot(
     }
 
 
+def _export_career_identity(
+    identity: Any | None,
+    facts: list[Any],
+    imports: list[Any],
+) -> dict[str, Any] | None:
+    if identity is None:
+        return None
+    return {
+        "career_identity_id": identity.career_identity_id,
+        "user_id": identity.user_id,
+        "current_version": identity.current_version,
+        "completeness_state": identity.completeness_state,
+        "sufficiency_state": identity.sufficiency_state,
+        "privacy": {
+            "privacy_visibility": identity.privacy_visibility,
+            "ingestion_consent_granted": identity.ingestion_consent_granted,
+            "inference_consent_granted": identity.inference_consent_granted,
+            "downstream_personalization_consent_granted": (
+                identity.downstream_personalization_consent_granted
+            ),
+            "retain_import_metadata": identity.retain_import_metadata,
+            "raw_import_content_exposed": False,
+        },
+        "completeness": deepcopy(identity.completeness_snapshot),
+        "facts": [
+            {
+                "career_identity_fact_id": fact.career_identity_fact_id,
+                "fact_type": fact.fact_type,
+                "normalized_key": fact.normalized_key,
+                "state": fact.state,
+                "payload": deepcopy(fact.payload),
+                "provenance": deepcopy(fact.provenance),
+                "source_import_id": fact.source_import_id,
+                "source_label": fact.source_label,
+                "confirmed_at": _export_datetime(fact.confirmed_at),
+                "created_at": _export_datetime(fact.created_at),
+                "updated_at": _export_datetime(fact.updated_at),
+            }
+            for fact in facts
+        ],
+        "imports": [
+            {
+                "career_identity_import_id": row.career_identity_import_id,
+                "source_type": row.source_type,
+                "source_label": row.source_label,
+                "content_hash": row.content_hash,
+                "artifact_metadata": deepcopy(row.artifact_metadata),
+                "import_status": row.import_status,
+                "diagnostics": deepcopy(row.diagnostics),
+                "imported_fact_count": row.imported_fact_count,
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in imports
+        ],
+        "raw_import_content_retained": False,
+        "created_at": _export_datetime(identity.created_at),
+        "updated_at": _export_datetime(identity.updated_at),
+    }
+
+
 def _export_user_alert(row: Any) -> dict[str, Any]:
     return {
         "user_alert_id": row.user_alert_id,
@@ -921,6 +1069,421 @@ def _export_user_alert(row: Any) -> dict[str, Any]:
         "updated_at": _export_datetime(row.updated_at),
         "read_at": _export_datetime(row.read_at),
         "dismissed_at": _export_datetime(row.dismissed_at),
+    }
+
+
+def _export_career_agent_memory(
+    permissions: list[Any],
+    entries: list[Any],
+) -> dict[str, Any]:
+    return {
+        "permissions": [
+            {
+                "category": row.category,
+                "enabled": row.enabled,
+                "personalize_allowed": row.personalize_allowed,
+                "visibility": row.visibility,
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in permissions
+        ],
+        "entries": [
+            {
+                "memory_entry_id": row.career_memory_entry_id,
+                "category": row.category,
+                "value": redact_sensitive(row.value),
+                "label": redact_sensitive(row.label),
+                "notes": redact_sensitive(row.notes),
+                "visibility": row.visibility,
+                "source": row.source,
+                "counts_as_evidence": False,
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in entries
+        ],
+    }
+
+
+def _export_career_agent_tools(
+    tool_rows: list[Any],
+    audit_rows: list[Any],
+) -> list[dict[str, Any]]:
+    audit_by_tool: dict[str, list[Any]] = {}
+    for row in audit_rows:
+        audit_by_tool.setdefault(row.career_agent_tool_id, []).append(row)
+    return [
+        {
+            "tool_request_id": row.career_agent_tool_id,
+            "tool_type": row.tool_type,
+            "status": row.status,
+            "action_boundary": row.action_boundary,
+            "privacy_classification": row.privacy_classification,
+            "approval_required": row.approval_required,
+            "explicit_user_approval_required": row.explicit_user_approval_required,
+            "approval_reason": redact_sensitive(row.approval_reason),
+            "proposed_action_summary": redact_sensitive(row.proposed_action_summary),
+            "user_visible_preview": redact_sensitive(deepcopy(row.preview_payload)),
+            "evidence_refs": redact_sensitive(deepcopy(row.evidence_refs)),
+            "freshness": redact_sensitive(deepcopy(row.freshness)),
+            "uncertainty": redact_sensitive(deepcopy(row.uncertainty)),
+            "warnings": redact_sensitive(deepcopy(row.warnings)),
+            "source_answer_id": row.source_answer_id,
+            "source_plan_id": row.source_plan_id,
+            "runtime_execution_performed": row.runtime_execution_performed,
+            "approved_at": _export_datetime(row.approved_at),
+            "rejected_at": _export_datetime(row.rejected_at),
+            "executed_at": _export_datetime(row.executed_at),
+            "created_at": _export_datetime(row.created_at),
+            "updated_at": _export_datetime(row.updated_at),
+            "audit_events": [
+                {
+                    "event_type": audit.event_type,
+                    "summary": redact_sensitive(audit.summary),
+                    "occurred_at": _export_datetime(audit.created_at),
+                }
+                for audit in audit_by_tool.get(row.career_agent_tool_id, [])
+            ],
+        }
+        for row in tool_rows
+    ]
+
+
+def _export_career_decision_bundle(
+    decisions: list[Any],
+    contexts: list[Any],
+    options: list[Any],
+    recommendations: list[Any],
+    versions: list[Any],
+    plans: list[Any],
+    actions: list[Any],
+    applications: list[Any],
+    transitions: list[Any],
+    outcomes: list[Any],
+) -> dict[str, Any]:
+    return {
+        "decisions": [
+            {
+                "decision_id": row.decision_id,
+                "user_id": row.user_id,
+                "career_identity_id": row.career_identity_id,
+                "current_context_snapshot_id": row.current_context_snapshot_id,
+                "current_recommendation_id": row.current_recommendation_id,
+                "selected_option_id": row.selected_option_id,
+                "decision_type": row.decision_type,
+                "status": row.status,
+                "title": row.title,
+                "description": row.description,
+                "decision_date": _export_datetime(row.decision_date),
+                "target_date": _export_datetime(row.target_date),
+                "planned_review_at": _export_datetime(row.planned_review_at),
+                "time_horizon": row.time_horizon,
+                "priorities": deepcopy(row.priorities),
+                "constraints": deepcopy(row.constraints),
+                "current_version": row.current_version,
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in decisions
+        ],
+        "context_snapshots": [
+            {
+                "context_snapshot_id": row.context_snapshot_id,
+                "user_id": row.user_id,
+                "career_identity_id": row.career_identity_id,
+                "career_identity_version": row.career_identity_version,
+                "completeness_state": row.completeness_state,
+                "sufficiency_state": row.sufficiency_state,
+                "privacy_scope": row.privacy_scope,
+                "context_payload": deepcopy(row.context_payload),
+                "fact_refs": deepcopy(row.fact_refs),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in contexts
+        ],
+        "options": [
+            {
+                "option_id": row.option_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "title": row.title,
+                "description": row.description,
+                "scenario": deepcopy(row.scenario),
+                "status": row.status,
+                "position": row.position,
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in options
+        ],
+        "recommendations": [
+            {
+                "recommendation_id": row.recommendation_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "context_snapshot_id": row.context_snapshot_id,
+                "recommended_option_id": row.recommended_option_id,
+                "recommendation_status": row.recommendation_status,
+                "evidence_sufficiency": row.evidence_sufficiency,
+                "confidence": row.confidence,
+                "summary": row.summary,
+                "fit_payload": deepcopy(row.fit_payload),
+                "comparison_payload": deepcopy(row.comparison_payload),
+                "evidence_payload": deepcopy(row.evidence_payload),
+                "challenge_payload": deepcopy(row.challenge_payload),
+                "limitations": deepcopy(row.limitations),
+                "generated_at": _export_datetime(row.generated_at),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in recommendations
+        ],
+        "versions": [
+            {
+                "decision_version_id": row.decision_version_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "version_number": row.version_number,
+                "version_reason": row.version_reason,
+                "decision_snapshot": deepcopy(row.decision_snapshot),
+                "options_snapshot": deepcopy(row.options_snapshot),
+                "recommendation_snapshot": deepcopy(row.recommendation_snapshot),
+                "selected_option_id": row.selected_option_id,
+                "context_snapshot_id": row.context_snapshot_id,
+                "user_note": row.user_note,
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in versions
+        ],
+        "action_plans": [
+            {
+                "action_plan_id": row.action_plan_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "selected_option_id": row.selected_option_id,
+                "title": row.title,
+                "status": row.status,
+                "plan_payload": deepcopy(row.plan_payload),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in plans
+        ],
+        "actions": [
+            {
+                "action_id": row.action_id,
+                "user_id": row.user_id,
+                "action_plan_id": row.action_plan_id,
+                "decision_id": row.decision_id,
+                "option_id": row.option_id,
+                "action_type": row.action_type,
+                "status": row.status,
+                "title": row.title,
+                "description": row.description,
+                "due_at": _export_datetime(row.due_at),
+                "priority": row.priority,
+                "position": row.position,
+                "completed_at": _export_datetime(row.completed_at),
+                "metadata": deepcopy(row.metadata_json),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in actions
+        ],
+        "applications": [
+            {
+                "application_id": row.application_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "action_id": row.action_id,
+                "option_id": row.option_id,
+                "company_id": row.company_id,
+                "region_id": row.region_id,
+                "role_title": row.role_title,
+                "status": row.status,
+                "status_started_at": _export_datetime(row.status_started_at),
+                "applied_at": _export_datetime(row.applied_at),
+                "follow_up_at": _export_datetime(row.follow_up_at),
+                "source_url": row.source_url,
+                "notes": row.notes,
+                "metadata": deepcopy(row.metadata_json),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in applications
+        ],
+        "application_transitions": [
+            {
+                "transition_id": row.transition_id,
+                "user_id": row.user_id,
+                "application_id": row.application_id,
+                "from_status": row.from_status,
+                "to_status": row.to_status,
+                "reason": row.reason,
+                "metadata": deepcopy(row.metadata_json),
+                "transitioned_at": _export_datetime(row.transitioned_at),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in transitions
+        ],
+        "outcomes": [
+            {
+                "outcome_id": row.outcome_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "action_id": row.action_id,
+                "application_id": row.application_id,
+                "option_id": row.option_id,
+                "recommendation_id": row.recommendation_id,
+                "outcome_type": row.outcome_type,
+                "status": row.status,
+                "title": row.title,
+                "description": row.description,
+                "occurred_at": _export_datetime(row.occurred_at),
+                "reflection": row.reflection,
+                "evidence_payload": deepcopy(row.evidence_payload),
+                "metadata": deepcopy(row.metadata_json),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in outcomes
+        ],
+    }
+
+
+def _export_deep_decision_bundle(
+    factors: list[Any],
+    longitudinal_contexts: list[Any],
+    evolutions: list[Any],
+    findings: list[Any],
+    reviews: list[Any],
+) -> dict[str, Any]:
+    return {
+        "factors": [
+            {
+                "factor_id": row.factor_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "option_id": row.option_id,
+                "recommendation_id": row.recommendation_id,
+                "context_snapshot_id": row.context_snapshot_id,
+                "domain": row.domain,
+                "category": row.category,
+                "factor_key": row.factor_key,
+                "label": row.label,
+                "normalized_value": deepcopy(row.normalized_value),
+                "raw_value": deepcopy(row.raw_value),
+                "direction": row.direction,
+                "importance": row.importance,
+                "confidence": row.confidence,
+                "uncertainty": row.uncertainty,
+                "evidence_strength": row.evidence_strength,
+                "evidence_kind": row.evidence_kind,
+                "source_type": row.source_type,
+                "source_id": row.source_id,
+                "provenance": deepcopy(row.provenance),
+                "explanation": row.explanation,
+                "caveats": deepcopy(row.caveats),
+                "freshness_status": row.freshness_status,
+                "freshness_expires_at": _export_datetime(row.freshness_expires_at),
+                "generated_at": _export_datetime(row.generated_at),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in factors
+        ],
+        "longitudinal_contexts": [
+            {
+                "longitudinal_context_id": row.longitudinal_context_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "window_start": _export_datetime(row.window_start),
+                "window_end": _export_datetime(row.window_end),
+                "record_count": row.record_count,
+                "context_payload": deepcopy(row.context_payload),
+                "evidence_payload": deepcopy(row.evidence_payload),
+                "generated_at": _export_datetime(row.generated_at),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in longitudinal_contexts
+        ],
+        "recommendation_evolutions": [
+            {
+                "evolution_id": row.evolution_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "previous_recommendation_id": row.previous_recommendation_id,
+                "current_recommendation_id": row.current_recommendation_id,
+                "change_type": row.change_type,
+                "meaningful_changes": deepcopy(row.meaningful_changes),
+                "confidence_before": row.confidence_before,
+                "confidence_after": row.confidence_after,
+                "evidence_basis": deepcopy(row.evidence_basis),
+                "uncertainty": row.uncertainty,
+                "explanation": row.explanation,
+                "generated_at": _export_datetime(row.generated_at),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in evolutions
+        ],
+        "advisory_findings": [
+            {
+                "advisory_finding_id": row.advisory_finding_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "finding_type": row.finding_type,
+                "severity": row.severity,
+                "support_status": row.support_status,
+                "confidence": row.confidence,
+                "uncertainty": row.uncertainty,
+                "window_start": _export_datetime(row.window_start),
+                "window_end": _export_datetime(row.window_end),
+                "affected_goal": row.affected_goal,
+                "supporting_evidence": deepcopy(row.supporting_evidence),
+                "counter_evidence": deepcopy(row.counter_evidence),
+                "explanation": row.explanation,
+                "suggested_action": row.suggested_action,
+                "acknowledged_at": _export_datetime(row.acknowledged_at),
+                "dismissed_at": _export_datetime(row.dismissed_at),
+                "generated_at": _export_datetime(row.generated_at),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in findings
+        ],
+        "strategic_reviews": [
+            {
+                "strategic_review_id": row.strategic_review_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "longitudinal_context_id": row.longitudinal_context_id,
+                "status": row.status,
+                "window_start": _export_datetime(row.window_start),
+                "window_end": _export_datetime(row.window_end),
+                "goals": deepcopy(row.goals),
+                "strategy_performance": deepcopy(row.strategy_performance),
+                "application_summary": deepcopy(row.application_summary),
+                "outcome_summary": deepcopy(row.outcome_summary),
+                "identity_changes": deepcopy(row.identity_changes),
+                "market_changes": deepcopy(row.market_changes),
+                "recommendation_changes": deepcopy(row.recommendation_changes),
+                "active_risks": deepcopy(row.active_risks),
+                "blind_spots": deepcopy(row.blind_spots),
+                "suggested_next_actions": deepcopy(row.suggested_next_actions),
+                "confidence": row.confidence,
+                "uncertainty": row.uncertainty,
+                "generated_at": _export_datetime(row.generated_at),
+                "created_at": _export_datetime(row.created_at),
+                "updated_at": _export_datetime(row.updated_at),
+            }
+            for row in reviews
+        ],
     }
 
 

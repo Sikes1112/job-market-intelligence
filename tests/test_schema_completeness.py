@@ -6,6 +6,8 @@ from backend.shared.db import Base, create_all, import_all_models, make_engine
 
 REQUIRED_TABLES = {
     "regions",
+    "region_aliases",
+    "region_state_memberships",
     "companies",
     "company_region_presence",
     "company_region_hiring",
@@ -80,10 +82,36 @@ REQUIRED_TABLES = {
     "employer_influence_metadata",
     "opportunity_submissions",
     "opportunity_review_actions",
+    "opportunity_data_sources",
+    "opportunity_acquisition_runs",
+    "opportunity_source_observations",
+    "current_opportunities",
+    "current_opportunity_source_links",
+    "current_opportunity_identity_evidence",
+    "opportunity_promotion_receipts",
+    "opportunity_coverage_contracts",
     "career_memory_permissions",
     "career_memory_entries",
     "career_agent_tool_records",
     "career_agent_tool_audit_events",
+    "career_identities",
+    "career_identity_facts",
+    "career_identity_imports",
+    "career_decisions",
+    "decision_context_snapshots",
+    "decision_options",
+    "decision_recommendations",
+    "decision_versions",
+    "career_action_plans",
+    "career_actions",
+    "career_applications",
+    "career_application_transitions",
+    "career_outcomes",
+    "decision_factors",
+    "longitudinal_context_snapshots",
+    "decision_recommendation_evolutions",
+    "decision_advisory_findings",
+    "strategic_career_reviews",
     "data_standard_partner_submissions",
     "data_standard_candidate_facts",
     "data_standard_candidate_reviews",
@@ -93,13 +121,32 @@ REQUIRED_TABLES = {
     "user_reports",
     "automated_recheck_jobs",
     "exception_cases",
+    "product_analytics_events",
+    "product_user_visits",
+    "beta_cohorts",
+    "beta_cohort_memberships",
+    "product_feature_gates",
+    "experiment_assignments",
+    "recommendation_feedback",
+    "decision_reflections",
+    "strategy_changes",
+    "support_cases",
+    "support_case_events",
+    "product_entitlement_grants",
+    "commercial_experiment_signals",
 }
 
 # Every canonical truth/output object must carry these metadata columns
 # (DATA_MODEL.md §2 + §10 + Layer 3 provenance records).
 CANONICAL_METADATA_COLUMNS = {"state", "version", "created_at", "updated_at"}
 
-APPEND_ONLY_LOG_TABLES = {"admin_event_logs", "institutional_audit_logs"}
+APPEND_ONLY_LOG_TABLES = {
+    "admin_event_logs",
+    "institutional_audit_logs",
+    "product_analytics_events",
+    "support_case_events",
+}
+VISIT_TELEMETRY_TABLES = {"product_user_visits"}
 HISTORICAL_INTELLIGENCE_TABLES = {
     "market_snapshots",
     "company_region_snapshots",
@@ -129,6 +176,7 @@ CANONICAL_METADATA_TABLES = (
     REQUIRED_TABLES
     - {"jobs"}
     - APPEND_ONLY_LOG_TABLES
+    - VISIT_TELEMETRY_TABLES
     - HISTORICAL_INTELLIGENCE_TABLES
     - ADMIN_REVIEW_TABLES
 )  # jobs, logs, and history rows carry their own metadata shapes
@@ -144,9 +192,37 @@ USER_IDENTITY_TABLES = {
     "career_memory_entries",
     "career_agent_tool_records",
     "career_agent_tool_audit_events",
+    "career_identities",
+    "career_identity_facts",
+    "career_identity_imports",
+    "career_decisions",
+    "decision_context_snapshots",
+    "decision_options",
+    "decision_recommendations",
+    "decision_versions",
+    "career_action_plans",
+    "career_actions",
+    "career_applications",
+    "career_application_transitions",
+    "career_outcomes",
+    "decision_factors",
+    "longitudinal_context_snapshots",
+    "decision_recommendation_evolutions",
+    "decision_advisory_findings",
+    "strategic_career_reviews",
+    "product_user_visits",
+    "beta_cohort_memberships",
+    "experiment_assignments",
+    "recommendation_feedback",
+    "decision_reflections",
+    "strategy_changes",
+    "support_cases",
+    "product_entitlement_grants",
+    "commercial_experiment_signals",
 }
 SYSTEM_EVENT_TABLES = {"alert_events"}
-OPERATOR_WORKFLOW_TABLES = {"region_expansion_workflows"}
+GEOGRAPHY_LOOKUP_TABLES = {"region_aliases", "region_state_memberships"}
+OPERATOR_WORKFLOW_TABLES = {"region_expansion_workflows", "beta_cohorts", "product_feature_gates"}
 MONETIZATION_TABLES = {
     "monetization_accounts",
     "monetization_plan_assignments",
@@ -189,6 +265,14 @@ OPPORTUNITY_TABLES = {
     "employer_influence_metadata",
     "opportunity_submissions",
     "opportunity_review_actions",
+    "opportunity_data_sources",
+    "opportunity_acquisition_runs",
+    "opportunity_source_observations",
+    "current_opportunities",
+    "current_opportunity_source_links",
+    "current_opportunity_identity_evidence",
+    "opportunity_promotion_receipts",
+    "opportunity_coverage_contracts",
 }
 DATA_STANDARDS_TABLES = {
     "data_standard_partner_submissions",
@@ -207,11 +291,10 @@ MARKET_CANONICAL_METADATA_TABLES = CANONICAL_METADATA_TABLES - USER_IDENTITY_TAB
 MARKET_CANONICAL_METADATA_TABLES = (
     MARKET_CANONICAL_METADATA_TABLES - SYSTEM_EVENT_TABLES - OPERATOR_WORKFLOW_TABLES
 )
+MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - GEOGRAPHY_LOOKUP_TABLES
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - MONETIZATION_TABLES
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - BILLING_TABLES
-MARKET_CANONICAL_METADATA_TABLES = (
-    MARKET_CANONICAL_METADATA_TABLES - INSTITUTIONAL_TABLES
-)
+MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - INSTITUTIONAL_TABLES
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - INTEGRATION_TABLES
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - PLATFORM_API_TABLES
 MARKET_CANONICAL_METADATA_TABLES = MARKET_CANONICAL_METADATA_TABLES - OPPORTUNITY_TABLES
@@ -268,9 +351,7 @@ def test_monetization_tables_have_safe_account_state_columns() -> None:
         account_cols
     )
 
-    assignment_cols = {
-        c["name"] for c in inspector.get_columns("monetization_plan_assignments")
-    }
+    assignment_cols = {c["name"] for c in inspector.get_columns("monetization_plan_assignments")}
     assert {
         "plan_assignment_id",
         "monetization_account_id",
@@ -284,13 +365,9 @@ def test_monetization_tables_have_safe_account_state_columns() -> None:
         "created_at",
         "updated_at",
     }.issubset(assignment_cols)
-    assert {"stripe_subscription_id", "provider_subscription_id"}.isdisjoint(
-        assignment_cols
-    )
+    assert {"stripe_subscription_id", "provider_subscription_id"}.isdisjoint(assignment_cols)
 
-    usage_cols = {
-        c["name"] for c in inspector.get_columns("monetization_usage_counters")
-    }
+    usage_cols = {c["name"] for c in inspector.get_columns("monetization_usage_counters")}
     assert {
         "usage_counter_id",
         "monetization_account_id",
@@ -322,9 +399,7 @@ def test_billing_tables_isolate_provider_references_from_entitlements() -> None:
         "updated_at",
     }.issubset(customer_cols)
 
-    subscription_cols = {
-        c["name"] for c in inspector.get_columns("billing_subscription_refs")
-    }
+    subscription_cols = {c["name"] for c in inspector.get_columns("billing_subscription_refs")}
     assert {
         "billing_subscription_ref_id",
         "monetization_account_id",
@@ -371,9 +446,7 @@ def test_institutional_tables_have_scoped_permission_columns() -> None:
         "updated_at",
     }.issubset(org_cols)
 
-    membership_cols = {
-        c["name"] for c in inspector.get_columns("organization_memberships")
-    }
+    membership_cols = {c["name"] for c in inspector.get_columns("organization_memberships")}
     assert {
         "organization_membership_id",
         "organization_id",
@@ -415,9 +488,7 @@ def test_institutional_tables_have_scoped_permission_columns() -> None:
         "updated_at",
     }.issubset(report_cols)
 
-    data_request_cols = {
-        c["name"] for c in inspector.get_columns("institutional_data_requests")
-    }
+    data_request_cols = {c["name"] for c in inspector.get_columns("institutional_data_requests")}
     assert {
         "institutional_data_request_id",
         "organization_id",
@@ -483,9 +554,7 @@ def test_integration_tables_preserve_noncanonical_boundaries() -> None:
         "created_at",
         "updated_at",
     }.issubset(record_cols)
-    assert {"state", "version", "raw_total_score", "score_ruleset_version"}.isdisjoint(
-        record_cols
-    )
+    assert {"state", "version", "raw_total_score", "score_ruleset_version"}.isdisjoint(record_cols)
 
     api_client_cols = {c["name"] for c in inspector.get_columns("api_clients")}
     assert {
@@ -537,9 +606,7 @@ def test_integration_tables_preserve_noncanonical_boundaries() -> None:
         "occurred_at",
     }.issubset(usage_cols)
 
-    career_export_cols = {
-        c["name"] for c in inspector.get_columns("career_platform_exports")
-    }
+    career_export_cols = {c["name"] for c in inspector.get_columns("career_platform_exports")}
     assert {
         "career_platform_export_id",
         "created_by_user_id",
@@ -593,9 +660,7 @@ def test_platform_api_tables_preserve_external_access_boundaries() -> None:
         "raw_job_record",
     }.isdisjoint(key_cols)
 
-    usage_cols = {
-        c["name"] for c in inspector.get_columns("platform_api_usage_events")
-    }
+    usage_cols = {c["name"] for c in inspector.get_columns("platform_api_usage_events")}
     assert {
         "platform_api_usage_event_id",
         "platform_api_key_id",
@@ -664,9 +729,7 @@ def test_historical_intelligence_tables_are_append_only_records() -> None:
         "created_at",
     }.issubset(market_cols)
 
-    observation_cols = {
-        c["name"] for c in inspector.get_columns("historical_observations")
-    }
+    observation_cols = {c["name"] for c in inspector.get_columns("historical_observations")}
     assert {
         "historical_observation_id",
         "observation_type",
@@ -703,9 +766,7 @@ def test_historical_intelligence_tables_are_append_only_records() -> None:
         "expires_at",
     }.issubset(signal_cols)
 
-    index_version_cols = {
-        c["name"] for c in inspector.get_columns("market_index_versions")
-    }
+    index_version_cols = {c["name"] for c in inspector.get_columns("market_index_versions")}
     assert {
         "market_index_version_id",
         "index_id",
@@ -718,9 +779,7 @@ def test_historical_intelligence_tables_are_append_only_records() -> None:
         "created_at",
     }.issubset(index_version_cols)
 
-    index_score_cols = {
-        c["name"] for c in inspector.get_columns("market_index_scores")
-    }
+    index_score_cols = {c["name"] for c in inspector.get_columns("market_index_scores")}
     assert {
         "market_index_score_id",
         "index_id",
@@ -757,9 +816,7 @@ def test_historical_intelligence_tables_are_append_only_records() -> None:
         "superseded_at",
     }.issubset(report_cols)
 
-    report_ranking_cols = {
-        c["name"] for c in inspector.get_columns("benchmark_report_rankings")
-    }
+    report_ranking_cols = {c["name"] for c in inspector.get_columns("benchmark_report_rankings")}
     assert {
         "benchmark_report_ranking_id",
         "report_id",
@@ -792,9 +849,7 @@ def test_historical_intelligence_tables_are_append_only_records() -> None:
         "reviewed_at",
     }.issubset(contribution_cols)
 
-    contribution_evidence_cols = {
-        c["name"] for c in inspector.get_columns("contribution_evidence")
-    }
+    contribution_evidence_cols = {c["name"] for c in inspector.get_columns("contribution_evidence")}
     assert {
         "contribution_evidence_id",
         "contribution_id",
@@ -806,9 +861,7 @@ def test_historical_intelligence_tables_are_append_only_records() -> None:
         "created_at",
     }.issubset(contribution_evidence_cols)
 
-    contribution_review_cols = {
-        c["name"] for c in inspector.get_columns("contribution_reviews")
-    }
+    contribution_review_cols = {c["name"] for c in inspector.get_columns("contribution_reviews")}
     assert {
         "contribution_review_id",
         "contribution_id",

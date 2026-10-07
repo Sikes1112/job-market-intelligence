@@ -27,6 +27,7 @@ from backend.api.envelope import (
     lightweight_success_envelope,
     success_envelope,
 )
+from backend.api.geographic_identity import require_canonical_region_id
 from backend.api.metadata import ApiFreshnessStatus
 from backend.api.monetization_access import (
     blocked_entitlement_response,
@@ -40,8 +41,10 @@ from backend.api.search import (
     search_companies,
     search_regions,
 )
+from backend.geography.exceptions import GeographicResolutionError
 from backend.geography.market_coverage import priority_market_by_id
 from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.imports.coverage import build_all_market_coverage_summaries
 from backend.imports.diagnostics import (
     build_refresh_readiness_reports,
@@ -91,10 +94,20 @@ def list_regions(
     regions = [
         {
             "region_id": r.region_id,
+            "public_slug": r.public_slug,
             "display_name": r.display_name,
             "region_type": r.region_type,
             "parent_region_id": r.parent_region_id,
             "labor_market_group": r.labor_market_group,
+            "primary_city": r.primary_city,
+            "state_codes": list(region_repo.state_codes(r.region_id)),
+            "centroid": (
+                {"latitude": r.centroid_latitude, "longitude": r.centroid_longitude}
+                if r.centroid_latitude is not None and r.centroid_longitude is not None
+                else None
+            ),
+            "focus_bounds": r.focus_bounds,
+            "market_support_status": r.market_support_status,
             "priority_market": (
                 priority_market.model_dump(mode="json")
                 if (priority_market := priority_market_by_id(r.region_id)) is not None
@@ -110,6 +123,31 @@ def list_regions(
     return lightweight_success_envelope(data={"regions": regions})
 
 
+@router.get("/regions/resolve")
+def resolve_region(
+    input: str = Query(min_length=1, max_length=255),
+    region_repo: RegionRepository = Depends(get_region_repository),
+):
+    result = GeographicResolver(region_repo).resolve(input)
+    if result.status == "unresolved":
+        return JSONResponse(
+            status_code=404,
+            content=error_envelope(
+                code="GEOGRAPHY_UNRESOLVED",
+                message=f"Geographic input did not resolve: {input!r}",
+            ),
+        )
+    if result.status == "ambiguous":
+        return JSONResponse(
+            status_code=409,
+            content=error_envelope(
+                code="GEOGRAPHY_AMBIGUOUS",
+                message=f"Geographic input is ambiguous: {input!r}",
+            ),
+        )
+    return lightweight_success_envelope(data=result.as_dict())
+
+
 @router.get("/metadata/coverage")
 def coverage_metadata() -> dict:
     from backend.api.metadata import build_coverage_metadata_vocabulary
@@ -121,9 +159,7 @@ def coverage_metadata() -> dict:
 def imported_markets(session: Session = Depends(get_session)) -> dict:
     summaries = build_all_market_coverage_summaries(session)
     markets = [summary.as_dict() for summary in summaries.values()]
-    return lightweight_success_envelope(
-        data={"markets": markets, "market_count": len(markets)}
-    )
+    return lightweight_success_envelope(data={"markets": markets, "market_count": len(markets)})
 
 
 @router.get("/markets/imported/health")
@@ -296,15 +332,23 @@ def _registry_unavailable_response() -> JSONResponse:
 def get_region(
     region_id: str,
     service: OutputAssemblyService = Depends(get_output_service),
+    region_repo: RegionRepository = Depends(get_region_repository),
 ):
+    resolution = GeographicResolver(region_repo).resolve(region_id)
+    if not resolution.resolved or resolution.region_id is None:
+        status_code = 409 if resolution.status == "ambiguous" else 404
+        code = "GEOGRAPHY_AMBIGUOUS" if status_code == 409 else NOT_FOUND
+        return JSONResponse(
+            status_code=status_code,
+            content=error_envelope(code=code, message=f"Region not found: {region_id!r}"),
+        )
+    region_id = resolution.region_id
     try:
         result = service.read_region(region_id)
     except MissingRegionForOutput:
         return JSONResponse(
             status_code=404,
-            content=error_envelope(
-                code=NOT_FOUND, message=f"Region not found: {region_id!r}"
-            ),
+            content=error_envelope(code=NOT_FOUND, message=f"Region not found: {region_id!r}"),
         )
     payload = result.payload
     return success_envelope(
@@ -319,13 +363,20 @@ def explain_region_sources_route(
     region_id: str,
     session: Session = Depends(get_session),
 ):
+    resolution = GeographicResolver(RegionRepository(session)).resolve(region_id)
+    if not resolution.resolved or resolution.region_id is None:
+        status_code = 409 if resolution.status == "ambiguous" else 404
+        code = "GEOGRAPHY_AMBIGUOUS" if status_code == 409 else NOT_FOUND
+        return JSONResponse(
+            status_code=status_code,
+            content=error_envelope(code=code, message=f"Region not found: {region_id!r}"),
+        )
+    region_id = resolution.region_id
     result = explain_region_sources(session, region_id=region_id)
     if result is None:
         return JSONResponse(
             status_code=404,
-            content=error_envelope(
-                code=NOT_FOUND, message=f"Region not found: {region_id!r}"
-            ),
+            content=error_envelope(code=NOT_FOUND, message=f"Region not found: {region_id!r}"),
         )
     return lightweight_success_envelope(data=result.model_dump(mode="json"))
 
@@ -347,6 +398,14 @@ def search_companies_route(
     presence_status: str | None = Query(default=None, min_length=1),
     session: Session = Depends(get_session),
 ) -> dict:
+    if region_id is not None:
+        try:
+            region_id = require_canonical_region_id(session, region_id)
+        except GeographicResolutionError:
+            return JSONResponse(
+                status_code=404,
+                content=error_envelope(code=NOT_FOUND, message="Region not found."),
+            )
     result = search_companies(
         session,
         query=query,
@@ -371,9 +430,7 @@ def get_company(
     except MissingCompanyForOutput:
         return JSONResponse(
             status_code=404,
-            content=error_envelope(
-                code=NOT_FOUND, message=f"Company not found: {company_id!r}"
-            ),
+            content=error_envelope(code=NOT_FOUND, message=f"Company not found: {company_id!r}"),
         )
     payload = result.payload
     return success_envelope(
@@ -392,9 +449,7 @@ def company_geography_route(
     if result is None:
         return JSONResponse(
             status_code=404,
-            content=error_envelope(
-                code=NOT_FOUND, message=f"Company not found: {company_id!r}"
-            ),
+            content=error_envelope(code=NOT_FOUND, message=f"Company not found: {company_id!r}"),
         )
     return lightweight_success_envelope(data=result.model_dump(mode="json"))
 
@@ -408,9 +463,7 @@ def explain_company_sources_route(
     if result is None:
         return JSONResponse(
             status_code=404,
-            content=error_envelope(
-                code=NOT_FOUND, message=f"Company not found: {company_id!r}"
-            ),
+            content=error_envelope(code=NOT_FOUND, message=f"Company not found: {company_id!r}"),
         )
     return lightweight_success_envelope(data=result.model_dump(mode="json"))
 
@@ -428,14 +481,20 @@ def get_comparison(
     service: OutputAssemblyService = Depends(get_output_service),
     session: Session = Depends(get_session),
 ):
+    try:
+        region_a = require_canonical_region_id(session, region_a)
+        region_b = require_canonical_region_id(session, region_b)
+    except GeographicResolutionError:
+        return JSONResponse(
+            status_code=404,
+            content=error_envelope(code=NOT_FOUND, message="Region not found."),
+        )
     if region_a == region_b:
         return JSONResponse(
             status_code=400,
             content=error_envelope(
                 code=VALIDATION_ERROR,
-                message=(
-                    f"region_a and region_b must be distinct; got {region_a!r} twice"
-                ),
+                message=(f"region_a and region_b must be distinct; got {region_a!r} twice"),
             ),
         )
 
@@ -462,9 +521,7 @@ def get_comparison(
     except MissingRegionForOutput as e:
         return JSONResponse(
             status_code=404,
-            content=error_envelope(
-                code=NOT_FOUND, message=f"Region not found: {e!s}"
-            ),
+            content=error_envelope(code=NOT_FOUND, message=f"Region not found: {e!s}"),
         )
     payload = result.payload
     envelope = success_envelope(
@@ -478,7 +535,5 @@ def get_comparison(
             user_id=current.user.user_id,
             feature_key=MonetizationFeatureKey.LIMITED_COMPARISONS,
         )
-        envelope["metadata"]["monetization_access"] = usage_decision.model_dump(
-            mode="json"
-        )
+        envelope["metadata"]["monetization_access"] = usage_decision.model_dump(mode="json")
     return envelope

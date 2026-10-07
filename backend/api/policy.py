@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from backend.api.dependencies import get_session
 from backend.api.envelope import NOT_FOUND, error_envelope, lightweight_success_envelope
+from backend.api.geographic_identity import require_canonical_region_id
+from backend.geography.exceptions import GeographicResolutionError
 from backend.policy import PolicyIntelligenceService, PolicyRegionNotFound
 from backend.policy.public_reports import (
     LAYER24_EARLY_CAREER_REPORT_ID,
@@ -29,8 +31,9 @@ def get_workforce_dashboard(
 ) -> dict:
     service = PolicyIntelligenceService(session)
     try:
+        region_id = require_canonical_region_id(session, region_id)
         payload = service.build_workforce_dashboard(region_id)
-    except PolicyRegionNotFound:
+    except (GeographicResolutionError, PolicyRegionNotFound):
         return JSONResponse(
             status_code=404,
             content=error_envelope(
@@ -48,8 +51,9 @@ def get_early_career_access(
 ) -> dict:
     service = PolicyIntelligenceService(session)
     try:
+        region_id = require_canonical_region_id(session, region_id)
         payload = service.build_early_career_access(region_id)
-    except PolicyRegionNotFound:
+    except (GeographicResolutionError, PolicyRegionNotFound):
         return JSONResponse(
             status_code=404,
             content=error_envelope(
@@ -67,8 +71,9 @@ def get_employer_concentration(
 ) -> dict:
     service = PolicyIntelligenceService(session)
     try:
+        region_id = require_canonical_region_id(session, region_id)
         payload = service.build_employer_concentration(region_id)
-    except PolicyRegionNotFound:
+    except (GeographicResolutionError, PolicyRegionNotFound):
         return JSONResponse(
             status_code=404,
             content=error_envelope(
@@ -86,8 +91,9 @@ def get_economic_development(
 ) -> dict:
     service = PolicyIntelligenceService(session)
     try:
+        region_id = require_canonical_region_id(session, region_id)
         payload = service.build_economic_development_profile(region_id)
-    except PolicyRegionNotFound:
+    except (GeographicResolutionError, PolicyRegionNotFound):
         return JSONResponse(
             status_code=404,
             content=error_envelope(
@@ -105,8 +111,9 @@ def get_peer_comparison(
 ) -> dict:
     service = PolicyIntelligenceService(session)
     try:
+        region_id = require_canonical_region_id(session, region_id)
         payload = service.build_peer_comparison_profile(region_id)
-    except PolicyRegionNotFound:
+    except (GeographicResolutionError, PolicyRegionNotFound):
         return JSONResponse(
             status_code=404,
             content=error_envelope(
@@ -124,8 +131,9 @@ def get_education_alignment(
 ) -> dict:
     service = PolicyIntelligenceService(session)
     try:
+        region_id = require_canonical_region_id(session, region_id)
         payload = service.build_education_alignment_profile(region_id)
-    except PolicyRegionNotFound:
+    except (GeographicResolutionError, PolicyRegionNotFound):
         return JSONResponse(
             status_code=404,
             content=error_envelope(
@@ -152,8 +160,9 @@ def get_policy_report(
         )
     service = PolicyIntelligenceService(session)
     try:
+        region_id = require_canonical_region_id(session, region_id)
         dashboard = service.build_workforce_dashboard(region_id)
-    except PolicyRegionNotFound:
+    except (GeographicResolutionError, PolicyRegionNotFound):
         return JSONResponse(
             status_code=404,
             content=error_envelope(
@@ -187,8 +196,10 @@ def _policy_report_envelope(payload: BaseModel) -> dict[str, Any]:
     data = payload.model_dump(mode="json")
     confidence = data["confidence"]
     freshness_status = data["freshness_status"]
-    state = "stale" if freshness_status == "stale" else (
-        "partial" if confidence in {"low", "unknown"} else "fresh"
+    state = (
+        "stale"
+        if freshness_status == "stale"
+        else ("partial" if confidence in {"low", "unknown"} else "fresh")
     )
     envelope = lightweight_success_envelope(data=data, state=state)
     envelope["status"] = "partial" if state in {"partial", "stale"} else "success"

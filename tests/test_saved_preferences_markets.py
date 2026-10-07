@@ -27,19 +27,30 @@ def _service(session: Session) -> UserPersonalizationPersistenceService:
 
 
 def _seed_users(session: Session) -> None:
-    session.add_all([User(user_id="user_a"), User(user_id="user_b")])
-    session.flush()
-
-
-def _seed_market_rows(session: Session) -> None:
     session.add_all(
         [
+            User(user_id="user_a"),
+            User(user_id="user_b"),
             Region(
                 region_id="greater_boston",
                 region_name="greater_boston",
                 display_name="Greater Boston",
                 region_type="greater_region",
             ),
+            Region(
+                region_id="sf_bay_area",
+                region_name="sf_bay_area",
+                display_name="SF Bay Area",
+                region_type="greater_region",
+            ),
+        ]
+    )
+    session.flush()
+
+
+def _seed_market_rows(session: Session) -> None:
+    session.add_all(
+        [
             Company(
                 company_id="comp_a",
                 company_name="A",
@@ -84,7 +95,7 @@ def test_create_update_get_preferences_for_user(session: Session) -> None:
         UserPreferenceProfileInput(
             role_interests=["product", "ai_cloud_adjacent"],
             industry_interests=["ai", "cloud"],
-            preferred_regions=["greater_boston", "greater_sf"],
+            preferred_regions=["greater_boston", "sf_bay_area"],
             prestige_weighting="high",
             brand_weighting="medium",
             career_stage="entry_level",
@@ -245,9 +256,7 @@ def test_save_list_delete_market_artifact_types(
         "saved_from": "test",
     }
 
-    listed = service.list_saved_market_artifacts(
-        "user_a", artifact_type=artifact_type
-    )
+    listed = service.list_saved_market_artifacts("user_a", artifact_type=artifact_type)
     assert [row.saved_artifact_id for row in listed] == [saved.saved_artifact_id]
     assert service.list_saved_market_artifacts("user_b") == []
 

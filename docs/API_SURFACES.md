@@ -2,6 +2,51 @@
 
 This file documents the MVP API surface that is currently implemented. It is intentionally narrow: the local demo reads seeded backend data and exposes Auth0-backed frontend sign-in/account workflows for protected `/me` routes plus governed Layer 9 admin review, override, and repair APIs, but it does not expose scraping, broad admin mutation tooling, maps, or production deployment controls. Current status is an internal-production baseline for local/single-process operation, not external-production readiness.
 
+## Layer 38A Current Opportunities
+
+Layer 38A adds authenticated backend APIs for production-current opportunity
+records. These APIs are backed by governed source acquisition, raw observation
+storage, normalization, canonical identity resolution, freshness/provenance,
+coverage contracts, and strategic matching.
+
+User-facing routes:
+
+- `GET /current-opportunities`
+- `GET /current-opportunities/{opportunity_id}`
+- `GET /current-opportunities/matches`
+- `GET /current-opportunities/coverage`
+
+Operator/data-review routes:
+
+- `GET /current-opportunities/diagnostics`
+- `GET /current-opportunities/refresh-runs`
+
+List/detail responses include normalized company/title/role/location/work
+arrangement/compensation/application fields, freshness, provenance summaries,
+ranking eligibility, coverage status, and limitations. Strategic match
+responses add score, relevance label, contributing factors, warnings, and
+limitations based on existing Layer 35 Career Identity, Layer 36 decisions, and
+Layer 37 strategic review records.
+
+The API deliberately omits raw provider payloads, source credentials, internal
+license text, and private operational internals. External application URLs are
+validated as untrusted source data and only `http`/`https` routes with a host
+are accepted.
+
+No real external opportunity provider is configured by default in this batch.
+The deterministic adapter is test/curated infrastructure only, so API coverage
+must not be represented as exhaustive production market coverage unless
+explicit source and coverage contracts are later configured.
+
+Layer 38B frontend routes consuming this API family:
+
+- `/markets/current-opportunities`
+- `/markets/current-opportunities/{opportunity_id}`
+- `/markets/current-opportunities/operations`
+
+The operations route is a frontend surface for the existing diagnostics and
+refresh-run endpoints; backend data-review authorization remains authoritative.
+
 ## Response Envelope
 
 Most successful responses use:
@@ -507,16 +552,25 @@ by other users are not returned.
 
 ### `GET /me/export`
 
-Exports app-owned Layer 7 user data for the current user: user/profile metadata,
-external auth identity mappings, saved preferences, saved market artifacts, and
-personalized recommendation snapshots.
+Exports app-owned user data for the current user: user/profile metadata,
+external auth identity mappings, saved preferences, saved market artifacts,
+personalized recommendation snapshots, user alerts, Career Identity facts/import
+metadata, Career Decisions, application/outcome records, decision journals, and
+Deep Decision Intelligence outputs. It also exports sanitized Career Agent
+memory permissions/entries and Career Agent tool previews/audit summaries. It
+does not export secrets, bearer tokens, password hashes, provider access tokens,
+API key raw values, internal audit row ids, raw secret-shaped values, or other
+users' data.
 
 ### `DELETE /me`
 
 Deactivates the current app-level user account. This deletes the current user's
-profile, external auth identity mappings, preferences, saved artifacts, and
-recommendation snapshots, then leaves the internal `users` row as a
-`deactivated` tombstone. Auth0 provider-side account deletion and session
+profile, preferences, saved artifacts, recommendation snapshots, user alerts,
+Career Identity, Career Decisions, Deep Decision Intelligence, Career Agent
+memory, and Career Agent tool records, then leaves the internal `users` row as a
+`deactivated` tombstone. External auth identity mappings are retained as
+scrubbed provider/issuer/subject tombstones so a still-valid upstream token
+cannot recreate the app user. Auth0 provider-side account deletion and session
 revocation are not implemented.
 
 ## Protected Admin Foundation Endpoints
@@ -1547,6 +1601,117 @@ published outputs.
 
 ## Deferred Endpoints
 
+## Layer 36A Career Decision Lifecycle APIs
+
+Layer 36A adds protected user-owned APIs for the first complete personalized
+career decision loop. All routes use the existing `/me` authentication boundary
+and return the standard lightweight envelope.
+
+Layer 36B consumes these routes from the authenticated frontend Decision
+Workspace at `/markets/decisions`. The frontend uses centralized TypeScript API
+client functions; it does not expose separate top-level resources for actions,
+applications, outcomes, or reviews.
+
+Implemented routes:
+
+- `GET /me/decisions`
+- `POST /me/decisions`
+- `GET /me/decisions/{decision_id}`
+- `PATCH /me/decisions/{decision_id}`
+- `POST /me/decisions/{decision_id}/options`
+- `POST /me/decisions/{decision_id}/compare`
+- `GET /me/decisions/{decision_id}/journal`
+- `POST /me/decisions/{decision_id}/select`
+- `POST /me/decisions/{decision_id}/reopen`
+- `POST /me/decisions/{decision_id}/plan`
+- `GET /me/actions`
+- `PATCH /me/actions/{action_id}`
+- `POST /me/applications`
+- `PATCH /me/applications/{application_id}/transition`
+- `POST /me/outcomes`
+- `GET /me/reviews/weekly`
+
+`POST /me/decisions` creates a decision, an immutable decision-context snapshot
+from Career Identity, and optional scenario options in one transaction-safe
+service call. Scenario options can combine roles, regions, companies,
+industries, work arrangement, compensation, and other structured fields.
+
+`POST /me/decisions/{decision_id}/compare` creates a new context snapshot and a
+persisted recommendation snapshot. The response exposes option fit, ranked
+comparison, evidence buckets, structured challenges, limitations, confidence,
+and evidence sufficiency. It may return `recommendation_status = "abstained"`
+when evidence is insufficient or viable options are blocked by hard
+constraints.
+
+`GET /me/decisions/{decision_id}` returns the read model needed by the future
+Decision Workspace UI: decision metadata, current context, options, current
+recommendation, latest plan, applications, outcomes, and timestamps.
+
+`GET /me/decisions/{decision_id}/journal` returns append-only decision versions
+so historical reasoning and selections remain reconstructable after updates,
+reconsideration, new recommendations, plan creation, or outcome recording.
+
+`POST /me/decisions/{decision_id}/plan` creates a career action plan and
+bounded career actions. The default plan includes research, preparation, and
+review actions; callers can provide explicit actions with career-specific
+action categories.
+
+`POST /me/applications` and
+`PATCH /me/applications/{application_id}/transition` track personal application
+state only. Valid states are `considering`, `preparing`, `applied`, `response`,
+`interview`, `final_round`, `rejected`, `withdrawn`, `offer`, `accepted`, and
+`declined`. Transition history is append-only. This is not an employer ATS or
+recruiter workflow surface.
+
+`POST /me/outcomes` records observed outcomes from decisions, actions,
+applications, skill work, research, networking, education, strategy changes, or
+other career actions. Outcomes retain links to the original decision,
+recommendation, option, action, and application where supplied or inferable.
+
+`GET /me/reviews/weekly` deterministically aggregates stored state into
+`happened`, `changed`, `worked`, `did_not_work`, `stalled`,
+`invalidated_assumptions`, `reconsider`, `next_actions`, and `reminders`.
+Reminder data is derived from decision review dates, action due dates, and
+application follow-up dates; Layer 36A does not add a scheduler or live calendar
+sync.
+
+Cross-user access to decisions, options, actions, applications, outcomes,
+journal entries, and review data is rejected at the service boundary and mapped
+to not-found responses by the API.
+
+## Layer 37A Deep Decision Intelligence APIs
+
+Layer 37A extends the Layer 36 decision API family with deeper backend
+intelligence. These routes are protected by the existing `/me` authentication
+boundary and attach analysis to canonical Layer 36 decisions instead of
+creating separate company, compensation, education, relocation, skill-gap, or
+timing engines.
+
+Implemented routes:
+
+- `POST /me/decisions/{decision_id}/deep-analysis`
+- `GET /me/decisions/{decision_id}/deep-analysis`
+- `GET /me/strategic-reviews`
+
+`POST /me/decisions/{decision_id}/deep-analysis` generates shared decision
+factors, a bounded longitudinal context snapshot, recommendation evolution,
+typed advisory findings, and a persisted strategic career review. The optional
+request fields are `include_domains`, `window_start`, and `window_end`.
+Supported domains are `company`, `compensation`, `skill_gap`, `education_roi`,
+`relocation`, and `timing_pivot`.
+
+The response includes `factors`, `longitudinal_context`,
+`recommendation_evolution`, `advisory_findings`, and `strategic_review`.
+Evidence kinds distinguish direct, derived, inferred, proxy, unavailable, and
+conflicting evidence. Missing data remains unavailable evidence, not poor fit.
+
+`GET /me/decisions/{decision_id}/deep-analysis` returns the latest generated
+analysis for the authenticated owner. `GET /me/strategic-reviews` returns
+persisted strategic review snapshots and can be filtered by `decision_id`.
+
+Cross-user access returns not found. Unsupported domains return validation
+errors. Layer 37A does not expose public personal decision analysis routes.
+
 These endpoints may appear in older planning docs, but they are not currently implemented as public API routes:
 
 - `GET /regions/{region_id}/companies`
@@ -1572,15 +1737,34 @@ The contextual challenge builder and seed path exist in backend code, but there 
 
 External-production work remains deferred: deployment hardening, provider-side account deletion/session revocation, broader security hardening, observability, distributed queue/broker integration, artifact storage/cache serving, and multi-worker stress testing.
 
+## Canonical Geography
+
+Region responses expose `region_id`, stable `public_slug`, display name, type,
+primary city, state memberships, optional centroid/focus bounds, and explicit
+market support status. Existing Region IDs remain valid route inputs.
+
+- `GET /regions` returns canonical Region summaries.
+- `GET /regions/{region_or_alias}` accepts a canonical ID, public slug, or
+  unambiguous registered compatibility alias and returns canonical output.
+- `GET /regions/resolve?input=...` exposes the routing/adapter resolution
+  boundary. A resolved response includes the canonical identity and resolution
+  source; unknown input is 404 and ambiguous input is 409.
+
+Public API consumers should persist `region_id` and use `public_slug` for URL
+presentation. Raw import keys and human labels are inputs, not canonical
+geography. Alias registry internals are not exposed. Full policy and the
+static-map data boundary are documented in `docs/CANONICAL_GEOGRAPHY.md`.
+
 ## MVP Non-Goals
 
 Do not implement unless explicitly requested:
 
 - hand-rolled auth or credential storage
 - provider account deletion/session revocation beyond frontend sign-out
-- saved profiles or application tracking
+- saved profiles or application tracking outside protected user-owned Layer 35
+  Career Identity and Layer 36 Decision Workspace workflows
 - scraping or external APIs
 - maps or advanced charts
 - production deployment/security controls
 - public mutation APIs for canonical truth
-- persistent personalized outputs
+- public or anonymous persistent personalized outputs outside protected user-owned workflows

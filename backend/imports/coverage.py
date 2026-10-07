@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.entry_level.models import CompanyRegionEntryLevel
-from backend.geography.models import Region
+from backend.geography.models import Region, RegionStateMembership
 from backend.hiring.models import CompanyRegionHiring
 from backend.imports.registry import load_market_registry, resolve_market_registry_entry
 from backend.presence.models import CompanyRegionPresence
@@ -57,7 +57,10 @@ _FACT_SUBJECT_TYPES: dict[str, TrustAssessmentSubjectType] = {
 class MarketCoverageSummary:
     market_key: str
     region_id: str
+    public_slug: str | None
     display_name: str
+    primary_city: str | None
+    state_codes: tuple[str, ...]
     coverage_status: str
     import_status: str
     company_count: int
@@ -88,7 +91,10 @@ class MarketCoverageSummary:
         return {
             "market_key": self.market_key,
             "region_id": self.region_id,
+            "public_slug": self.public_slug,
             "display_name": self.display_name,
+            "primary_city": self.primary_city,
+            "state_codes": list(self.state_codes),
             "coverage_status": self.coverage_status,
             "import_status": self.import_status,
             "company_count": self.company_count,
@@ -154,7 +160,20 @@ def build_market_coverage_summary(
     return MarketCoverageSummary(
         market_key=entry.market_key,
         region_id=entry.region_id,
+        public_slug=region.public_slug if region else None,
         display_name=entry.display_name,
+        primary_city=region.primary_city if region else None,
+        state_codes=(
+            tuple(
+                session.execute(
+                    select(RegionStateMembership.state_code)
+                    .where(RegionStateMembership.region_id == entry.region_id)
+                    .order_by(RegionStateMembership.state_code)
+                ).scalars()
+            )
+            if region
+            else ()
+        ),
         coverage_status=entry.coverage_status,
         import_status=entry.import_status,
         company_count=len(company_ids),

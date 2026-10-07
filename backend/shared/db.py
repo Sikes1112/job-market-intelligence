@@ -31,9 +31,7 @@ class CanonicalMixin:
     presentation detail (see :mod:`backend.shared.versioning`).
     """
 
-    state: Mapped[str] = mapped_column(
-        String(32), nullable=False, default=ObjectState.NEW.value
-    )
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default=ObjectState.NEW.value)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -127,8 +125,12 @@ def import_all_models() -> None:
     from backend.alerts import models as _alerts  # noqa: F401
     from backend.billing import models as _billing  # noqa: F401
     from backend.career_agent import models as _career_agent  # noqa: F401
+    from backend.career_decisions import models as _career_decisions  # noqa: F401
+    from backend.career_identity import models as _career_identity  # noqa: F401
     from backend.companies import models as _companies  # noqa: F401
+    from backend.current_opportunities import models as _current_opportunities  # noqa: F401
     from backend.data_standards import models as _data_standards  # noqa: F401
+    from backend.deep_decisions import models as _deep_decisions  # noqa: F401
     from backend.entry_level import models as _entry_level  # noqa: F401
     from backend.geography import models as _geography  # noqa: F401
     from backend.hiring import models as _hiring  # noqa: F401
@@ -141,6 +143,7 @@ def import_all_models() -> None:
     from backend.outputs import models as _outputs  # noqa: F401
     from backend.platform import models as _platform  # noqa: F401
     from backend.platform_intelligence import models as _platform_intelligence  # noqa: F401
+    from backend.product_measurement import models as _product_measurement  # noqa: F401
     from backend.presence import models as _presence  # noqa: F401
     from backend.provenance import models as _provenance  # noqa: F401
     from backend.region_expansion import models as _region_expansion  # noqa: F401

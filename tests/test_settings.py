@@ -11,11 +11,23 @@ SETTINGS_ENV_VARS = (
     "CORS_ALLOWED_ORIGINS",
     "LOG_LEVEL",
     "SERVICE_NAME",
+    "RELEASE_ID",
+    "READINESS_REQUIRE_MIGRATION_CURRENT",
+    "JOB_STALE_AFTER_SECONDS",
+    "ERROR_MONITORING_DSN",
     "RATE_LIMIT_ENABLED",
     "SECURITY_HEADERS_ENABLED",
     "MAX_REQUEST_BODY_BYTES",
     "RATE_LIMIT_REQUESTS",
     "RATE_LIMIT_WINDOW_SECONDS",
+    "RATE_LIMIT_ANONYMOUS_REQUESTS",
+    "RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS",
+    "RATE_LIMIT_AUTHENTICATED_REQUESTS",
+    "RATE_LIMIT_AUTHENTICATED_WINDOW_SECONDS",
+    "RATE_LIMIT_EXPENSIVE_REQUESTS",
+    "RATE_LIMIT_EXPENSIVE_WINDOW_SECONDS",
+    "RATE_LIMIT_MUTATION_REQUESTS",
+    "RATE_LIMIT_MUTATION_WINDOW_SECONDS",
     "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET",
     "STRIPE_SUCCESS_URL",
@@ -48,11 +60,19 @@ def test_default_settings_are_local_and_demo_safe() -> None:
     assert settings.cors_allowed_origin_list == []
     assert settings.log_level == "INFO"
     assert settings.service_name == "jmi-backend"
+    assert settings.release_id == "unknown"
+    assert settings.readiness_require_migration_current is False
+    assert settings.job_stale_after_seconds == 3600
+    assert settings.error_monitoring_dsn == ""
     assert settings.rate_limit_enabled is False
     assert settings.security_headers_enabled is False
     assert settings.max_request_body_bytes == 1_048_576
     assert settings.rate_limit_requests == 120
     assert settings.rate_limit_window_seconds == 60
+    assert settings.rate_limit_anonymous_requests == 120
+    assert settings.rate_limit_authenticated_requests == 120
+    assert settings.rate_limit_expensive_requests == 20
+    assert settings.rate_limit_mutation_requests == 60
     assert settings.stripe_secret_key == ""
     assert settings.stripe_webhook_secret == ""
     assert settings.stripe_price_individual_monthly == ""
@@ -129,6 +149,9 @@ def test_public_demo_requires_explicit_database_and_is_read_only() -> None:
     assert settings.max_request_body_bytes == 65_536
     assert settings.rate_limit_requests == 60
     assert settings.rate_limit_window_seconds == 60
+    assert settings.rate_limit_expensive_requests == 20
+    assert settings.rate_limit_mutation_requests == 60
+    assert settings.readiness_require_migration_current is False
 
 
 def test_public_demo_requires_explicit_cors_origin() -> None:
@@ -182,6 +205,7 @@ def test_non_local_database_url_is_accepted_without_exposing_repr() -> None:
 
     assert settings.app_env == AppEnv.PRODUCTION
     assert settings.database_url == "postgresql://user:secret@example.test/db"
+    assert settings.readiness_require_migration_current is True
     assert "secret" not in repr(settings)
 
 
@@ -281,6 +305,10 @@ def test_api_protection_numeric_settings_must_be_positive() -> None:
         Settings(rate_limit_requests=0, _env_file=None)
     with pytest.raises(ValidationError, match="value must be >= 1"):
         Settings(rate_limit_window_seconds=0, _env_file=None)
+    with pytest.raises(ValidationError, match="value must be >= 1"):
+        Settings(rate_limit_expensive_requests=0, _env_file=None)
+    with pytest.raises(ValidationError, match="value must be >= 1"):
+        Settings(rate_limit_mutation_window_seconds=0, _env_file=None)
 
 
 def test_api_protection_numeric_settings_have_sane_upper_bounds() -> None:
@@ -290,6 +318,10 @@ def test_api_protection_numeric_settings_have_sane_upper_bounds() -> None:
         Settings(rate_limit_requests=10_001, _env_file=None)
     with pytest.raises(ValidationError, match="value must be <="):
         Settings(rate_limit_window_seconds=3_601, _env_file=None)
+    with pytest.raises(ValidationError, match="value must be <="):
+        Settings(rate_limit_expensive_requests=10_001, _env_file=None)
+    with pytest.raises(ValidationError, match="value must be <="):
+        Settings(rate_limit_mutation_window_seconds=3_601, _env_file=None)
 
 
 def test_blank_api_protection_numeric_settings_use_environment_defaults() -> None:
@@ -303,6 +335,32 @@ def test_blank_api_protection_numeric_settings_use_environment_defaults() -> Non
     assert settings.max_request_body_bytes == 1_048_576
     assert settings.rate_limit_requests == 120
     assert settings.rate_limit_window_seconds == 60
+    assert settings.rate_limit_expensive_requests == 20
+    assert settings.rate_limit_mutation_requests == 60
+
+
+def test_endpoint_class_rate_limit_settings_can_be_configured() -> None:
+    settings = Settings(
+        rate_limit_requests=200,
+        rate_limit_anonymous_requests=50,
+        rate_limit_authenticated_requests=150,
+        rate_limit_expensive_requests=8,
+        rate_limit_mutation_requests=40,
+        rate_limit_anonymous_window_seconds=30,
+        rate_limit_authenticated_window_seconds=45,
+        rate_limit_expensive_window_seconds=90,
+        rate_limit_mutation_window_seconds=120,
+        _env_file=None,
+    )
+
+    assert settings.rate_limit_anonymous_requests == 50
+    assert settings.rate_limit_authenticated_requests == 150
+    assert settings.rate_limit_expensive_requests == 8
+    assert settings.rate_limit_mutation_requests == 40
+    assert settings.rate_limit_anonymous_window_seconds == 30
+    assert settings.rate_limit_authenticated_window_seconds == 45
+    assert settings.rate_limit_expensive_window_seconds == 90
+    assert settings.rate_limit_mutation_window_seconds == 120
 
 
 @pytest.mark.parametrize("app_env", [AppEnv.DEV, AppEnv.PRIVATE_DEMO])

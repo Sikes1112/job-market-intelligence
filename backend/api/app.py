@@ -4,13 +4,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine
 
 from backend.api.admin import router as admin_router
 from backend.api.auth0_middleware import Auth0JWTMiddleware
 from backend.api.billing import router as billing_router
 from backend.api.career_agent import router as career_agent_router
+from backend.api.career_decisions import router as career_decisions_router
+from backend.api.career_identity import router as career_identity_router
+from backend.api.current_opportunities import router as current_opportunities_router
 from backend.api.data_standards import router as data_standards_router
+from backend.api.deep_decisions import router as deep_decisions_router
 from backend.api.errors import register_exception_handlers
 from backend.api.exceptions import router as exceptions_router
 from backend.api.external import router as external_router
@@ -19,10 +23,12 @@ from backend.api.integrations import router as integrations_router
 from backend.api.market_intelligence import router as market_intelligence_router
 from backend.api.monetization import router as monetization_router
 from backend.api.observability import RequestObservabilityMiddleware
+from backend.api.operations import router as operations_router
 from backend.api.opportunities import router as opportunities_router
 from backend.api.personalized import router as personalized_router
 from backend.api.platform_intelligence import router as platform_intelligence_router
 from backend.api.platform_public import router as platform_public_router
+from backend.api.product_measurement import router as product_measurement_router
 from backend.api.policy import router as policy_router
 from backend.api.protection import APIProtectionMiddleware
 from backend.api.public_benchmarks import router as public_benchmarks_router
@@ -34,13 +40,14 @@ from backend.api.user import router as user_router
 from backend.api.user_intelligence import router as user_intelligence_router
 from backend.api.user_reports import router as user_reports_router
 from backend.config.settings import Settings, get_settings
+from backend.operations.error_monitoring import ErrorMonitor
+from backend.operations.metrics import InMemoryMetricsRegistry
+from backend.operations.status import liveness_payload, readiness_payload
 from backend.shared.db import make_engine, make_session_factory
 from backend.shared.logging import configure_logging
 
 
-def create_app(
-    *, engine: Engine | None = None, settings: Settings | None = None
-) -> FastAPI:
+def create_app(*, engine: Engine | None = None, settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level, service_name=settings.service_name)
     owns_engine = engine is None
@@ -82,43 +89,31 @@ def create_app(
     app.state.owns_engine = owns_engine
     app.state.session_factory = make_session_factory(engine)
     app.state.billing_provider = None
+    app.state.metrics_registry = InMemoryMetricsRegistry()
+    app.state.error_monitor = ErrorMonitor()
 
     @app.get("/health")
     def health() -> dict:
-        return {
-            "status": "ok",
-            "service": settings.service_name,
-            "environment": settings.app_env.value,
-        }
+        return liveness_payload(settings)
 
     @app.get("/ready")
     def ready() -> JSONResponse:
-        checks = {"config": "ok", "database": "ok"}
-        status_code = 200
-        status_value = "ready"
-
-        try:
-            with app.state.engine.connect() as connection:
-                connection.execute(text("SELECT 1")).scalar_one()
-        except Exception:
-            checks["database"] = "failed"
-            status_code = 503
-            status_value = "not_ready"
-
-        return JSONResponse(
-            status_code=status_code,
-            content={"status": status_value, "checks": checks},
-        )
+        status_code, content = readiness_payload(app.state.engine, settings)
+        return JSONResponse(status_code=status_code, content=content)
 
     app.include_router(read_router)
     app.include_router(market_intelligence_router)
     app.include_router(personalized_router)
     app.include_router(recommendations_router)
     app.include_router(career_agent_router)
+    app.include_router(career_decisions_router)
+    app.include_router(career_identity_router)
+    app.include_router(deep_decisions_router)
     app.include_router(data_standards_router)
     app.include_router(public_benchmarks_router)
     app.include_router(public_reports_router)
     app.include_router(opportunities_router)
+    app.include_router(current_opportunities_router)
     app.include_router(trust_router)
     app.include_router(exceptions_router)
     app.include_router(user_intelligence_router)
@@ -126,12 +121,14 @@ def create_app(
     app.include_router(policy_router)
     app.include_router(platform_intelligence_router)
     app.include_router(platform_public_router)
+    app.include_router(product_measurement_router)
     app.include_router(monetization_router)
     app.include_router(billing_router)
     app.include_router(user_router)
     app.include_router(institutions_router)
     app.include_router(integrations_router)
     app.include_router(external_router)
+    app.include_router(operations_router)
     app.include_router(admin_router)
 
     return app

@@ -51,6 +51,15 @@ def test_free_user_is_blocked_from_saved_watchlist_creation(api_client) -> None:
 
 def test_paid_individual_can_create_saved_watchlist(api_client, session: Session) -> None:
     headers = _auth_headers("auth0|paid_watchlist")
+    session.add(
+        Region(
+            region_id="greater_boston",
+            region_name="greater_boston",
+            display_name="Greater Boston",
+            region_type="greater_region",
+        )
+    )
+    session.flush()
     _assign_plan(api_client, session, "auth0|paid_watchlist", PlanKey.INDIVIDUAL_MONTHLY)
 
     response = api_client.post(
@@ -134,10 +143,7 @@ def test_paid_report_and_export_stubs_increment_usage_after_success(
         MonetizationFeatureKey.EXPORTABLE_STRATEGY_PLANS.value
     )
 
-    counters = {
-        row["feature_key"]: row
-        for row in usage.json()["data"]["usage"]
-    }
+    counters = {row["feature_key"]: row for row in usage.json()["data"]["usage"]}
     assert counters[MonetizationFeatureKey.FULL_REPORT_GENERATION.value]["used_count"] == 1
     assert counters[MonetizationFeatureKey.EXPORTABLE_STRATEGY_PLANS.value]["used_count"] == 1
 
@@ -177,10 +183,7 @@ def test_authenticated_free_comparison_usage_blocks_only_after_successful_reques
     decision = blocked.json()["data"]["decision"]
     assert decision["feature_key"] == MonetizationFeatureKey.LIMITED_COMPARISONS.value
     assert decision["remaining_usage"] == 0
-    counters = {
-        row["feature_key"]: row
-        for row in usage.json()["data"]["usage"]
-    }
+    counters = {row["feature_key"]: row for row in usage.json()["data"]["usage"]}
     assert counters[MonetizationFeatureKey.LIMITED_COMPARISONS.value]["used_count"] == 3
 
 
@@ -209,13 +212,8 @@ def test_authenticated_free_discovery_usage_increments_after_success(
     usage = api_client.get("/monetization/usage", headers=headers)
 
     assert response.status_code == 200
-    counters = {
-        row["feature_key"]: row
-        for row in usage.json()["data"]["usage"]
-    }
-    assert counters[
-        MonetizationFeatureKey.LIMITED_PERSONALIZED_DISCOVERY.value
-    ]["used_count"] == 1
+    counters = {row["feature_key"]: row for row in usage.json()["data"]["usage"]}
+    assert counters[MonetizationFeatureKey.LIMITED_PERSONALIZED_DISCOVERY.value]["used_count"] == 1
 
 
 def test_institutional_plan_allows_institutional_entitlement_preview(

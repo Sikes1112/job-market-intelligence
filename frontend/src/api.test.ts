@@ -28,6 +28,11 @@ import {
   getCareerAgentAnswer,
   getCareerMemory,
   getCareerPlatformRegistry,
+  getCurrentOpportunities,
+  getCurrentOpportunityCoverage,
+  getCurrentOpportunityDiagnostics,
+  getCurrentOpportunityMatches,
+  getCurrentOpportunityRefreshRuns,
   getDataStandardDefinitions,
   getDataStandardsGovernanceFramework,
   getDataStandardsPartnerSchema,
@@ -176,6 +181,43 @@ describe("frontend API client auth boundary", () => {
     for (const [, init] of fetchMock.mock.calls) {
       expect((init as RequestInit).method).toBeUndefined();
       expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
+    }
+  });
+
+  test("current opportunity helpers use authenticated Layer 38 routes", async () => {
+    const fetchMock = mockFetch({});
+    const auth = { getAccessToken: async () => "token-current-opps" };
+
+    await getCurrentOpportunities(
+      {
+        market: "greater_boston",
+        role_family: "software_engineering",
+        opportunity_type: "job",
+        work_arrangement: "hybrid",
+        include_ineligible: true,
+        limit: 25,
+      },
+      auth,
+    );
+    await getCurrentOpportunityMatches({ include_ineligible: true, limit: 10 }, auth);
+    await getCurrentOpportunityCoverage(
+      { market_key: "greater_boston", role_family: "software_engineering", opportunity_type: "job" },
+      auth,
+    );
+    await getCurrentOpportunityDiagnostics(auth);
+    await getCurrentOpportunityRefreshRuns({ limit: 5 }, auth);
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/current-opportunities?market=greater_boston&role_family=software_engineering&opportunity_type=job&work_arrangement=hybrid&include_ineligible=true&limit=25",
+    );
+    expect(fetchMock.mock.calls[1][0]).toBe("/current-opportunities/matches?include_ineligible=true&limit=10");
+    expect(fetchMock.mock.calls[2][0]).toBe(
+      "/current-opportunities/coverage?market_key=greater_boston&role_family=software_engineering&opportunity_type=job",
+    );
+    expect(fetchMock.mock.calls[3][0]).toBe("/current-opportunities/diagnostics");
+    expect(fetchMock.mock.calls[4][0]).toBe("/current-opportunities/refresh-runs?limit=5");
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).headers).toMatchObject({ Authorization: "Bearer token-current-opps" });
     }
   });
 

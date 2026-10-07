@@ -11,6 +11,7 @@ from backend.auth.boundary import (
 )
 from backend.companies.models import Company
 from backend.geography.models import Region
+from backend.users.exceptions import DeactivatedUserAuthenticationBlocked
 from backend.users.models import ExternalAuthIdentity, User, UserProfile
 from backend.users.repository import UserRepository
 from backend.users.service import UserIdentityService
@@ -96,6 +97,27 @@ def test_same_external_identity_reuses_internal_user(session: Session) -> None:
     assert second.identity.external_identity_id == first.identity.external_identity_id
     assert second.identity.email == "renamed@example.com"
     assert second.profile.display_name == "Renamed"
+
+
+def test_deactivated_user_identity_cannot_recreate_or_resync_account(
+    session: Session,
+) -> None:
+    svc = _service(session)
+    first = svc.resolve_external_principal(_principal())
+    first.user.status = "deactivated"
+    first.identity.email = None
+    first.identity.email_verified = None
+    session.flush()
+
+    with pytest.raises(DeactivatedUserAuthenticationBlocked):
+        svc.resolve_external_principal(
+            _principal(email="replay@example.com", display_name="Replay User")
+        )
+
+    assert session.query(User).count() == 1
+    assert session.query(ExternalAuthIdentity).count() == 1
+    assert session.get(UserProfile, first.user.user_id).display_name == "Example Person"
+    assert first.identity.email is None
 
 
 def test_same_subject_from_different_issuer_creates_distinct_user(

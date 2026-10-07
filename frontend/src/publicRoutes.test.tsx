@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
 import { FrontendAuthProvider } from "./auth";
 import { PUBLIC_SEO_PAGES } from "./publicSeoContent";
+import { isProductPage, parseRoute } from "./urlState";
 
 type MockPayload = {
   data: unknown;
@@ -1202,6 +1203,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
         regions: [
           {
             region_id: "greater_boston",
+            public_slug: "boston",
             display_name: "Greater Boston",
             region_type: "greater_region",
             parent_region_id: null,
@@ -1212,7 +1214,8 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
             priority_market: priorityMarket(),
           },
           {
-            region_id: "greater_sf",
+            region_id: "sf_bay_area",
+            public_slug: "san-francisco-bay-area",
             display_name: "Greater SF",
             region_type: "greater_region",
             parent_region_id: null,
@@ -1233,15 +1236,34 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
       },
     };
   }
-  if (value === "/regions/greater_boston") {
+  if (value === "/regions/greater_boston" || value === "/regions/boston") {
     return {
-      data: regionDetail("greater_boston", "Greater Boston", "tier_2", {
-        ai: sectorCoverage("tier_3"),
-      }),
+      data: {
+        ...regionDetail("greater_boston", "Greater Boston", "tier_2", {
+          ai: sectorCoverage("tier_3"),
+        }),
+        public_slug: "boston",
+      },
     };
   }
-  if (value === "/regions/greater_sf") {
-    return { data: regionDetail("greater_sf", "Greater SF", "tier_4") };
+  if (
+    value === "/regions/sf_bay_area"
+    || value === "/regions/san-francisco-bay-area"
+    || value === "/regions/greater_sf"
+  ) {
+    return {
+      data: {
+        ...regionDetail("sf_bay_area", "Greater SF", "tier_4"),
+        public_slug: "san-francisco-bay-area",
+      },
+    };
+  }
+  if (value === "/regions/not-a-real-market") {
+    return {
+      data: null,
+      status: 404,
+      error: { code: "NOT_FOUND", message: "Region not found." },
+    };
   }
   if (value === "/regions/legacy_market") {
     return { data: regionDetail("legacy_market", "Legacy Market") };
@@ -1249,8 +1271,8 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
   if (value.startsWith("/regions/greater_boston/sources")) {
     return { data: sourceExplanation("greater_boston") };
   }
-  if (value.startsWith("/regions/greater_sf/sources")) {
-    return { data: sourceExplanation("greater_sf") };
+  if (value.startsWith("/regions/sf_bay_area/sources")) {
+    return { data: sourceExplanation("sf_bay_area") };
   }
   if (value.startsWith("/regions/legacy_market/sources")) {
     return { data: sourceExplanation("legacy_market") };
@@ -1274,9 +1296,9 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
             has_real_data: true,
           },
           {
-            region_id: "greater_sf",
+            region_id: "sf_bay_area",
             name: "Greater SF",
-            region_name: "greater_sf",
+            region_name: "sf_bay_area",
             region_type: "greater_region",
             parent_region_id: null,
             labor_market_group: "sf",
@@ -1340,7 +1362,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
         ],
         regions_hiring: [
           {
-            region_id: "greater_sf",
+            region_id: "sf_bay_area",
             region_display_name: "Greater SF",
             currently_hiring_flag: true,
             active_posting_count_now: 3,
@@ -1390,7 +1412,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
             has_real_data: true,
           },
           {
-            region_id: "greater_sf",
+            region_id: "sf_bay_area",
             region_name: "Greater SF",
             presence_status: "present",
             current_hiring: true,
@@ -1407,7 +1429,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
   if (value.startsWith("/compare")) {
     return {
       data: {
-        comparison_id: "greater_boston__greater_sf",
+        comparison_id: "greater_boston__sf_bay_area",
         region_a: {
           region_id: "greater_boston",
           display_name: "Greater Boston",
@@ -1417,7 +1439,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
           priority_market: priorityMarket(),
         },
         region_b: {
-          region_id: "greater_sf",
+          region_id: "sf_bay_area",
           display_name: "Greater SF",
           scores: regionScores(0.28),
           coverage: coverage("tier_4"),
@@ -1426,7 +1448,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
         category_winners: { objective_opportunity_score: "greater_boston" },
         notes: [],
       },
-      warnings: [coverageWarning("greater_boston"), coverageWarning("greater_sf")],
+      warnings: [coverageWarning("greater_boston"), coverageWarning("sf_bay_area")],
     };
   }
   if (value === "/discover/personalized") {
@@ -1443,7 +1465,7 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
             match_notes: ["region_coverage_not_confident"],
           },
           {
-            region_id: "greater_sf",
+            region_id: "sf_bay_area",
             display_name: "Greater SF",
             personal_market_score: 0.44,
             objective_opportunity_score: 0.28,
@@ -1892,6 +1914,55 @@ describe("public demo routes", () => {
     expect(screen.getByText("Opportunity heatmap")).toBeTruthy();
   });
 
+  test("canonical slug cold navigation loads the canonical Region", async () => {
+    const fetchMock = stubPublicFetch();
+    renderAt("/markets/region/boston");
+
+    expect(await screen.findByRole("heading", { name: "Greater Boston" })).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        ["/regions/boston", "/regions/greater_boston"].includes(String(url)),
+      ),
+    ).toBe(true);
+    expect(screen.queryByText(/Unknown region ID/i)).toBeNull();
+  });
+
+  test("in-app Region navigation prefers the published canonical slug", async () => {
+    stubPublicFetch();
+    renderAt("/markets");
+    await screen.findByText("Explore Markets");
+
+    fireEvent.click(screen.getByRole("link", { name: /Region Detail/i }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/markets/region/boston");
+    });
+    expect(await screen.findByRole("heading", { name: "Greater Boston" })).toBeTruthy();
+  });
+
+  test("legacy Region token reaches backend resolution and normalizes the URL", async () => {
+    const fetchMock = stubPublicFetch();
+    renderAt("/markets/region/greater_sf");
+
+    expect(await screen.findByRole("heading", { name: "Greater SF" })).toBeTruthy();
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(
+        "/markets/region/san-francisco-bay-area",
+      );
+    });
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url) === "/regions/greater_sf"),
+    ).toBe(true);
+  });
+
+  test("unknown Region token reaches resolution and fails cleanly", async () => {
+    stubPublicFetch();
+    renderAt("/markets/region/not-a-real-market");
+
+    expect(await screen.findByText("Region not found.")).toBeTruthy();
+    expect(screen.queryByText(/Unknown region ID/i)).toBeNull();
+  });
+
   test("explore markets renders coverage labels for fully covered and placeholder markets", async () => {
     stubPublicFetch();
     renderAt("/markets");
@@ -1903,7 +1974,7 @@ describe("public demo routes", () => {
 
   test("comparison renders weak coverage warnings beside region results", async () => {
     stubPublicFetch();
-    renderAt("/markets/compare?region_a=greater_boston&region_b=greater_sf");
+    renderAt("/markets/compare?region_a=greater_boston&region_b=sf_bay_area");
 
     expect(await screen.findByRole("heading", { name: "Coverage context" })).toBeTruthy();
     expect(screen.getAllByText("Coverage: Tier 3 - watchlist / emerging market").length).toBeGreaterThan(0);
@@ -1923,6 +1994,19 @@ describe("public demo routes", () => {
     expect(screen.getAllByText("Coverage: Tier 3 - watchlist / emerging market").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Coverage: Tier 4 - placeholder only").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/not covered enough for confident recommendations/i).length).toBeGreaterThan(0);
+  });
+
+  test("career identity route is admitted through the product app shell", async () => {
+    stubPublicFetch();
+    const route = parseRoute("/markets/career-identity", "");
+
+    expect(route.page).toBe("career-identity");
+    expect(isProductPage(route.page)).toBe(true);
+
+    renderAt("/markets/career-identity");
+
+    expect(await screen.findByText("Sign in to manage Career Identity")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Terms and disclaimer" })).toBeNull();
   });
 
   test("recommendations page loads goal modes and renders evidence-bound ranking cards", async () => {

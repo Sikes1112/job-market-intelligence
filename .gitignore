@@ -30,6 +30,8 @@ logs/
 data/*
 !data/imports/
 !data/imports/**
+!data/geography/
+!data/geography/**
 tmp/
 /demo.db
 /demo.db-*

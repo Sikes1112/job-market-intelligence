@@ -13,6 +13,7 @@ def test_health_is_liveness_only(client: TestClient) -> None:
     assert body["status"] == "ok"
     assert body["service"] == "jmi-backend"
     assert "environment" in body
+    assert "release_id" in body
     assert "database_url" not in body
     assert "checks" not in body
 
@@ -63,10 +64,11 @@ def test_ready_returns_ready_when_database_and_config_pass(session) -> None:
 
     assert response.status_code == 200
     ready_body = response.json()
-    assert ready_body == {
-        "status": "ready",
-        "checks": {"config": "ok", "database": "ok"},
-    }
+    assert ready_body["status"] == "ready"
+    assert ready_body["checks"]["config"] == "ok"
+    assert ready_body["checks"]["database"] == "ok"
+    assert ready_body["checks"]["schema"] == "unversioned"
+    assert ready_body["release_id"] == "unknown"
     assert "database_url" not in ready_body
 
 
@@ -80,10 +82,8 @@ def test_ready_returns_503_when_database_check_fails(client: TestClient) -> None
 
     assert response.status_code == 503
     body = response.json()
-    assert body == {
-        "status": "not_ready",
-        "checks": {"config": "ok", "database": "failed"},
-    }
+    assert body["status"] == "not_ready"
+    assert body["checks"] == {"config": "ok", "database": "failed"}
     assert "secret" not in response.text
     assert "postgresql://" not in response.text
 
@@ -106,7 +106,26 @@ def test_health_and_ready_remain_available_in_public_demo(session: Session) -> N
     assert health.status_code == 200
     assert health.json()["environment"] == "public_demo"
     assert ready.status_code == 200
-    assert ready.json() == {
-        "status": "ready",
-        "checks": {"config": "ok", "database": "ok"},
-    }
+    assert ready.json()["status"] == "ready"
+    assert ready.json()["checks"]["database"] == "ok"
+
+
+def test_strict_readiness_rejects_unversioned_schema(session: Session) -> None:
+    app = create_app(
+        engine=session.bind,
+        settings=Settings(
+            app_env="test",
+            database_url="sqlite:///:memory:",
+            readiness_require_migration_current=True,
+            _env_file=None,
+        ),
+    )
+
+    response = TestClient(app).get("/ready")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "not_ready"
+    assert body["checks"]["database"] == "ok"
+    assert body["checks"]["schema"] == "unversioned"
+    assert "database_url" not in body

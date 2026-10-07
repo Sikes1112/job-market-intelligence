@@ -455,7 +455,7 @@ def test_rejected_markets_and_applied_roles_affect_plans_only_with_permission(
     )
 
 
-def test_memory_routes_are_protected_scoped_and_do_not_leak_to_public_or_export(
+def test_memory_routes_are_protected_scoped_and_export_owner_memory_only(
     api_client: TestClient,
     session: Session,
 ) -> None:
@@ -509,8 +509,14 @@ def test_memory_routes_are_protected_scoped_and_do_not_leak_to_public_or_export(
 
     exported = api_client.get("/me/export", headers=user_a_headers)
     assert exported.status_code == 200
-    assert "career_memory" not in exported.text
-    assert "rejected_markets" not in exported.text
+    memory_export = exported.json()["data"]["career_agent_memory"]
+    assert memory_export["permissions"][0]["category"] == "rejected_markets"
+    assert memory_export["entries"][0]["category"] == "rejected_markets"
+    assert memory_export["entries"][0]["value"] == "greater_boston"
+
+    user_b_export = api_client.get("/me/export", headers=user_b_headers)
+    assert user_b_export.status_code == 200
+    assert user_b_export.json()["data"]["career_agent_memory"]["entries"] == []
 
     deleted = api_client.request(
         "DELETE",

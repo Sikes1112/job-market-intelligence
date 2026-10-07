@@ -9,6 +9,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from backend.api.dependencies import get_output_service, get_session
+from backend.api.geographic_identity import require_canonical_region_id
+from backend.geography.exceptions import GeographicResolutionError
 from backend.institutions.exceptions import OrganizationNotFound
 from backend.institutions.repository import InstitutionRepository
 from backend.integrations.repository import IntegrationRepository
@@ -81,12 +83,15 @@ def external_region_intelligence(
             route=request.url.path,
             method=request.method,
         )
+        region_id = require_canonical_region_id(session, region_id)
         envelope = service.external_region_intelligence(
             region_id=region_id,
             context=context,
         )
     except (ApiAuthenticationError, ApiScopeDenied, ApiRateLimitExceeded) as exc:
         return _external_access_error(exc)
+    except GeographicResolutionError:
+        return _external_error(404, "NOT_FOUND", "Region not found.")
     except MissingRegionForOutput:
         return _external_error(404, "NOT_FOUND", "Region not found.")
     return envelope.model_dump(mode="json")

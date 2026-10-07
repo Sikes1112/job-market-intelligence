@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import {
   ApiError,
   API_TARGET_LABEL,
@@ -20,6 +20,7 @@ import {
   deletePreferences,
   deleteSavedMarketArtifact,
   discoverPersonalized,
+  discoverPersonalizedFromCareerIdentity,
   explainAlert,
   explainComparison,
   explainCompany,
@@ -82,8 +83,11 @@ import {
   type ProtectedRequestOptions,
 } from "./api";
 import { useFrontendAuth, type FrontendAuthContextValue } from "./auth";
+import {
+  canonicalRegionIdForToken,
+  geographicRouteToken,
+} from "./geography";
 import { isPublicDemoBlockedProduct } from "./demoMode";
-import PolicyIntelligencePage from "./PolicyIntelligencePage";
 import {
   coverageComponentEntries,
   coverageDescription,
@@ -107,7 +111,6 @@ import {
   ImportedMarketCoveragePanel,
 } from "./ImportedMarketDisplay";
 import { ImportedMarketOperationsPanel } from "./ImportedMarketOperations";
-import { MarketIntelligencePage } from "./MarketIntelligencePage";
 import { formatCountStatus } from "./importedMarketFormat";
 import type {
   ApiEnvelope,
@@ -260,8 +263,12 @@ import {
   ROLE_TARGETS,
   accountUrl,
   careerAgentUrl,
+  careerIdentityUrl,
   companyGeographyUrl,
   compareMarketsUrl,
+  currentOpportunityOperationsUrl,
+  currentOpportunitiesUrl,
+  decisionsUrl,
   exploreUrl,
   institutionAdvisorUrl,
   institutionDataRequestsUrl,
@@ -308,10 +315,17 @@ import {
   type PublicSeoLink,
   type PublicSeoPage,
 } from "./publicSeoContent";
-import OpportunityRoutesPage from "./OpportunityRoutesPage";
-import CareerAgentPage from "./CareerAgentPage";
-import DataStandardsPage from "./DataStandardsPage";
-import UserIntelligenceDashboardPage from "./UserIntelligenceDashboardPage";
+const PolicyIntelligencePage = lazy(() => import("./PolicyIntelligencePage"));
+const MarketIntelligencePage = lazy(() =>
+  import("./MarketIntelligencePage").then((module) => ({ default: module.MarketIntelligencePage })),
+);
+const CareerIdentityPage = lazy(() => import("./CareerIdentityPage"));
+const DecisionWorkspacePage = lazy(() => import("./DecisionWorkspacePage"));
+const OpportunityRoutesPage = lazy(() => import("./OpportunityRoutesPage"));
+const CurrentOpportunitiesPage = lazy(() => import("./CurrentOpportunitiesPage"));
+const CareerAgentPage = lazy(() => import("./CareerAgentPage"));
+const DataStandardsPage = lazy(() => import("./DataStandardsPage"));
+const UserIntelligenceDashboardPage = lazy(() => import("./UserIntelligenceDashboardPage"));
 
 const SCORE_FIELDS: Array<{ key: keyof RegionScores; label: string; short: string }> = [
   {
@@ -338,7 +352,7 @@ const SCORE_FIELDS: Array<{ key: keyof RegionScores; label: string; short: strin
     short: "Early career",
   },
 ];
-const DEFAULT_FORECAST_REGION_IDS = ["greater_boston", "greater_atlanta", "greater_sf", "greater_austin"];
+const DEFAULT_FORECAST_REGION_IDS = ["greater_boston", "atlanta", "sf_bay_area", "austin"];
 const SCORING_WEIGHT_FIELDS: Array<{ key: keyof ScoringWeights; label: string }> = [
   { key: "entry_level_access", label: "Entry-level access" },
   { key: "hiring_density", label: "Hiring density" },
@@ -447,7 +461,7 @@ const ADVISOR_COMPARISON_OPTIONS: Array<{
 ];
 
 const DEFAULT_ADVISOR_FORM_STATE: AdvisorFormState = {
-  regions: "greater_boston, greater_sf",
+  regions: "greater_boston, sf_bay_area",
   roleContext: "software engineering",
   industryContext: "software",
   careerStage: "entry_level",
@@ -561,9 +575,12 @@ const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
   { id: "company", label: "Company Geography", kicker: "Presence and hiring" },
   { id: "compare", label: "Compare Markets", kicker: "Score comparison" },
   { id: "discovery", label: "Personalized Discovery", kicker: "Personal overlay" },
+  { id: "career-identity", label: "Career Identity", kicker: "Profile source" },
+  { id: "decisions", label: "Decisions", kicker: "Decision workspace" },
   { id: "recommendations", label: "Recommendations", kicker: "Decision support" },
   { id: "career-agent", label: "Career Agent", kicker: "Grounded answers" },
   { id: "opportunity-routes", label: "Opportunity Routes", kicker: "Route guidance" },
+  { id: "current-opportunities", label: "Current Opportunities", kicker: "Strategic openings" },
   { id: "policy", label: "Policy", kicker: "Workforce intel" },
   { id: "plans", label: "Plans", kicker: "Access model" },
   { id: "institution", label: "Institution", kicker: "Cohort dashboard" },
@@ -652,7 +669,7 @@ function getFallbackComparisonRegion(regions: RegionListItem[], regionA: string)
 }
 
 function isKnownRegion(regionId: string, regions: RegionListItem[], loaded: boolean): boolean {
-  return !loaded || regions.some((region) => region.region_id === regionId);
+  return !loaded || Boolean(canonicalRegionIdForToken(regionId, regions));
 }
 
 function getNavigationUrl(
@@ -669,9 +686,13 @@ function getNavigationUrl(
   if (page === "company") return companyGeographyUrl(selectedCompanyId);
   if (page === "compare") return compareMarketsUrl(comparisonA, comparisonB);
   if (page === "discovery") return personalizedDiscoveryUrl(discoveryFilters);
+  if (page === "career-identity") return careerIdentityUrl();
+  if (page === "decisions") return decisionsUrl();
   if (page === "recommendations") return recommendationsUrl();
   if (page === "career-agent") return careerAgentUrl();
   if (page === "opportunity-routes") return opportunityRoutesUrl();
+  if (page === "current-opportunities") return currentOpportunitiesUrl();
+  if (page === "current-opportunity-operations") return currentOpportunityOperationsUrl();
   if (page === "policy") return policyLandingUrl();
   if (page === "plans") return plansUrl();
   if (page === "institution") return institutionDashboardUrl();
@@ -3569,59 +3590,73 @@ function PublicRouteView({
   const activePage = route.page as PublicPage;
   return (
     <PublicShell activePage={activePage} onNavigate={onNavigate}>
-      {activePage === "landing" ? (
-        <LandingPage onNavigate={onNavigate} unknownPath={route.unknownPath} />
-      ) : activePage === "developers" ? (
-        <DevelopersPage onNavigate={onNavigate} />
-      ) : activePage === "data-licensing" ? (
-        <DataLicensingPage />
-      ) : activePage === "data-standards" ? (
-        <DataStandardsPage />
-      ) : isDeveloperDocPage(activePage) ? (
-        <DeveloperDocsPage page={activePage} onNavigate={onNavigate} />
-      ) : activePage === "guides" ? (
-        route.seoPageSlug ? (
-          <PublicSeoDetailPage
-            onNavigate={onNavigate}
-            page={getPublicSeoPageBySlug(route.seoPageSlug)}
-            slug={route.seoPageSlug}
-          />
+      <LazyRoute>
+        {activePage === "landing" ? (
+          <LandingPage onNavigate={onNavigate} unknownPath={route.unknownPath} />
+        ) : activePage === "developers" ? (
+          <DevelopersPage onNavigate={onNavigate} />
+        ) : activePage === "data-licensing" ? (
+          <DataLicensingPage />
+        ) : activePage === "data-standards" ? (
+          <DataStandardsPage />
+        ) : isDeveloperDocPage(activePage) ? (
+          <DeveloperDocsPage page={activePage} onNavigate={onNavigate} />
+        ) : activePage === "guides" ? (
+          route.seoPageSlug ? (
+            <PublicSeoDetailPage
+              onNavigate={onNavigate}
+              page={getPublicSeoPageBySlug(route.seoPageSlug)}
+              slug={route.seoPageSlug}
+            />
+          ) : (
+            <PublicSeoListingPage onNavigate={onNavigate} />
+          )
+        ) : activePage === "benchmarks" ? (
+          route.benchmarkSlug ? (
+            <PublicBenchmarkDetailPage
+              detailState={publicBenchmarkDetailState}
+              onNavigate={onNavigate}
+              slug={route.benchmarkSlug}
+            />
+          ) : (
+            <PublicBenchmarksPage
+              benchmarksState={publicBenchmarkListState}
+              onNavigate={onNavigate}
+            />
+          )
+        ) : activePage === "reports" ? (
+          route.reportSlug ? (
+            <PublicReportDetailPage
+              detailState={publicReportDetailState}
+              onNavigate={onNavigate}
+              slug={route.reportSlug}
+            />
+          ) : (
+            <PublicReportsPage
+              onNavigate={onNavigate}
+              reportsState={publicReportListState}
+            />
+          )
+        ) : activePage === "forecasts" ? (
+          <PredictiveReportsPage reportState={predictiveReportState} />
         ) : (
-          <PublicSeoListingPage onNavigate={onNavigate} />
-        )
-      ) : activePage === "benchmarks" ? (
-        route.benchmarkSlug ? (
-          <PublicBenchmarkDetailPage
-            detailState={publicBenchmarkDetailState}
-            onNavigate={onNavigate}
-            slug={route.benchmarkSlug}
-          />
-        ) : (
-          <PublicBenchmarksPage
-            benchmarksState={publicBenchmarkListState}
-            onNavigate={onNavigate}
-          />
-        )
-      ) : activePage === "reports" ? (
-        route.reportSlug ? (
-          <PublicReportDetailPage
-            detailState={publicReportDetailState}
-            onNavigate={onNavigate}
-            slug={route.reportSlug}
-          />
-        ) : (
-          <PublicReportsPage
-            onNavigate={onNavigate}
-            reportsState={publicReportListState}
-          />
-        )
-      ) : activePage === "forecasts" ? (
-        <PredictiveReportsPage reportState={predictiveReportState} />
-      ) : (
-        <LegalPage page={activePage as LegalPublicPage} />
-      )}
+          <LegalPage page={activePage as LegalPublicPage} />
+        )}
+      </LazyRoute>
     </PublicShell>
   );
+}
+
+function RouteLoadingFallback() {
+  return (
+    <div className="route-loading-state" role="status" aria-live="polite">
+      Loading workspace
+    </div>
+  );
+}
+
+function LazyRoute({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<RouteLoadingFallback />}>{children}</Suspense>;
 }
 
 function isDeveloperDocPage(page: PublicPage): page is DeveloperDocPageKey {
@@ -4230,7 +4265,7 @@ function AccountView({
             Preferred regions
             <input
               onChange={(event) => onPreferenceDraft({ ...preferenceDraft, preferredRegions: event.target.value })}
-              placeholder="greater_boston, greater_sf"
+              placeholder="greater_boston, sf_bay_area"
               value={preferenceDraft.preferredRegions}
             />
           </label>
@@ -10325,8 +10360,20 @@ function App() {
   const hasLoadedRegionList = Boolean(regions.envelope?.data?.regions);
   const companyOptions = getCompanyOptions(regionDetails);
   const defaultRegionId = getDefaultRegionId(regionList);
-  const selectedRegionId = route.regionId ?? defaultRegionId;
-  const selectedRegionIsKnown = isKnownRegion(selectedRegionId, regionList, hasLoadedRegionList);
+  const selectedRouteRegionToken = route.regionId;
+  const selectedRegionId = selectedRouteRegionToken
+    ? canonicalRegionIdForToken(selectedRouteRegionToken, regionList)
+      ?? regionDetails[selectedRouteRegionToken]?.data?.region_id
+      ?? selectedRouteRegionToken
+    : defaultRegionId;
+  const selectedRegionIdentity = regionList.find(
+    (region) => region.region_id === selectedRegionId,
+  );
+  const selectedRegionRouteToken = geographicRouteToken(
+    selectedRegionIdentity ?? selectedRegionId,
+  );
+  const selectedRegionIsKnown = isKnownRegion(selectedRegionId, regionList, hasLoadedRegionList)
+    || (route.page === "region" && Boolean(selectedRouteRegionToken));
   const selectedCompanyId = route.companyId ?? companyOptions[0]?.company_id ?? "";
   const comparisonA = route.comparison.regionA || defaultRegionId;
   const comparisonB = route.comparison.regionB || getFallbackComparisonRegion(regionList, comparisonA);
@@ -10757,7 +10804,14 @@ function App() {
     setRegionErrors((current) => ({ ...current, [regionId]: "" }));
     try {
       const envelope = await getRegion(regionId);
-      setRegionDetails((current) => ({ ...current, [regionId]: envelope }));
+      const canonicalRegionId = envelope.data?.region_id;
+      const publicSlug = envelope.data?.public_slug;
+      setRegionDetails((current) => ({
+        ...current,
+        [regionId]: envelope,
+        ...(canonicalRegionId ? { [canonicalRegionId]: envelope } : {}),
+        ...(publicSlug ? { [publicSlug]: envelope } : {}),
+      }));
     } catch (error) {
       setRegionErrors((current) => ({
         ...current,
@@ -11550,9 +11604,19 @@ function App() {
 
   useEffect(() => {
     if (route.page === "region" && !route.regionId && selectedRegionId) {
-      navigateTo(regionDetailUrl(selectedRegionId), { replace: true });
+      navigateTo(regionDetailUrl(selectedRegionRouteToken), { replace: true });
     }
-  }, [navigateTo, route.page, route.regionId, selectedRegionId]);
+  }, [navigateTo, route.page, route.regionId, selectedRegionId, selectedRegionRouteToken]);
+
+  useEffect(() => {
+    if (route.page !== "region" || !route.regionId) return;
+    const resolved = regionDetails[route.regionId]?.data;
+    if (!resolved) return;
+    const canonicalToken = geographicRouteToken(resolved);
+    if (canonicalToken && canonicalToken !== route.regionId) {
+      navigateTo(regionDetailUrl(canonicalToken), { replace: true });
+    }
+  }, [navigateTo, regionDetails, route.page, route.regionId]);
 
   useEffect(() => {
     if (route.page === "company" && !route.companyId && selectedCompanyId) {
@@ -11682,7 +11746,8 @@ function App() {
   }
 
   function selectRegion(regionId: string) {
-    navigateTo(regionDetailUrl(regionId));
+    const identity = regionList.find((region) => region.region_id === regionId);
+    navigateTo(regionDetailUrl(identity ?? regionId));
   }
 
   function selectCompany(companyId: string) {
@@ -12134,7 +12199,7 @@ function App() {
     const requestKey = discoveryRequestKey.current;
     setDiscoveryState((current) => ({ ...current, loading: true, error: null }));
     try {
-      const envelope = await discoverPersonalized({
+      const request = {
         region_ids: discoveryFilters.selectedRegions,
         role_targets: discoveryFilters.roleTargets,
         industry_preferences: discoveryFilters.industries,
@@ -12142,7 +12207,10 @@ function App() {
         prestige_preference: discoveryFilters.prestigePreference,
         brand_preference: discoveryFilters.brandPreference,
         limit: discoveryFilters.limit,
-      });
+      };
+      const envelope = auth.isAuthenticated && !accountDeactivated
+        ? await discoverPersonalizedFromCareerIdentity(request, protectedOptions)
+        : await discoverPersonalized(request);
       if (requestKey === discoveryRequestKey.current) {
         setDiscoveryState({ loading: false, envelope, error: null });
       }
@@ -12613,7 +12681,8 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <aside className="sidebar">
         <div className="brand-block">
           <span className="brand-mark">JM</span>
@@ -12626,7 +12695,7 @@ function App() {
           {visibleNavItems.map((item) => {
             const url = getNavigationUrl(
               item.id,
-              selectedRegionId,
+              selectedRegionRouteToken,
               selectedCompanyId,
               comparisonA,
               comparisonB,
@@ -12653,7 +12722,7 @@ function App() {
         </div>
       </aside>
 
-      <section className="content-shell">
+      <main className="content-shell" id="main-content">
         <header className="topbar">
           <div>
             <p className="eyebrow">Prepared market truth · derived outputs · personal overlays</p>
@@ -12679,13 +12748,14 @@ function App() {
           <ErrorState message={accountAction.error} />
         ) : null}
 
+        <LazyRoute>
         {route.page === "explore" ? (
           <ExploreMarkets
             health={health}
             marketCoverage={marketCoverageState}
             marketOperations={marketOperationsState}
             onOpenCompare={() => navigateTo(compareMarketsUrl(comparisonA, comparisonB))}
-            onOpenRegionDetail={() => navigateTo(regionDetailUrl(selectedRegionId))}
+            onOpenRegionDetail={() => navigateTo(regionDetailUrl(selectedRegionRouteToken))}
             onSelectRegion={selectRegion}
             regionDetails={regionDetails}
             regionSearch={regionSearchState}
@@ -12826,6 +12896,20 @@ function App() {
           />
         ) : null}
 
+        {route.page === "career-identity" ? (
+          <CareerIdentityPage
+            auth={auth}
+            defaultRegionIds={regionList.map((region) => region.region_id)}
+          />
+        ) : null}
+
+        {route.page === "decisions" ? (
+          <DecisionWorkspacePage
+            auth={auth}
+            onOpenCareerIdentity={() => navigateTo(careerIdentityUrl())}
+          />
+        ) : null}
+
         {route.page === "recommendations" ? (
           <RecommendationsView
             accessPreviewStates={monetizationAccessPreviewStates}
@@ -12851,6 +12935,22 @@ function App() {
 
         {route.page === "opportunity-routes" ? (
           <OpportunityRoutesPage />
+        ) : null}
+
+        {route.page === "current-opportunities" ? (
+          <CurrentOpportunitiesPage
+            auth={auth}
+            onNavigate={navigateTo}
+            opportunityId={route.opportunityId}
+          />
+        ) : null}
+
+        {route.page === "current-opportunity-operations" ? (
+          <CurrentOpportunitiesPage
+            auth={auth}
+            operations
+            onNavigate={navigateTo}
+          />
         ) : null}
 
         {route.page === "policy" ? (
@@ -13080,10 +13180,11 @@ function App() {
             snapshotsState={snapshotsState}
           />
         ) : null}
+        </LazyRoute>
 
         <PublicFooter activePage={null} onNavigate={handleRouteLink} />
-      </section>
-    </main>
+      </main>
+    </div>
   );
 }
 

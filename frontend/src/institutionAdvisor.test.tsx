@@ -194,7 +194,7 @@ describe("institutional advisor tools UI", () => {
     });
     const body = JSON.parse(String((advisorCall?.[1] as RequestInit).body));
     expect(body).toEqual({
-      regions: ["greater_boston", "greater_sf"],
+      regions: ["greater_boston", "sf_bay_area"],
       role_context: "software engineering",
       industry_context: "software",
       career_stage: "entry_level",

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from backend.api.dependencies import get_session
+from backend.api.dependencies import CurrentUser, get_current_user, get_session
 from backend.api.envelope import (
     NOT_FOUND,
     error_envelope,
@@ -22,6 +22,10 @@ from backend.api.monetization_access import (
     blocked_entitlement_response,
     optional_current_user,
 )
+from backend.career_identity.personalization import (
+    build_personalization_from_career_identity,
+)
+from backend.career_identity.repository import CareerIdentityRepository
 from backend.geography.repository import RegionRepository
 from backend.monetization.enforcement import (
     evaluate_account_access,
@@ -99,4 +103,66 @@ def discover_personalized(
         envelope["metadata"]["monetization_access"] = usage_decision.model_dump(
             mode="json"
         )
+    return envelope
+
+
+@router.post("/me/discover/personalized")
+def discover_personalized_from_career_identity(
+    prefs: UserPreferences,
+    current: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Authenticated discovery using Career Identity as Layer-35 authority."""
+
+    repo = MonetizationRepository(session)
+    repo.ensure_account_for_user(user_id=current.user.user_id)
+    access = evaluate_account_access(
+        repo,
+        user_id=current.user.user_id,
+        feature_key=MonetizationFeatureKey.LIMITED_PERSONALIZED_DISCOVERY,
+        create_usage_counter=True,
+    )
+    if not access.allowed:
+        return blocked_entitlement_response(access)
+
+    region_repo = RegionRepository(session)
+    adapted = build_personalization_from_career_identity(
+        current_user_id=current.user.user_id,
+        base_preferences=prefs,
+        career_identity_repo=CareerIdentityRepository(session),
+        region_repo=region_repo,
+    )
+    service = PersonalizationService(
+        session=session,
+        region_repo=region_repo,
+        score_repo=RegionScoreRepository(session),
+    )
+    try:
+        result = service.discover(adapted.preferences)
+    except MissingRegionForPersonalization as e:
+        return JSONResponse(
+            status_code=404,
+            content=error_envelope(
+                code=NOT_FOUND, message=f"Region not found: {e!s}"
+            ),
+        )
+    except InvalidPreferenceInput as e:
+        from backend.api.envelope import VALIDATION_ERROR
+
+        return JSONResponse(
+            status_code=400,
+            content=error_envelope(code=VALIDATION_ERROR, message=str(e)),
+        )
+
+    envelope = lightweight_success_envelope(
+        data=result.personalized.model_dump(mode="json"),
+    )
+    envelope["metadata"]["warnings"] = list(result.warnings)
+    envelope["metadata"]["career_identity_personalization"] = adapted.metadata
+    usage_decision = increment_feature_usage(
+        repo,
+        user_id=current.user.user_id,
+        feature_key=MonetizationFeatureKey.LIMITED_PERSONALIZED_DISCOVERY,
+    )
+    envelope["metadata"]["monetization_access"] = usage_decision.model_dump(mode="json")
     return envelope

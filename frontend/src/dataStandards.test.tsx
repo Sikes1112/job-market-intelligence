@@ -203,7 +203,7 @@ describe("Layer 27 data standards page", () => {
 
     expect(await screen.findByRole("heading", { name: "Data standards and partner governance" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Standard Definitions" })).toBeTruthy();
-    expect(screen.getByText("entry-level role")).toBeTruthy();
+    expect(await screen.findByText("entry-level role")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Partner Submission Format" })).toBeTruthy();
     expect(screen.getByText("partner_submission_v1")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Verified Partner Network" })).toBeTruthy();
