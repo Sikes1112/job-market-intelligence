@@ -12,6 +12,10 @@ class EntryLevelRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    @property
+    def session(self) -> Session:
+        return self._session
+
     def get(self, entry_level_id: str) -> CompanyRegionEntryLevel | None:
         return self._session.get(CompanyRegionEntryLevel, entry_level_id)
 

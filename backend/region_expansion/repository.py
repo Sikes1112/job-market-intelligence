@@ -12,6 +12,10 @@ class RegionExpansionRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    @property
+    def session(self) -> Session:
+        return self._session
+
     def add(self, row: RegionExpansionWorkflow) -> None:
         self._session.add(row)
 
@@ -35,4 +39,3 @@ class RegionExpansionRepository:
 
     def flush(self) -> None:
         self._session.flush()
-

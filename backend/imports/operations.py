@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.companies.models import Company
@@ -266,17 +267,210 @@ def build_all_market_operational_snapshots(
         registry = load_market_registry(registry_path)
     except MarketRegistryError as exc:
         raise CuratedMarketRegistryUnavailable("curated market registry is invalid") from exc
-    return tuple(
-        build_market_operational_snapshot(
-            session,
-            market_key,
+    entries = tuple(
+        entry for _market_key, entry in sorted(registry.items()) if entry.import_status == "ready"
+    )
+    if not entries:
+        return ()
+
+    reference_date = _coerce_date(as_of)
+    region_ids = tuple(sorted({entry.region_id for entry in entries}))
+    regions_by_id = {
+        row.region_id: row
+        for row in session.execute(
+            select(Region).where(Region.region_id.in_(region_ids)).order_by(Region.region_id)
+        ).scalars()
+    }
+    presence_by_region = _rows_by_region(
+        session.execute(
+            select(CompanyRegionPresence)
+            .where(CompanyRegionPresence.region_id.in_(region_ids))
+            .order_by(
+                CompanyRegionPresence.region_id,
+                CompanyRegionPresence.company_id,
+                CompanyRegionPresence.presence_id,
+            )
+        ).scalars()
+    )
+    hiring_by_region = _rows_by_region(
+        session.execute(
+            select(CompanyRegionHiring)
+            .where(CompanyRegionHiring.region_id.in_(region_ids))
+            .order_by(
+                CompanyRegionHiring.region_id,
+                CompanyRegionHiring.company_id,
+                CompanyRegionHiring.hiring_id,
+            )
+        ).scalars()
+    )
+    entry_by_region = _rows_by_region(
+        session.execute(
+            select(CompanyRegionEntryLevel)
+            .where(CompanyRegionEntryLevel.region_id.in_(region_ids))
+            .order_by(
+                CompanyRegionEntryLevel.region_id,
+                CompanyRegionEntryLevel.company_id,
+                CompanyRegionEntryLevel.entry_level_id,
+            )
+        ).scalars()
+    )
+    company_ids = sorted(
+        {
+            row.company_id
+            for grouped in (presence_by_region, hiring_by_region, entry_by_region)
+            for rows in grouped.values()
+            for row in rows
+        }
+    )
+    companies_by_id = {
+        row.company_id: row
+        for row in session.execute(
+            select(Company)
+            .where(Company.company_id.in_(company_ids))
+            .order_by(Company.company_id)
+        ).scalars()
+    }
+
+    components: dict[str, tuple[Any, ...]] = {}
+    fact_refs_by_market: dict[str, tuple[tuple[str, str], ...]] = {}
+    for entry in entries:
+        presence = presence_by_region.get(entry.region_id, ())
+        hiring = hiring_by_region.get(entry.region_id, ())
+        entry_level = entry_by_region.get(entry.region_id, ())
+        market_company_ids = sorted(
+            {
+                *(row.company_id for row in presence),
+                *(row.company_id for row in hiring),
+                *(row.company_id for row in entry_level),
+            }
+        )
+        companies = tuple(
+            companies_by_id[company_id]
+            for company_id in market_company_ids
+            if company_id in companies_by_id
+        )
+        components[entry.market_key] = (companies, presence, hiring, entry_level)
+        fact_refs_by_market[entry.market_key] = _fact_refs(
+            entry.region_id,
+            companies,
+            presence,
+            hiring,
+            entry_level,
+        )
+
+    all_fact_refs = tuple(
+        sorted({fact_ref for refs in fact_refs_by_market.values() for fact_ref in refs})
+    )
+    all_links = _all_fact_links_by_fact(session, all_fact_refs)
+    ranking_eligible = _ranking_eligible_by_fact(session, all_fact_refs)
+    routing = _latest_routing_decisions(session, all_fact_refs)
+    source_prefixes = tuple(f"src_{entry.market_key}_%" for entry in entries)
+    source_rows = session.execute(
+        select(SourceRef)
+        .where(or_(*(SourceRef.source_id.like(prefix) for prefix in source_prefixes)))
+        .order_by(SourceRef.source_id)
+    ).scalars()
+    all_sources_by_id = {row.source_id: row for row in source_rows}
+
+    snapshots: list[MarketOperationalSnapshot] = []
+    for entry in entries:
+        validation = validate_curated_market_dataset(
+            entry.market_key,
             registry_path=registry_path,
-            as_of=as_of,
+            as_of=reference_date,
             stale_after_days=stale_after_days,
         )
-        for market_key, entry in sorted(registry.items())
-        if entry.import_status == "ready"
-    )
+        dataset = _safe_load_dataset(entry.dataset_path)
+        source_file_rows = (
+            dict(sorted(dataset.source_refs.items())) if dataset is not None else {}
+        )
+        proposed_fact_source_ids = (
+            _proposed_fact_source_ids(dataset) if dataset is not None else {}
+        )
+        companies, presence, hiring, entry_level = components[entry.market_key]
+        prefix = f"src_{entry.market_key}_"
+        market_links = {
+            fact_ref: tuple(
+                link for link in all_links.get(fact_ref, ()) if link.source_id.startswith(prefix)
+            )
+            for fact_ref in fact_refs_by_market[entry.market_key]
+        }
+        market_sources = {
+            source_id: row
+            for source_id, row in all_sources_by_id.items()
+            if source_id.startswith(prefix)
+        }
+        source_link_refs = _source_fact_refs(market_links)
+        sources = _source_snapshots(
+            source_rows_by_id=market_sources,
+            source_file_rows=source_file_rows,
+            fact_refs_by_source=source_link_refs,
+            as_of=reference_date,
+            stale_after_days=stale_after_days,
+        )
+        facts = _fact_snapshots(
+            region=regions_by_id.get(entry.region_id),
+            companies=companies,
+            presence=presence,
+            hiring=hiring,
+            entry_level=entry_level,
+            links_by_fact=market_links,
+            ranking_eligible=ranking_eligible,
+            routing=routing,
+        )
+        snapshots.append(
+            MarketOperationalSnapshot(
+                market_key=entry.market_key,
+                region_id=entry.region_id,
+                display_name=entry.display_name,
+                registry_entry=entry,
+                validation=validation,
+                validation_issues=_public_validation_issues(validation),
+                missing_required_files=_missing_required_files(validation),
+                region=regions_by_id.get(entry.region_id),
+                companies=companies,
+                presence_facts=presence,
+                hiring_facts=hiring,
+                entry_level_facts=entry_level,
+                sources=sources,
+                facts=facts,
+                source_rows=source_file_rows,
+                proposed_fact_source_ids=proposed_fact_source_ids,
+            )
+        )
+    return tuple(snapshots)
+
+
+def _rows_by_region(rows: Any) -> dict[str, tuple[Any, ...]]:
+    grouped: dict[str, list[Any]] = defaultdict(list)
+    for row in rows:
+        grouped[row.region_id].append(row)
+    return {region_id: tuple(values) for region_id, values in grouped.items()}
+
+
+def _all_fact_links_by_fact(
+    session: Session,
+    fact_refs: tuple[tuple[str, str], ...],
+) -> dict[tuple[str, str], tuple[FactSourceLink, ...]]:
+    grouped: dict[str, set[str]] = {}
+    for fact_type, fact_id in fact_refs:
+        grouped.setdefault(fact_type, set()).add(fact_id)
+    result: dict[tuple[str, str], list[FactSourceLink]] = defaultdict(list)
+    for fact_type, fact_ids in sorted(grouped.items()):
+        rows = session.execute(
+            select(FactSourceLink)
+            .where(FactSourceLink.fact_type == fact_type)
+            .where(FactSourceLink.fact_id.in_(sorted(fact_ids)))
+            .order_by(
+                FactSourceLink.fact_type,
+                FactSourceLink.fact_id,
+                FactSourceLink.source_id,
+                FactSourceLink.link_id,
+            )
+        ).scalars()
+        for row in rows:
+            result[(row.fact_type, row.fact_id)].append(row)
+    return {key: tuple(values) for key, values in result.items()}
 
 
 def _resolve_entry(

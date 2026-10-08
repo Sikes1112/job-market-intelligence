@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import select, text
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.schema import CreateTable
 
 from backend.career_identity.models import CareerIdentityFact
 from backend.career_identity.personalization import (
@@ -26,12 +29,18 @@ from backend.geography.exceptions import (
     GeographicInputUnknown,
     PublishedSlugImmutable,
 )
-from backend.geography.models import Region, RegionStateMembership
+from backend.geography.models import (
+    Region,
+    RegionCanonicalRedirect,
+    RegionIdentityClaim,
+    RegionStateMembership,
+)
 from backend.geography.repository import RegionRepository
 from backend.geography.resolver import GeographicResolver, normalize_geographic_input
 from backend.geography.service import GeographyService, RegionDefinition
+from backend.imports.service import import_curated_market_dataset
 from backend.personalization.payloads import UserPreferences
-from backend.shared.db import make_engine
+from backend.shared.db import make_engine, make_session_factory
 from backend.shared.migrations import upgrade_database
 from backend.users.models import SavedMarketArtifact, User
 from backend.users.repository import UserRepository
@@ -40,6 +49,7 @@ from backend.users.service import (
     UserPersonalizationPersistenceService,
     UserPreferenceProfileInput,
 )
+from seeds import mvp_seed
 
 
 def _seed_curated_regions(session) -> RegionRepository:  # noqa: ANN001
@@ -213,6 +223,52 @@ def test_region_id_slug_and_alias_share_one_conflict_safe_namespace(session) -> 
     )
     assert redundant.region_id == "bar"
     assert GeographicResolver(repository).resolve("bar-public").region_id == "bar"
+
+
+def test_identity_claim_primary_key_is_database_enforced_and_postgresql_atomic(
+    session,
+) -> None:
+    session.add_all(
+        [
+            Region(
+                region_id="claim_a",
+                region_name="Claim A",
+                display_name="Claim A",
+                region_type="city",
+            ),
+            Region(
+                region_id="claim_b",
+                region_name="Claim B",
+                display_name="Claim B",
+                region_type="city",
+            ),
+        ]
+    )
+    session.flush()
+    session.add_all(
+        [
+            RegionIdentityClaim(
+                normalized_token="shared token",
+                region_id="claim_a",
+                claim_type="alias",
+            ),
+            RegionIdentityClaim(
+                normalized_token="shared token",
+                region_id="claim_b",
+                claim_type="public_slug",
+            ),
+        ]
+    )
+    with pytest.raises(IntegrityError):
+        session.flush()
+    session.rollback()
+
+    ddl = str(
+        CreateTable(RegionIdentityClaim.__table__).compile(
+            dialect=postgresql.dialect()
+        )
+    )
+    assert "PRIMARY KEY (normalized_token)" in ddl
 
 
 def test_public_slug_normalization_immutability_and_future_city_conflict(session) -> None:
@@ -528,4 +584,81 @@ def test_0041_rejects_preexisting_cross_namespace_identity_conflict(tmp_path) ->
             }
         assert "public_slug" not in columns
     finally:
+        engine.dispose()
+
+
+def test_0042_converges_legacy_demo_sf_without_rewriting_historical_region_fk(
+    tmp_path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'legacy-sf-convergence.db'}"
+    upgrade_database(database_url, revision="0040_product_measurement_beta_ops")
+    engine = make_engine(database_url)
+    now = datetime.now(UTC)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO regions "
+                    "(region_id, region_name, display_name, region_type, parent_region_id, "
+                    "labor_market_group, normalization_profile_id, state, version, created_at, "
+                    "updated_at) VALUES "
+                    "('greater_boston', 'greater_boston', 'Greater Boston', 'greater_region', "
+                    "NULL, NULL, NULL, 'fresh', 1, :now, :now), "
+                    "('greater_sf', 'greater_sf', 'Greater San Francisco', 'greater_region', "
+                    "NULL, NULL, NULL, 'fresh', 1, :now, :now), "
+                    "('legacy_sf_child', 'Legacy SF child', 'Legacy SF child', 'city', "
+                    "'greater_sf', NULL, NULL, 'fresh', 1, :now, :now)"
+                ),
+                {"now": now},
+            )
+    finally:
+        engine.dispose()
+
+    upgrade_database(database_url)
+    engine = make_engine(database_url)
+    factory = make_session_factory(engine)
+    session = factory()
+    try:
+        repository = RegionRepository(session)
+        redirect = session.get(RegionCanonicalRedirect, "greater_sf")
+        assert redirect is not None
+        assert redirect.canonical_region_id == "sf_bay_area"
+        assert session.get(Region, "greater_sf") is not None
+        assert session.get(Region, "legacy_sf_child").parent_region_id == "greater_sf"
+        assert [row.region_id for row in repository.list()] == [
+            "greater_boston",
+            "legacy_sf_child",
+            "sf_bay_area",
+        ]
+
+        resolver = GeographicResolver(repository)
+        for token in (
+            "greater_sf",
+            "sf_bay_area",
+            "san_francisco_bay_area",
+            "San Francisco",
+            "san-francisco-bay-area",
+        ):
+            assert resolver.require(token).region_id == "sf_bay_area"
+
+        imported = import_curated_market_dataset(
+            session,
+            "san_francisco_bay_area",
+            as_of=date(2026, 7, 9),
+        )
+        assert imported.ok
+        session.flush()
+        assert session.query(Region).filter_by(region_id="sf_bay_area").count() == 1
+        assert [row.region_id for row in repository.list()].count("sf_bay_area") == 1
+        claim = session.get(RegionIdentityClaim, "greater sf")
+        assert claim is not None
+        assert claim.region_id == "sf_bay_area"
+        first_seed = mvp_seed.run_seed(session)
+        second_seed = mvp_seed.run_seed(session)
+        assert first_seed.regions.get("created", 0) == 0
+        assert second_seed.regions["unchanged"] == 2
+        assert session.query(Region).filter_by(region_id="greater_sf").count() == 1
+        assert [row.region_id for row in repository.list()].count("sf_bay_area") == 1
+    finally:
+        session.close()
         engine.dispose()

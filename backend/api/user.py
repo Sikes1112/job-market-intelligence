@@ -31,6 +31,7 @@ from backend.geography.exceptions import (
     GeographicInputUnknown,
 )
 from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.monetization.features import MonetizationFeatureKey
 from backend.monetization.repository import MonetizationRepository
 from backend.personalization.exceptions import MissingRegionForPersonalization
@@ -205,7 +206,7 @@ def create_saved_market_artifact(
         row = _service(session).save_market_artifact(current.user.user_id, artifact)
     except (GeographicInputUnknown, GeographicInputAmbiguous) as exc:
         return _validation_error(str(exc))
-    return lightweight_success_envelope(data=_saved_artifact_data(row))
+    return lightweight_success_envelope(data=_saved_artifact_data(row, session=session))
 
 
 @router.get("/saved-market-artifacts")
@@ -222,7 +223,11 @@ def list_saved_market_artifacts(
     except InvalidSavedMarketArtifactType as exc:
         return _validation_error(f"Invalid saved artifact type: {exc.artifact_type!r}")
     return lightweight_success_envelope(
-        data={"saved_market_artifacts": [_saved_artifact_data(row) for row in rows]}
+        data={
+            "saved_market_artifacts": [
+                _saved_artifact_data(row, session=session) for row in rows
+            ]
+        }
     )
 
 
@@ -239,7 +244,7 @@ def get_saved_market_artifact(
         )
     except (CrossUserAccessBlocked, SavedMarketArtifactNotFound):
         return _not_found("Saved market artifact not found.")
-    return lightweight_success_envelope(data=_saved_artifact_data(row))
+    return lightweight_success_envelope(data=_saved_artifact_data(row, session=session))
 
 
 @router.delete("/saved-market-artifacts/{saved_artifact_id}")
@@ -455,12 +460,29 @@ def _preference_data(view: UserPreferenceProfileView) -> dict[str, Any]:
     return view.model_dump(mode="json")
 
 
-def _saved_artifact_data(row: SavedMarketArtifact) -> dict[str, Any]:
+def _saved_artifact_data(row: SavedMarketArtifact, *, session: Session) -> dict[str, Any]:
+    artifact_ref = row.artifact_ref
+    original_artifact_ref = None
+    region_identity = None
+    if row.artifact_type == "region":
+        resolution = GeographicResolver(RegionRepository(session)).resolve(row.artifact_ref)
+        if resolution.resolved:
+            artifact_ref = resolution.region_id or row.artifact_ref
+            original_artifact_ref = (
+                row.artifact_ref if artifact_ref != row.artifact_ref else None
+            )
+            region_identity = {
+                "region_id": artifact_ref,
+                "public_slug": resolution.public_slug,
+                "display_name": resolution.display_name,
+            }
     return {
         "saved_artifact_id": row.saved_artifact_id,
         "user_id": row.user_id,
         "artifact_type": row.artifact_type,
-        "artifact_ref": row.artifact_ref,
+        "artifact_ref": artifact_ref,
+        "original_artifact_ref": original_artifact_ref,
+        "region_identity": region_identity,
         "label": row.label,
         "notes": row.notes,
         "snapshot": row.snapshot,

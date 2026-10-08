@@ -20,6 +20,7 @@ from backend.entry_level.repository import EntryLevelRepository
 from backend.entry_level.types import EntryLevelConfidence
 from backend.geography.catalog import apply_curated_geography, load_curated_geographies
 from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.geography.service import GeographyService, RegionDefinition
 from backend.geography.types import RegionType
 from backend.hiring.repository import HiringRepository
@@ -525,7 +526,9 @@ def _upsert_entry_level_fact(
     repo = EntryLevelRepository(session)
     hiring_repo = HiringRepository(session)
     company_id = row["company_id"]
-    region_id = row["region_id"]
+    resolution = GeographicResolver(RegionRepository(session)).require(row["region_id"])
+    assert resolution.region_id is not None
+    region_id = resolution.region_id
     if hiring_repo.get_by_pair(company_id, region_id) is None:
         raise ValueError(f"entry-level import requires hiring fact: {company_id}/{region_id}")
 

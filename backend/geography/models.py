@@ -114,6 +114,58 @@ class RegionAlias(Base):
     )
 
 
+class RegionCanonicalRedirect(Base):
+    """One-way compatibility redirect from a historical Region to its active Region.
+
+    The historical primary key remains valid for immutable foreign keys. New
+    resolution and durable writes use ``canonical_region_id``.
+    """
+
+    __tablename__ = "region_canonical_redirects"
+    __table_args__ = (
+        CheckConstraint(
+            "legacy_region_id <> canonical_region_id",
+            name="ck_region_canonical_redirects_distinct",
+        ),
+        Index("ix_region_canonical_redirects_canonical", "canonical_region_id"),
+    )
+
+    legacy_region_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("regions.region_id"), primary_key=True
+    )
+    canonical_region_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("regions.region_id"), nullable=False
+    )
+    reason: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class RegionIdentityClaim(Base):
+    """Atomic ownership of one normalized externally resolvable token."""
+
+    __tablename__ = "region_identity_claims"
+    __table_args__ = (
+        CheckConstraint(
+            "claim_type IN ('region_id', 'public_slug', 'alias', 'legacy', 'import_key')",
+            name="ck_region_identity_claims_type",
+        ),
+        Index("ix_region_identity_claims_region_id", "region_id"),
+        Index("ix_region_identity_claims_claim_type", "claim_type"),
+    )
+
+    normalized_token: Mapped[str] = mapped_column(String(255), primary_key=True)
+    region_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("regions.region_id"), nullable=False
+    )
+    claim_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
 class RegionStateMembership(Base):
     """Authoritative many-to-many membership between a Region and US states."""
 

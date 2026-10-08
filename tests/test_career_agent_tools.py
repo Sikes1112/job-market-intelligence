@@ -25,6 +25,22 @@ from backend.career_agent.schemas import (
 )
 from backend.career_agent.tools import CareerAgentToolService
 from backend.companies.models import Company
+from backend.current_opportunities.adapters import StaticOpportunityAdapter
+from backend.current_opportunities.repository import CurrentOpportunityRepository
+from backend.current_opportunities.schemas import (
+    AcquisitionMethod,
+    AllowedUseClassification,
+    CoverageStatus,
+    LicenseTermsClassification,
+    OpportunityCoverageInput,
+    OpportunityKind,
+    SourceRegistryInput,
+    SourceTrustClassification,
+)
+from backend.current_opportunities.schemas import (
+    OpportunitySourceType as CurrentOpportunitySourceType,
+)
+from backend.current_opportunities.service import CurrentOpportunityService
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
@@ -86,6 +102,7 @@ def _seed_region(
             region_name=region_id,
             display_name=display_name,
             region_type="metro",
+            market_support_status="supported",
         )
     )
     session.flush()
@@ -195,6 +212,79 @@ def _seed_opportunity(session: Session, *, paid_partner: bool = False) -> None:
             created_at=NOW,
         )
     )
+
+
+def _seed_current_opportunity(session: Session) -> str:
+    service = CurrentOpportunityService(CurrentOpportunityRepository(session))
+    service.upsert_source(
+        SourceRegistryInput(
+            source_id="src_tool_agent",
+            provider="Tool test employer",
+            display_name="Tool test careers feed",
+            source_type=CurrentOpportunitySourceType.API,
+            acquisition_method=AcquisitionMethod.API_PULL,
+            allowed_use=AllowedUseClassification.ALLOWED,
+            license_terms=LicenseTermsClassification.PERMISSIVE,
+            trust=SourceTrustClassification.HIGH,
+            supported_markets=("greater_boston",),
+            supported_opportunity_types=(OpportunityKind.JOB,),
+            ranking_use_allowed=True,
+            display_use_allowed=True,
+            provenance_requirements=("provider_record_id", "observed_at"),
+        )
+    )
+    service.upsert_coverage(
+        OpportunityCoverageInput(
+            coverage_id="cov_tool_agent",
+            market_key="greater_boston",
+            market_id="greater_boston",
+            market_label="Greater Boston",
+            role_family="software_engineering",
+            opportunity_type="job",
+            status=CoverageStatus.PRODUCTION_READY,
+            rationale="Authoritative test coverage.",
+            source_basis={"sources": ["src_tool_agent"]},
+            minimum_expected_sources=1,
+            freshness_max_age_hours=72,
+            last_evaluated_at=NOW,
+        )
+    )
+    service.refresh_source(
+        StaticOpportunityAdapter(
+            source_id="src_tool_agent",
+            records=(
+                {
+                    "provider_record_id": "opp_tool_agent",
+                    "observed_at": NOW,
+                    "collected_at": NOW,
+                    "raw_payload": {
+                        "provider_record_id": "opp_tool_agent",
+                        "company_name": "Greater Boston Systems",
+                        "title": "Grounded Internship",
+                        "role_family": "software_engineering",
+                        "seniority_level": "internship",
+                        "market_id": "greater_boston",
+                        "location": "Greater Boston hybrid",
+                        "work_arrangement": "hybrid",
+                        "employment_type": "internship",
+                        "opportunity_type": "job",
+                        "posting_date": "2026-06-30",
+                        "application_url": "https://example.com/apply/tool-agent",
+                        "source_url": "https://example.com/source/tool-agent",
+                        "skills": ["Python"],
+                        "requirements": ["Students and new graduates"],
+                    },
+                },
+            ),
+            collected_at=NOW,
+        ),
+        run_id="run_tool_agent",
+        idempotency_key="tool_agent",
+        now=NOW,
+    )
+    opportunities = service.list_opportunities(now=NOW)
+    assert len(opportunities) == 1
+    return opportunities[0].opportunity_id
 
 
 def _career_request(question_type: CareerAgentQuestionType = CareerAgentQuestionType.CITY_FIT):
@@ -398,6 +488,7 @@ def test_application_checklist_does_not_imply_submission_and_blocks_autonomous_a
     _seed_user(session, "user_tool_application")
     _seed_region(session)
     _seed_opportunity(session)
+    current_opportunity_id = _seed_current_opportunity(session)
     service = CareerAgentToolService(session)
 
     checklist = service.preview_tool(
@@ -405,7 +496,7 @@ def test_application_checklist_does_not_imply_submission_and_blocks_autonomous_a
         CareerAgentToolRequest(
             tool_type=CareerAgentToolType.APPLICATION_PREP_CHECKLIST,
             career_agent_request=_career_request(CareerAgentQuestionType.WHERE_SHOULD_I_APPLY),
-            target_opportunity_ids=("opp_tool_agent",),
+            target_opportunity_ids=(current_opportunity_id,),
         ),
         now=NOW,
     )
@@ -464,6 +555,7 @@ def test_paid_partner_influence_is_disclosed_without_internal_notes(session: Ses
     _seed_user(session, "user_tool_partner")
     _seed_region(session)
     _seed_opportunity(session, paid_partner=True)
+    _seed_current_opportunity(session)
 
     preview = CareerAgentToolService(session).preview_tool(
         "user_tool_partner",
@@ -475,7 +567,8 @@ def test_paid_partner_influence_is_disclosed_without_internal_notes(session: Ses
     )
 
     text = json.dumps(preview.model_dump(mode="json"))
-    assert "Paid partner status is disclosed" in text or "Paid/partner influence" in text
+    assert "layer_38_current_opportunities" in text
+    assert "Paid partner status is disclosed" not in text
     assert "Internal-only note" not in text
     assert "internal_review_notes" not in text
 

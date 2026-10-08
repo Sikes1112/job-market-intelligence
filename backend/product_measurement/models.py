@@ -27,6 +27,8 @@ def _utc_now() -> datetime:
 
 
 EVENT_TYPE_SQL = (
+    "'explore_context_evaluated', 'explore_fit_generated', "
+    "'explore_fit_abstained', 'explore_context_unsupported', "
     "'recommendation_generated', 'decision_considered', 'decision_saved', "
     "'recommendation_changed_decision', 'user_acted', 'action_succeeded', "
     "'outcome_recorded', 'reflection_recorded', 'strategy_changed', "
@@ -65,8 +67,7 @@ COMMERCIAL_OFFER_SQL = (
     "'premium_scenarios', 'university_advisor_access'"
 )
 COMMERCIAL_SIGNAL_SQL = (
-    "'exposed', 'interested', 'not_interested', 'learn_more', 'converted', "
-    "'activated', 'canceled'"
+    "'exposed', 'interested', 'not_interested', 'learn_more', 'converted', 'activated', 'canceled'"
 )
 
 
@@ -192,9 +193,7 @@ class BetaCohortMembership(Base, TimestampMixin):
 
     __tablename__ = "beta_cohort_memberships"
     __table_args__ = (
-        CheckConstraint(
-            f"status IN ({MEMBERSHIP_STATUS_SQL})", name="ck_beta_memberships_status"
-        ),
+        CheckConstraint(f"status IN ({MEMBERSHIP_STATUS_SQL})", name="ck_beta_memberships_status"),
         UniqueConstraint("user_id", "cohort_id", name="uq_beta_memberships_user_cohort"),
         Index("ix_beta_memberships_user_status", "user_id", "status"),
         Index("ix_beta_memberships_cohort_status", "cohort_id", "status"),

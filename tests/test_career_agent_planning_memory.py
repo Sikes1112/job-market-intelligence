@@ -84,6 +84,7 @@ def _seed_region(
             region_name=region_id,
             display_name=display_name,
             region_type="metro",
+            market_support_status="supported",
         )
     )
     session.flush()
@@ -264,7 +265,9 @@ def test_plan_validation_blocks_fabricated_opportunity_reference() -> None:
         validate_career_action_plan(plan)
 
 
-def test_forecast_and_stale_inputs_create_plan_warnings(session: Session) -> None:
+def test_action_plan_does_not_reintroduce_legacy_forecast_grounding(
+    session: Session,
+) -> None:
     _seed_region(
         session,
         region_id="greater_boston",
@@ -304,8 +307,8 @@ def test_forecast_and_stale_inputs_create_plan_warnings(session: Session) -> Non
     warning_text = " ".join(
         (*plan.warnings, *(warning for step in plan.steps for warning in step.warnings))
     )
-    assert "forecast" in warning_text.casefold()
-    assert "stale" in warning_text.casefold()
+    assert "forecast" not in warning_text.casefold()
+    assert "ranking evidence" in " ".join(plan.limitations).casefold()
     assert plan.risks
 
 
@@ -444,8 +447,10 @@ def test_rejected_markets_and_applied_roles_affect_plans_only_with_permission(
         for ref in step.evidence_refs
     }
 
-    assert "greater_atlanta" in evidence_entity_ids
-    assert "Career memory excluded rejected markets" in " ".join(with_memory.warnings)
+    assert evidence_entity_ids == {"greater_boston"}
+    assert "All grounded recommendations matched rejected markets" in " ".join(
+        with_memory.warnings
+    )
     assert "already-applied roles" in " ".join(with_memory.warnings)
     assert with_memory.memory_personalization
     assert all(

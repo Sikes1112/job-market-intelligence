@@ -184,8 +184,8 @@ def _seed_market(session: Session, *, stale: bool = False) -> None:
             RegionMarketScore(
                 region_score_id="score_boston",
                 region_id="boston",
-                objective_opportunity_score=78.0,
-                raw_total_score=78.0,
+                objective_opportunity_score=0.78,
+                raw_total_score=0.78,
                 early_career_accessibility_score=62.0,
             ),
         ]

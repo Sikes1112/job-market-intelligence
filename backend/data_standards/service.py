@@ -71,6 +71,8 @@ from backend.data_standards.schemas import (
     SubmissionReviewLifecycleState,
 )
 from backend.geography.models import Region
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.hiring.models import CompanyRegionHiring
 from backend.orchestration.events.payloads import Event
 from backend.orchestration.events.types import EventType
@@ -2000,6 +2002,15 @@ def _create_canonical_record(
     merged_at: datetime,
 ) -> None:
     payload = _canonical_payload(row)
+    if row.canonical_target_type in {
+        CandidateCanonicalTargetType.COMPANY_REGION_PRESENCE.value,
+        CandidateCanonicalTargetType.COMPANY_REGION_HIRING.value,
+    }:
+        resolution = GeographicResolver(RegionRepository(session)).require(
+            payload["region_id"]
+        )
+        assert resolution.region_id is not None
+        payload = {**payload, "region_id": resolution.region_id}
     if row.canonical_target_type == CandidateCanonicalTargetType.COMPANY.value:
         session.add(
             Company(

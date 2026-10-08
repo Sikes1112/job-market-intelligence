@@ -34,7 +34,9 @@ from backend.shared.confidence import Confidence
 
 
 class CareerActionPlanningService:
-    """Create governed action plans from grounded career-agent answers."""
+    """Create governed actions from authoritative conclusions and context."""
+
+    _PUBLIC_CONTEXT_USER_ID = "public_career_agent_context"
 
     def __init__(self, session: Session) -> None:
         self._grounding_service = CareerAgentGroundingService(session)
@@ -43,23 +45,31 @@ class CareerActionPlanningService:
         self,
         request: CareerActionPlanRequest,
         *,
+        user_id: str | None = None,
         memory_profile: CareerMemoryProfile | None = None,
         now: datetime | None = None,
     ) -> CareerActionPlan:
         generated_at = _aware(now or datetime.now(UTC))
         plan_request = request.career_agent_request.model_copy(
             update={
-                "question_type": _question_type_for_plan(request.plan_type),
+                "question_type": _question_type_for_plan(request),
                 "user_goal": request.career_goal
                 or request.career_agent_request.user_goal,
                 "limit": min(request.limit, request.career_agent_request.limit),
                 "preferred_program_types": _program_types_for_plan(request),
             }
         )
-        answer = self._grounding_service.answer(plan_request, now=generated_at)
+        answer = self._grounding_service.answer_for_plan(
+            user_id or self._PUBLIC_CONTEXT_USER_ID,
+            plan_request,
+            now=generated_at,
+        )
         if not answer.recommendations:
+            reason = " ".join(answer.limitations) or (
+                "Authoritative Decision, Explore, or current-job context is required."
+            )
             raise CareerAgentGuardrailViolation(
-                "Action plans require at least one grounded career-agent recommendation."
+                f"Action plan unavailable: {reason}"
             )
 
         memory_warnings, memory_personalization = _memory_effects(memory_profile)
@@ -141,17 +151,14 @@ class CareerActionPlanningService:
         return plan
 
 
-def _question_type_for_plan(plan_type: CareerPlanType) -> CareerAgentQuestionType:
-    if plan_type is CareerPlanType.REGIONAL_TARGETING_PLAN:
-        return CareerAgentQuestionType.STRONGEST_MARKET_STRATEGY
-    if plan_type in {
-        CareerPlanType.COMPANY_RESEARCH_PLAN,
-        CareerPlanType.NETWORKING_PLAN,
-    }:
-        return CareerAgentQuestionType.COMPANIES_TO_WATCH
-    if plan_type is CareerPlanType.INTERNSHIP_APPLICATION_CALENDAR:
+def _question_type_for_plan(request: CareerActionPlanRequest) -> CareerAgentQuestionType:
+    if (
+        request.plan_type is CareerPlanType.INTERNSHIP_APPLICATION_CALENDAR
+        or request.career_agent_request.question_type
+        is CareerAgentQuestionType.WHERE_SHOULD_I_APPLY
+    ):
         return CareerAgentQuestionType.WHERE_SHOULD_I_APPLY
-    return CareerAgentQuestionType.WHAT_SHOULD_I_DO_THIS_MONTH
+    return CareerAgentQuestionType.STRONGEST_MARKET_STRATEGY
 
 
 def _program_types_for_plan(request: CareerActionPlanRequest) -> tuple[str, ...]:
@@ -297,6 +304,8 @@ def _system_step_title(
     plan_type: CareerPlanType,
     recommendation: CareerAgentRecommendation,
 ) -> str:
+    if recommendation.recommendation_type == "explore_market_context":
+        return f"Review authoritative Explore context for {recommendation.title}"
     if plan_type is CareerPlanType.REGIONAL_TARGETING_PLAN:
         return f"Set the primary regional lane around {recommendation.title}"
     if plan_type is CareerPlanType.COMPANY_RESEARCH_PLAN:
@@ -312,10 +321,18 @@ def _system_step_description(
     plan_type: CareerPlanType,
     recommendation: CareerAgentRecommendation,
 ) -> str:
+    if recommendation.recommendation_type == "explore_market_context":
+        return (
+            "Explore supplied this governed market context for comparison; its display "
+            "order is not a separate Career Agent recommendation or market winner. "
+            f"{recommendation.summary}"
+        )
     base = (
-        f"The system suggests this priority because the 26A career-agent answer "
-        f"ranked it with structured evidence: {recommendation.summary}"
+        "The system suggests this action because an authoritative subsystem supplied "
+        f"the conclusion and structured evidence: {recommendation.summary}"
     )
+    if recommendation.action:
+        base = f"{base} Authoritative next action: {recommendation.action}"
     if plan_type is CareerPlanType.INTERNSHIP_APPLICATION_CALENDAR:
         return (
             f"{base} Treat calendar dates as planning checkpoints only; verify source "
@@ -471,7 +488,7 @@ def _plan_summary(
     warning_note = " Known limitations are attached." if warnings else ""
     return (
         f"Generated a {plan_type.value.replace('_', ' ')} from "
-        f"{len(recommendations)} grounded career-agent recommendation(s)."
+        f"{len(recommendations)} authoritative recommendation or context item(s)."
         f"{warning_note}"
     )
 

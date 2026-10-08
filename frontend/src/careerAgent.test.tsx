@@ -457,7 +457,7 @@ describe("CareerAgentPage", () => {
     expect(await screen.findByText("Grounded Career Agent")).toBeTruthy();
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        "/career-agent/answers",
+        "/me/career-agent/answers",
         expect.objectContaining({ method: "POST" }),
       ),
     );

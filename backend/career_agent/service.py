@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
@@ -11,6 +12,7 @@ from uuid import NAMESPACE_URL, uuid5
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.career_agent.authorities import CareerAgentAuthorityAdapter
 from backend.career_agent.schemas import (
     CareerAgentAnswer,
     CareerAgentEvidenceRef,
@@ -18,6 +20,7 @@ from backend.career_agent.schemas import (
     CareerAgentFreshness,
     CareerAgentFreshnessStatus,
     CareerAgentGuardrailStatus,
+    CareerAgentGuardrailViolation,
     CareerAgentPreferenceSnapshot,
     CareerAgentQuestionType,
     CareerAgentRecommendation,
@@ -29,7 +32,10 @@ from backend.career_agent.schemas import (
 from backend.companies.models import Company
 from backend.data_standards.ranking_gate import ranking_eligible_fact_ids
 from backend.entry_level.models import CompanyRegionEntryLevel
+from backend.explore.schemas import ExploreFitState, ExploreSessionOverrides
 from backend.geography.models import Region
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.hiring.models import CompanyRegionHiring
 from backend.opportunities.repository import OpportunityRepository
 from backend.opportunities.schemas import OpportunityPayload
@@ -52,6 +58,8 @@ NO_OPENING_WARNING = (
     "No stored verified opportunity record is attached; verify current openings "
     "manually before treating this as an application target."
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +101,642 @@ class CareerAgentGroundingService:
     def __init__(self, session: Session) -> None:
         self._session = session
         self._opportunity_service = OpportunityService(OpportunityRepository(session))
+        self._authority = CareerAgentAuthorityAdapter.for_session(session)
+
+    def answer_authoritative(
+        self,
+        user_id: str,
+        request: CareerAgentRequest,
+        *,
+        now: datetime | None = None,
+    ) -> CareerAgentAnswer:
+        """Answer redesigned individual flows through the owning authorities."""
+
+        if request.question_type in {
+            CareerAgentQuestionType.CITY_FIT,
+            CareerAgentQuestionType.STRONGEST_MARKET_STRATEGY,
+        }:
+            try:
+                return self._geographic_authority_answer(user_id, request, now=now)
+            except CareerAgentGuardrailViolation:
+                raise
+            except Exception:
+                logger.exception(
+                    "Explore Fit authority failed for Career Agent question type %s",
+                    request.question_type.value,
+                )
+                return self._authority_unavailable_answer(
+                    request,
+                    authority="Explore Fit / Layer 34",
+                    limitation=(
+                        "Explore Fit is temporarily unavailable through the authoritative "
+                        "Career Agent path; legacy Career Agent scoring was not used."
+                    ),
+                    now=now,
+                )
+        if request.question_type is CareerAgentQuestionType.WHERE_SHOULD_I_APPLY:
+            try:
+                return self._current_job_authority_answer(user_id, request, now=now)
+            except CareerAgentGuardrailViolation:
+                raise
+            except Exception:
+                logger.exception(
+                    "Layer 38 authority failed for Career Agent question type %s",
+                    request.question_type.value,
+                )
+                return self._authority_unavailable_answer(
+                    request,
+                    authority="Layer 38 Current Opportunities",
+                    limitation=(
+                        "Layer 38 current-job coverage is temporarily unavailable through "
+                        "the authoritative Career Agent path; legacy opportunity or Career "
+                        "Agent scoring was not used."
+                    ),
+                    now=now,
+                )
+        if request.question_type is CareerAgentQuestionType.WHAT_SHOULD_I_DO_THIS_MONTH:
+            try:
+                decision, recommendation, review = self._authority.durable_decision(user_id)
+            except CareerAgentGuardrailViolation:
+                raise
+            except Exception:
+                logger.exception(
+                    "Durable Decision authority failed for Career Agent question type %s",
+                    request.question_type.value,
+                )
+                return self._authority_unavailable_answer(
+                    request,
+                    authority="Layer 36 durable Decision",
+                    limitation=(
+                        "Durable Decision context is temporarily unavailable through the "
+                        "authoritative Career Agent path; no replacement recommendation or "
+                        "legacy scoring was used."
+                    ),
+                    now=now,
+                )
+            if decision is not None:
+                try:
+                    return self._decision_authority_answer(
+                        request,
+                        decision=decision,
+                        recommendation=recommendation,
+                        review=review,
+                        now=now,
+                    )
+                except CareerAgentGuardrailViolation:
+                    raise
+                except Exception:
+                    logger.exception(
+                        "Durable Decision response failed for Career Agent question type %s",
+                        request.question_type.value,
+                    )
+                    return self._authority_unavailable_answer(
+                        request,
+                        authority="Layer 36 durable Decision",
+                        limitation=(
+                            "Durable Decision context could not be represented through the "
+                            "authoritative Career Agent path; no replacement recommendation "
+                            "or legacy scoring was used."
+                        ),
+                        now=now,
+                    )
+            generated_at = _aware(now or datetime.now(UTC))
+            return _authoritative_answer(
+                request,
+                generated_at=generated_at,
+                recommendations=(),
+                authority="Layer 36 durable Decision",
+                limitations=(
+                    "No durable Layer 36 Decision exists; Career Agent did not create "
+                    "a competing market recommendation.",
+                ),
+            )
+        if request.question_type is CareerAgentQuestionType.COMPANIES_TO_WATCH:
+            return self._authority_unavailable_answer(
+                request,
+                authority="Career Agent authoritative company routing",
+                limitation=(
+                    "This question is not yet available through the authoritative Career "
+                    "Agent path; no governed company-ranking authority is assigned, and "
+                    "legacy Career Agent scoring was not used."
+                ),
+                now=now,
+            )
+
+        return self._authority_unavailable_answer(
+            request,
+            authority="Career Agent authoritative routing",
+            limitation=(
+                f"Question type '{request.question_type.value}' has no assigned production "
+                "authority; legacy Career Agent scoring was not used."
+            ),
+            now=now,
+        )
+
+    def answer_for_plan(
+        self,
+        user_id: str,
+        request: CareerAgentRequest,
+        *,
+        now: datetime | None = None,
+    ) -> CareerAgentAnswer:
+        """Supply planning inputs from the owning authorities, never the legacy scorer.
+
+        A durable Decision is the first planning authority. Without one, the
+        caller must explicitly select either Explore Fit or Layer 38 by question
+        type. Authority failures are returned as bounded, recommendation-free
+        answers so planning cannot silently fall through to another scorer.
+        """
+
+        try:
+            decision, recommendation, review = self._authority.durable_decision(user_id)
+        except CareerAgentGuardrailViolation:
+            raise
+        except Exception:
+            logger.exception("Durable Decision authority failed for action planning")
+            return self._authority_unavailable_answer(
+                request,
+                authority="Layer 36 durable Decision",
+                limitation=(
+                    "Durable Decision context is temporarily unavailable for action "
+                    "planning; no replacement recommendation or legacy scoring was used."
+                ),
+                now=now,
+            )
+        if decision is not None:
+            try:
+                actions = self._authority.durable_decision_actions(
+                    user_id,
+                    decision_id=decision.decision_id,
+                    limit=request.limit,
+                )
+                return self._decision_authority_answer(
+                    request,
+                    decision=decision,
+                    recommendation=recommendation,
+                    review=review,
+                    actions=actions,
+                    now=now,
+                )
+            except CareerAgentGuardrailViolation:
+                raise
+            except Exception:
+                logger.exception("Durable Decision could not be adapted for action planning")
+                return self._authority_unavailable_answer(
+                    request,
+                    authority="Layer 36 durable Decision",
+                    limitation=(
+                        "Durable Decision context could not be represented for action "
+                        "planning; no replacement recommendation or legacy scoring was used."
+                    ),
+                    now=now,
+                )
+
+        if request.question_type is CareerAgentQuestionType.WHERE_SHOULD_I_APPLY:
+            return self.answer_authoritative(user_id, request, now=now)
+        if request.question_type in {
+            CareerAgentQuestionType.CITY_FIT,
+            CareerAgentQuestionType.STRONGEST_MARKET_STRATEGY,
+        }:
+            try:
+                return self._geographic_authority_answer(
+                    user_id,
+                    request,
+                    now=now,
+                    allow_general_context=True,
+                )
+            except CareerAgentGuardrailViolation:
+                raise
+            except Exception:
+                logger.exception("Explore Fit authority failed for action planning")
+                return self._authority_unavailable_answer(
+                    request,
+                    authority="Explore Fit / Layer 34",
+                    limitation=(
+                        "Explore Fit is temporarily unavailable for action planning; "
+                        "legacy Career Agent scoring was not used."
+                    ),
+                    now=now,
+                )
+
+        return self._authority_unavailable_answer(
+            request,
+            authority="Career Agent planning authority routing",
+            limitation=(
+                "The requested action plan has no assigned authoritative input; more "
+                "Decision, Explore, or current-job context is required, and legacy "
+                "Career Agent scoring was not used."
+            ),
+            now=now,
+        )
+
+    def answer_for_tool_preview(
+        self,
+        user_id: str,
+        request: CareerAgentRequest,
+        *,
+        now: datetime | None = None,
+    ) -> CareerAgentAnswer:
+        """Ground a preview without turning Explore context into a new choice."""
+
+        if request.question_type in {
+            CareerAgentQuestionType.CITY_FIT,
+            CareerAgentQuestionType.STRONGEST_MARKET_STRATEGY,
+        }:
+            try:
+                return self._geographic_authority_answer(
+                    user_id,
+                    request,
+                    now=now,
+                    allow_general_context=True,
+                )
+            except CareerAgentGuardrailViolation:
+                raise
+            except Exception:
+                logger.exception("Explore Fit authority failed for tool preview")
+                return self._authority_unavailable_answer(
+                    request,
+                    authority="Explore Fit / Layer 34",
+                    limitation=(
+                        "Explore Fit is temporarily unavailable for tool preview; "
+                        "legacy Career Agent scoring was not used."
+                    ),
+                    now=now,
+                )
+        return self.answer_authoritative(user_id, request, now=now)
+
+    def _authority_unavailable_answer(
+        self,
+        request: CareerAgentRequest,
+        *,
+        authority: str,
+        limitation: str,
+        now: datetime | None,
+    ) -> CareerAgentAnswer:
+        return _authoritative_answer(
+            request,
+            generated_at=_aware(now or datetime.now(UTC)),
+            recommendations=(),
+            authority=authority,
+            limitations=(limitation,),
+        )
+
+    def _geographic_authority_answer(
+        self,
+        user_id: str,
+        request: CareerAgentRequest,
+        *,
+        now: datetime | None,
+        allow_general_context: bool = False,
+    ) -> CareerAgentAnswer:
+        generated_at = _aware(now or datetime.now(UTC))
+        role_inputs = request.target_role_families or (
+            (request.user_goal,) if request.user_goal else ()
+        )
+        response = self._authority.geographic_fit(
+            user_id,
+            ExploreSessionOverrides(role_families=role_inputs or None),
+            as_of=generated_at,
+        )
+        requested_regions = _canonical_requested_regions(
+            self._session,
+            request.target_region_ids,
+        )
+        eligible_states = {ExploreFitState.CONFIDENT, ExploreFitState.TENTATIVE}
+        if allow_general_context:
+            eligible_states.update(
+                {
+                    ExploreFitState.GENERAL_MARKET_INTELLIGENCE,
+                    ExploreFitState.INSUFFICIENT_EVIDENCE,
+                    ExploreFitState.ABSTAINED,
+                }
+            )
+        candidates = tuple(
+            market
+            for market in response.markets
+            if market.state in eligible_states
+            and (not requested_regions or market.region.region_id in requested_regions)
+        )[: request.limit]
+        recommendations: list[CareerAgentRecommendation] = []
+        for market in candidates:
+            freshness = _authority_freshness(
+                market.freshness,
+                data_basis="layer_34_market_intelligence",
+            )
+            confidence = _authority_confidence(market.confidence)
+            ref = CareerAgentEvidenceRef(
+                ref_id=f"explore_fit:{market.region.region_id}",
+                evidence_type=CareerAgentEvidenceType.MARKET,
+                entity_type="region",
+                entity_id=market.region.region_id,
+                label=f"{market.region.display_name} Explore Fit",
+                summary=market.market_coverage.summary,
+                data_basis="layer_34_market_intelligence",
+                freshness_status=freshness.freshness_status,
+                confidence_label=market.confidence,
+                source_count=len(market.market_coverage.evidence_areas_used),
+            )
+            context_only = market.state not in {
+                ExploreFitState.CONFIDENT,
+                ExploreFitState.TENTATIVE,
+            }
+            recommendations.append(
+                CareerAgentRecommendation(
+                    recommendation_id=_stable_id(
+                        "career_rec", "explore_fit", market.region.region_id
+                    ),
+                    recommendation_type=(
+                        "explore_market_context"
+                        if context_only
+                        else "explore_geographic_fit"
+                    ),
+                    rank=(
+                        len(recommendations) + 1
+                        if context_only
+                        else market.rank or len(recommendations) + 1
+                    ),
+                    target_type=CareerAgentTargetType.REGION,
+                    target_id=market.region.region_id,
+                    title=(
+                        f"{market.region.display_name} market context"
+                        if context_only
+                        else f"{market.region.display_name} geographic fit"
+                    ),
+                    summary=(
+                        f"Explore reports {market.fit_band or market.state.value} from "
+                        "governed Layer 34 market evidence."
+                    ),
+                    score=market.fit_score,
+                    action=(
+                        "Compare this market context without treating display order as a "
+                        "personalized winner."
+                        if context_only
+                        else "Review Explore Fit drivers, tradeoffs, and evidence coverage."
+                    ),
+                    evidence_refs=(ref,),
+                    freshness=freshness,
+                    uncertainty=CareerAgentUncertainty(
+                        confidence_level=confidence,
+                        confidence_score=_confidence_score(confidence),
+                        uncertainty_level=_uncertainty_level(
+                            confidence, {freshness.freshness_status}
+                        ),
+                        reasons=(
+                            "Uses authoritative Explore context without market rescoring.",
+                        ),
+                        limitations=market.material_limitations,
+                    ),
+                    limitations=market.material_limitations,
+                )
+            )
+        limitations = list(response.limitations)
+        if not recommendations:
+            limitations.append(
+                "Explore Fit did not return an eligible personalized geographic result."
+            )
+        return _authoritative_answer(
+            request,
+            generated_at=generated_at,
+            recommendations=tuple(recommendations),
+            authority="Explore Fit / Layer 34",
+            limitations=tuple(dict.fromkeys(limitations)),
+        )
+
+    def _current_job_authority_answer(
+        self,
+        user_id: str,
+        request: CareerAgentRequest,
+        *,
+        now: datetime | None,
+    ) -> CareerAgentAnswer:
+        generated_at = _aware(now or datetime.now(UTC))
+        matches = self._authority.current_job_matches(
+            user_id,
+            request_terms=(
+                *request.target_role_families,
+                *request.target_region_ids,
+                *((request.user_goal,) if request.user_goal else ()),
+            ),
+            limit=500,
+            as_of=generated_at,
+        )
+        requested_regions = _canonical_requested_regions(
+            self._session,
+            request.target_region_ids,
+        )
+        requested_roles = {item.casefold() for item in request.target_role_families}
+        selected = tuple(
+            match
+            for match in matches
+            if (
+                not requested_regions
+                or match.opportunity.market_id in requested_regions
+            )
+            and (
+                not requested_roles
+                or match.opportunity.role_family.casefold() in requested_roles
+            )
+        )[: request.limit]
+        recommendations: list[CareerAgentRecommendation] = []
+        for match in selected:
+            opportunity = match.opportunity
+            freshness = _authority_freshness(
+                opportunity.freshness_state.value,
+                data_basis="layer_38_current_opportunities",
+                observed_at=opportunity.last_observed_at,
+            )
+            confidence = _authority_confidence(opportunity.identity_confidence.value)
+            ref = CareerAgentEvidenceRef(
+                ref_id=f"current_opportunity:{opportunity.opportunity_id}",
+                evidence_type=CareerAgentEvidenceType.OPPORTUNITY,
+                entity_type="current_opportunity",
+                entity_id=opportunity.opportunity_id,
+                label=f"{opportunity.company_name}: {opportunity.original_title}",
+                summary="Layer 38 active current-opportunity record.",
+                data_basis="layer_38_current_opportunities",
+                freshness_status=freshness.freshness_status,
+                confidence_label=opportunity.identity_confidence.value,
+                source_count=_provenance_source_count(opportunity.provenance),
+                observed_at=opportunity.last_observed_at,
+                public_url=opportunity.application_url or opportunity.source_url,
+            )
+            recommendations.append(
+                CareerAgentRecommendation(
+                    recommendation_id=_stable_id(
+                        "career_rec", "current_job", opportunity.opportunity_id
+                    ),
+                    recommendation_type="layer_38_current_job_match",
+                    rank=len(recommendations) + 1,
+                    target_type=CareerAgentTargetType.OPPORTUNITY,
+                    target_id=opportunity.opportunity_id,
+                    title=f"{opportunity.company_name}: {opportunity.original_title}",
+                    summary=(
+                        f"Layer 38 match relevance: {match.strategic_relevance}."
+                    ),
+                    score=match.match_score,
+                    action="Verify the live source and application details before acting.",
+                    evidence_refs=(ref,),
+                    freshness=freshness,
+                    uncertainty=CareerAgentUncertainty(
+                        confidence_level=confidence,
+                        confidence_score=_confidence_score(confidence),
+                        uncertainty_level=_uncertainty_level(
+                            confidence, {freshness.freshness_status}
+                        ),
+                        reasons=match.contributing_factors,
+                        limitations=match.limitations,
+                    ),
+                    matched_opportunity_ids=(opportunity.opportunity_id,),
+                    warnings=match.warnings,
+                    limitations=match.limitations,
+                )
+            )
+        limitations: list[str] = []
+        if not recommendations:
+            coverage_market = next(iter(requested_regions), "*")
+            coverage_role = next(iter(request.target_role_families), "*")
+            coverage = self._authority.current_job_coverage(
+                market_key=coverage_market,
+                role_family=coverage_role,
+                as_of=generated_at,
+            )
+            status = coverage.effective_status.value if coverage is not None else "unavailable"
+            limitations.append(
+                "Layer 38 current-job coverage is "
+                f"{status}; no current jobs were invented or substituted from legacy routes."
+            )
+            if coverage is not None:
+                limitations.extend(coverage.limitations)
+        return _authoritative_answer(
+            request,
+            generated_at=generated_at,
+            recommendations=tuple(recommendations),
+            authority="Layer 38 Current Opportunities",
+            limitations=tuple(dict.fromkeys(limitations)),
+        )
+
+    def _decision_authority_answer(
+        self,
+        request: CareerAgentRequest,
+        *,
+        decision,
+        recommendation,
+        review,
+        actions: tuple = (),
+        now: datetime | None,
+    ) -> CareerAgentAnswer:
+        generated_at = _aware(now or datetime.now(UTC))
+        summary = (
+            recommendation.summary
+            if recommendation is not None and recommendation.summary
+            else f"Layer 36 decision status: {decision.status}."
+        )
+        action = None
+        if review is not None and review.suggested_next_actions:
+            action = str(review.suggested_next_actions[0])[:1024]
+        elif decision.planned_review_at is not None:
+            action = f"Review this decision at {decision.planned_review_at.date().isoformat()}."
+        ref = CareerAgentEvidenceRef(
+            ref_id=f"career_decision:{decision.decision_id}",
+            evidence_type=CareerAgentEvidenceType.MARKET,
+            entity_type="career_decision",
+            entity_id=decision.decision_id,
+            label=decision.title,
+            summary=summary,
+            data_basis="layer_36_durable_decision",
+            freshness_status=CareerAgentFreshnessStatus.FRESH,
+            confidence_label=(recommendation.confidence if recommendation else "unknown"),
+            source_count=1 + int(review is not None),
+            observed_at=decision.updated_at,
+        )
+        rec = CareerAgentRecommendation(
+            recommendation_id=_stable_id(
+                "career_rec", "durable_decision", decision.decision_id
+            ),
+            recommendation_type="layer_36_durable_decision",
+            rank=1,
+            target_type=CareerAgentTargetType.MONTHLY_ACTION,
+            target_id=decision.decision_id,
+            title=decision.title,
+            summary=summary,
+            action=action or "Review the durable decision and its recorded next steps.",
+            evidence_refs=(ref,),
+            freshness=_authority_freshness(
+                "fresh", data_basis="layer_36_durable_decision", observed_at=decision.updated_at
+            ),
+            uncertainty=CareerAgentUncertainty(
+                confidence_level=_authority_confidence(
+                    recommendation.confidence if recommendation else "unknown"
+                ),
+                reasons=(
+                    "Layer 36 owns the durable recommendation; Layer 37 supplies deeper analysis."
+                ,),
+                limitations=tuple(recommendation.limitations or ())
+                if recommendation is not None
+                else (),
+            ),
+            limitations=tuple(recommendation.limitations or ())
+            if recommendation is not None
+            else (),
+        )
+        action_recommendations: list[CareerAgentRecommendation] = []
+        for index, decision_action in enumerate(actions, start=2):
+            action_summary = str(
+                decision_action.description
+                or "Layer 36 action attached to the durable Decision."
+            )[:1024]
+            action_ref = CareerAgentEvidenceRef(
+                ref_id=f"career_decision_action:{decision_action.action_id}",
+                evidence_type=CareerAgentEvidenceType.MARKET,
+                entity_type="career_decision_action",
+                entity_id=decision_action.action_id,
+                label=decision_action.title,
+                summary=action_summary,
+                data_basis="layer_36_durable_decision_action",
+                freshness_status=CareerAgentFreshnessStatus.FRESH,
+                confidence_label=(recommendation.confidence if recommendation else "unknown"),
+                source_count=1,
+                observed_at=decision_action.updated_at,
+            )
+            action_recommendations.append(
+                CareerAgentRecommendation(
+                    recommendation_id=_stable_id(
+                        "career_rec", "durable_decision_action", decision_action.action_id
+                    ),
+                    recommendation_type="layer_36_durable_decision_action",
+                    rank=index,
+                    target_type=CareerAgentTargetType.MONTHLY_ACTION,
+                    target_id=decision_action.action_id,
+                    title=decision_action.title,
+                    summary=action_ref.summary,
+                    action=decision_action.title,
+                    evidence_refs=(action_ref,),
+                    freshness=_authority_freshness(
+                        "fresh",
+                        data_basis="layer_36_durable_decision_action",
+                        observed_at=decision_action.updated_at,
+                    ),
+                    uncertainty=CareerAgentUncertainty(
+                        confidence_level=_authority_confidence(
+                            recommendation.confidence if recommendation else "unknown"
+                        ),
+                        reasons=(
+                            "Layer 36 owns this action under the durable Decision.",
+                        ),
+                    ),
+                )
+            )
+        return _authoritative_answer(
+            request,
+            generated_at=generated_at,
+            recommendations=(rec, *action_recommendations),
+            authority=(
+                "Layer 36 durable Decision with Layer 37 analysis"
+                if review is not None
+                else "Layer 36 durable Decision"
+            ),
+            limitations=(),
+        )
 
     def answer(
         self,
@@ -546,11 +1190,19 @@ class CareerAgentGroundingService:
         *,
         now: datetime,
     ) -> tuple[_RegionContext, ...]:
-        requested = tuple(dict.fromkeys(region_ids))
-        stmt = select(Region).order_by(Region.region_id)
-        if requested:
-            stmt = stmt.where(Region.region_id.in_(requested))
-        regions = tuple(self._session.execute(stmt).scalars())
+        resolver = GeographicResolver(RegionRepository(self._session))
+        raw_requested = tuple(dict.fromkeys(region_ids))
+        requested = tuple(
+            dict.fromkeys(
+                resolution.region_id
+                for value in raw_requested
+                if (resolution := resolver.resolve(value)).resolved
+                and resolution.region_id is not None
+            )
+        )
+        regions = tuple(RegionRepository(self._session).list())
+        if raw_requested:
+            regions = tuple(region for region in regions if region.region_id in requested)
         eligible_region_ids = ranking_eligible_fact_ids(
             self._session,
             "region",
@@ -1497,6 +2149,125 @@ def _answer_limitations(
     if any(rec.uncertainty.forecast_based for rec in recommendations):
         limitations.append(FORECAST_WARNING)
     return tuple(dict.fromkeys(limitations))
+
+
+def _canonical_requested_regions(
+    session: Session,
+    region_refs: tuple[str, ...],
+) -> tuple[str, ...]:
+    resolver = GeographicResolver(RegionRepository(session))
+    resolved: list[str] = []
+    for region_ref in region_refs:
+        resolution = resolver.resolve(region_ref)
+        if resolution.resolved and resolution.region_id is not None:
+            resolved.append(resolution.region_id)
+    return tuple(dict.fromkeys(resolved))
+
+
+def _authority_confidence(value: str) -> Confidence:
+    return {
+        "high": Confidence.HIGH,
+        "medium": Confidence.MEDIUM,
+        "moderate": Confidence.MEDIUM,
+        "limited": Confidence.LOW,
+        "low": Confidence.LOW,
+    }.get(value.casefold(), Confidence.UNKNOWN)
+
+
+def _provenance_source_count(provenance: dict) -> int:
+    value = provenance.get("source_count", 1)
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _authority_freshness(
+    value: str,
+    *,
+    data_basis: str,
+    observed_at: datetime | None = None,
+) -> CareerAgentFreshness:
+    status = {
+        "fresh": CareerAgentFreshnessStatus.FRESH,
+        "current": CareerAgentFreshnessStatus.FRESH,
+        "stale": CareerAgentFreshnessStatus.STALE,
+        "partial": CareerAgentFreshnessStatus.PARTIAL,
+    }.get(value.casefold(), CareerAgentFreshnessStatus.UNKNOWN)
+    return CareerAgentFreshness(
+        freshness_status=status,
+        data_basis=data_basis,
+        last_updated_at=_aware(observed_at),
+        source_count=1,
+    )
+
+
+def _authoritative_answer(
+    request: CareerAgentRequest,
+    *,
+    generated_at: datetime,
+    recommendations: tuple[CareerAgentRecommendation, ...],
+    authority: str,
+    limitations: tuple[str, ...],
+) -> CareerAgentAnswer:
+    fallback_freshness = CareerAgentFreshness(
+        freshness_status=CareerAgentFreshnessStatus.UNKNOWN,
+        data_basis="authoritative_coverage_state",
+        source_count=0,
+    )
+    source_freshness = tuple(rec.freshness for rec in recommendations) or (
+        fallback_freshness,
+    )
+    freshness = _aggregate_freshness(
+        source_freshness,
+        fallback_source_count=sum(item.source_count for item in source_freshness),
+    )
+    confidence = (
+        min(
+            (rec.uncertainty.confidence_level for rec in recommendations),
+            key=_confidence_rank,
+        )
+        if recommendations
+        else Confidence.UNKNOWN
+    )
+    uncertainty = CareerAgentUncertainty(
+        confidence_level=confidence,
+        confidence_score=_confidence_score(confidence),
+        uncertainty_level=_uncertainty_level(
+            confidence,
+            {item.freshness_status for item in source_freshness},
+        ),
+        reasons=(f"Career Agent orchestrated the {authority} authority.",),
+        limitations=limitations,
+    )
+    answer = CareerAgentAnswer(
+        answer_id=_stable_id(
+            "career_answer",
+            request.question_type.value,
+            authority,
+            generated_at.isoformat(),
+        ),
+        question_type=request.question_type,
+        generated_at=generated_at,
+        summary=(
+            f"{authority} supplied {len(recommendations)} grounded result(s)."
+            if recommendations
+            else f"{authority} supplied no eligible result; coverage limits are disclosed."
+        ),
+        recommendations=recommendations,
+        freshness=freshness,
+        source_freshness=source_freshness,
+        uncertainty=uncertainty,
+        preference_snapshot=_preference_snapshot(request),
+        guardrails=CareerAgentGuardrailStatus(
+            passed=True,
+            evidence_requirement_met=bool(recommendations),
+            warnings=limitations,
+        ),
+        limitations=limitations,
+    )
+    validate_career_agent_answer(answer)
+    return answer
 
 
 def _answer_summary(

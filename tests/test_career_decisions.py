@@ -106,8 +106,8 @@ def _seed_market(session: Session) -> None:
             RegionMarketScore(
                 region_score_id="score_boston",
                 region_id="greater_boston",
-                objective_opportunity_score=82.0,
-                raw_total_score=82.0,
+                objective_opportunity_score=0.82,
+                raw_total_score=0.82,
             ),
         ]
     )
@@ -221,11 +221,17 @@ def test_decision_to_outcome_lifecycle_preserves_context_history_and_review(
     assert recommendation.recommendation_status == "ready"
     assert recommendation.recommended_option_id == decision.options[0].option_id
     assert recommendation.evidence_sufficiency == "limited_evidence"
+    boston_fit = next(
+        item for item in recommendation.fit["options"] if item["title"] == "Boston AI product"
+    )
+    market_dimension = next(
+        item for item in boston_fit["dimensions"] if item["name"] == "market_fit"
+    )
+    assert market_dimension["assessment"] == "strong"
     assert any(
         challenge["code"] == "compensation_minimum_violation"
         for challenge in recommendation.challenges
     )
-
     selected = service.select_option(
         user_id,
         decision.decision_id,
@@ -306,6 +312,35 @@ def test_decision_to_outcome_lifecycle_preserves_context_history_and_review(
     final_journal = service.journal(user_id, decision.decision_id)
     assert final_journal[-1].version_reason == "outcome_recorded"
     assert session.query(CareerOutcome).count() == 1
+
+
+@pytest.mark.parametrize(
+    ("normalized_score", "expected_assessment"),
+    ((0.82, "strong"), (0.62, "moderate"), (0.32, "weak")),
+)
+def test_layer36_market_fit_uses_normalized_score_scale_across_all_bands(
+    session: Session,
+    normalized_score: float,
+    expected_assessment: str,
+) -> None:
+    user_id = _seed_user(session, f"scale_{str(normalized_score).replace('.', '_')}")
+    _seed_market(session)
+    score = session.get(RegionMarketScore, "score_boston")
+    assert score is not None
+    score.objective_opportunity_score = normalized_score
+    score.raw_total_score = normalized_score
+    _seed_identity(session, user_id)
+    service = _decision_service(session)
+
+    decision = service.create_decision(user_id, _decision_request())
+    recommendation = service.compare_decision(user_id, decision.decision_id)
+    boston_fit = next(
+        item for item in recommendation.fit["options"] if item["title"] == "Boston AI product"
+    )
+    market_dimension = next(
+        item for item in boston_fit["dimensions"] if item["name"] == "market_fit"
+    )
+    assert market_dimension["assessment"] == expected_assessment
 
 
 def test_context_without_personalization_consent_abstains_and_hides_facts(

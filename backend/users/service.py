@@ -465,7 +465,11 @@ class UserPersonalizationPersistenceService:
                 persisted=False,
                 scoring_weights=default_scoring_weights(),
             )
-        return _preference_view(row, persisted=True)
+        return _preference_view(
+            row,
+            persisted=True,
+            geographic_resolver=self._geographic_resolver,
+        )
 
     def upsert_preference_profile(
         self,
@@ -494,7 +498,11 @@ class UserPersonalizationPersistenceService:
             geographic_resolver=self._geographic_resolver,
         )
         self._repo.flush()
-        return _preference_view(row, persisted=True)
+        return _preference_view(
+            row,
+            persisted=True,
+            geographic_resolver=self._geographic_resolver,
+        )
 
     def save_market_artifact(
         self,
@@ -890,13 +898,20 @@ def _preference_view(
     row: UserPreferenceProfile,
     *,
     persisted: bool,
+    geographic_resolver: GeographicResolver,
 ) -> UserPreferenceProfileView:
+    preferred_regions: list[str] = []
+    for value in row.preferred_regions or []:
+        resolution = geographic_resolver.resolve(value)
+        current_value = resolution.region_id if resolution.resolved else value
+        if current_value not in preferred_regions:
+            preferred_regions.append(current_value)
     return UserPreferenceProfileView(
         user_id=row.user_id,
         persisted=persisted,
         role_interests=list(row.role_interests or []),
         industry_interests=list(row.industry_interests or []),
-        preferred_regions=list(row.preferred_regions or []),
+        preferred_regions=preferred_regions,
         prestige_weighting=row.prestige_weighting,
         brand_weighting=row.brand_weighting,
         career_stage=row.career_stage,

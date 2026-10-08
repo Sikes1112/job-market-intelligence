@@ -18,7 +18,7 @@ from backend.geography.exceptions import (
     GeographicInputAmbiguous,
     GeographicInputUnknown,
 )
-from backend.geography.models import Region
+from backend.geography.models import Region, RegionIdentityClaim
 from backend.geography.repository import RegionRepository
 
 ResolutionStatus = Literal["resolved", "unresolved", "ambiguous"]
@@ -65,6 +65,38 @@ def ensure_identity_token_available(
             f"geographic token {value!r} is already owned by {conflicts!r}"
         )
     return normalized
+
+
+def claim_identity_token(
+    repository: RegionRepository,
+    value: object,
+    *,
+    region_id: str,
+    claim_type: str,
+    source: str | None = None,
+) -> RegionIdentityClaim:
+    """Claim a token in the single database-backed geographic namespace.
+
+    The normalized token is the primary key. PostgreSQL therefore serializes
+    competing inserts and allows only one transaction to commit ownership.
+    """
+
+    normalized = ensure_identity_token_available(repository, value, region_id=region_id)
+    existing = repository.identity_claim(normalized)
+    if existing is not None:
+        if existing.region_id != region_id:
+            raise GeographicIdentityConflict(
+                f"geographic token {value!r} is already owned by {existing.region_id!r}"
+            )
+        return existing
+    claim = RegionIdentityClaim(
+        normalized_token=normalized,
+        region_id=region_id,
+        claim_type=claim_type,
+        source=source,
+    )
+    repository.add_identity_claim(claim)
+    return claim
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +168,7 @@ class GeographicResolver:
         if len(identity_region_ids) > 1:
             return self._ambiguous(raw, normalized, identity_region_ids)
         if identity_region_ids:
-            region = self._repo.get(identity_region_ids[0])
+            region = self._repo.canonical_region(identity_region_ids[0])
             if region is not None:
                 sources = identity_matches[region.region_id]
                 if raw == region.region_id and "region_id" in sources:

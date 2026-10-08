@@ -479,7 +479,7 @@ describe("frontend API client auth boundary", () => {
       limit: 3,
     });
 
-    expect(fetchMock.mock.calls[0][0]).toBe("/career-agent/answers");
+    expect(fetchMock.mock.calls[0][0]).toBe("/me/career-agent/answers");
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
     expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
       question_type: "city_fit",

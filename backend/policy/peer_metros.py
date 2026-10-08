@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.geography.models import Region
+from backend.geography.repository import RegionRepository
 from backend.policy.schemas import (
     PeerComparisonProfile,
     PeerMetricComparison,
@@ -43,9 +42,7 @@ def build_peer_metro_comparisons(
     from backend.policy.service import PolicyIntelligenceService
 
     service = PolicyIntelligenceService(session)
-    regions = tuple(
-        session.execute(select(Region).order_by(Region.region_id)).scalars()
-    )
+    regions = tuple(RegionRepository(session).list())
     comparisons: list[PeerMetroComparison] = []
     warnings: list[PolicyWarning] = []
     for region in regions:

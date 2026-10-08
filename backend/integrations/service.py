@@ -19,7 +19,8 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.companies.models import Company
-from backend.geography.models import Region
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.institutions.dashboard import build_institutional_dashboard
 from backend.institutions.exceptions import (
     InstitutionalAccessDenied,
@@ -1441,7 +1442,7 @@ class IntegrationService:
         )
 
     def external_regions(self, *, context: ExternalApiContext) -> ApiResponseEnvelope:
-        regions = self._repo.session.query(Region).order_by(Region.region_id).all()
+        regions = RegionRepository(self._repo.session).list()
         data = [
             sanitize_export_data(
                 {
@@ -2224,19 +2225,10 @@ class IntegrationService:
         label = _clean_optional(value)
         if not label:
             return None
-        normalized = _normalize_name(label)
-        if not normalized:
-            return None
-        rows = self._repo.session.query(Region).all()
-        for row in rows:
-            candidates = {
-                _normalize_name(row.region_id),
-                _normalize_name(row.region_name),
-                _normalize_name(row.display_name),
-            }
-            if normalized in candidates:
-                return row.region_id
-        return None
+        resolution = GeographicResolver(
+            RegionRepository(self._repo.session)
+        ).resolve(label)
+        return resolution.region_id if resolution.resolved else None
 
     def _apply_partner_import_validation(
         self,

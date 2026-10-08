@@ -219,7 +219,7 @@ def _near_tie_market_keys(
             other.market_key
             for other in ranking_items
             if other.market_key != item.market_key
-            and 0.0 < _score_delta(item, other) <= NEAR_TIE_THRESHOLD
+            and scores_are_near_tie(item.score, other.score)
         )
     )
 
@@ -236,7 +236,20 @@ def _tie_status(
 
 
 def _score_delta(left: ExplainableRankingItem, right: ExplainableRankingItem) -> float:
-    return round(abs(left.score - right.score), 4)
+    return score_delta(left.score, right.score)
+
+
+def score_delta(left: float, right: float) -> float:
+    """Return Layer 34's canonical rounded score delta."""
+
+    return round(abs(left - right), 4)
+
+
+def scores_are_near_tie(left: float, right: float) -> bool:
+    """Apply the governed Layer 34 near-tie boundary to two scores."""
+
+    delta = score_delta(left, right)
+    return 0.0 < delta <= NEAR_TIE_THRESHOLD
 
 
 def _direct_evidence_summary(

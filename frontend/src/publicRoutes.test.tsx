@@ -1265,6 +1265,13 @@ function responsePayloadFor(input: RequestInfo | URL): MockPayload {
       error: { code: "NOT_FOUND", message: "Region not found." },
     };
   }
+  if (value === "/regions/ambiguous-market") {
+    return {
+      data: null,
+      status: 409,
+      error: { code: "GEOGRAPHIC_INPUT_AMBIGUOUS", message: "Region is ambiguous." },
+    };
+  }
   if (value === "/regions/legacy_market") {
     return { data: regionDetail("legacy_market", "Legacy Market") };
   }
@@ -1956,11 +1963,51 @@ describe("public demo routes", () => {
   });
 
   test("unknown Region token reaches resolution and fails cleanly", async () => {
-    stubPublicFetch();
+    const fetchMock = stubPublicFetch();
     renderAt("/markets/region/not-a-real-market");
 
     expect(await screen.findByText("Region not found.")).toBeTruthy();
     expect(screen.queryByText(/Unknown region ID/i)).toBeNull();
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => String(url) === "/regions/not-a-real-market",
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("ambiguous Region resolution is terminal and request-bounded", async () => {
+    const fetchMock = stubPublicFetch();
+    renderAt("/markets/region/ambiguous-market");
+
+    expect(await screen.findByText("Region is ambiguous.")).toBeTruthy();
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => String(url) === "/regions/ambiguous-market",
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("Region route recovers after invalid token changes to a valid slug", async () => {
+    const fetchMock = stubPublicFetch();
+    renderAt("/markets/region/not-a-real-market");
+    expect(await screen.findByText("Region not found.")).toBeTruthy();
+
+    window.history.pushState(null, "", "/markets/region/boston");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+
+    expect(await screen.findByRole("heading", { name: "Greater Boston" })).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => String(url) === "/regions/not-a-real-market",
+      ),
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(([url]) =>
+        ["/regions/boston", "/regions/greater_boston"].includes(String(url)),
+      ),
+    ).toHaveLength(1);
   });
 
   test("explore markets renders coverage labels for fully covered and placeholder markets", async () => {

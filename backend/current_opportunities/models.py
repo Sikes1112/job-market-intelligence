@@ -377,9 +377,18 @@ class CurrentOpportunityIdentityEvidence(Base, TimestampMixin):
 
     __tablename__ = "current_opportunity_identity_evidence"
     __table_args__ = (
+        CheckConstraint(
+            "geography_review_status IS NULL OR "
+            "geography_review_status IN ('pending', 'approved')",
+            name="ck_current_opportunity_identity_geography_review",
+        ),
         Index("ix_current_opportunity_identity_opportunity", "current_opportunity_id"),
         Index("ix_current_opportunity_identity_observation", "source_observation_id"),
         Index("ix_current_opportunity_identity_status", "resolution_status"),
+        Index(
+            "ix_current_opportunity_identity_geography_review",
+            "geography_review_status",
+        ),
     )
 
     identity_evidence_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -401,6 +410,15 @@ class CurrentOpportunityIdentityEvidence(Base, TimestampMixin):
     confidence: Mapped[str] = mapped_column(String(32), nullable=False)
     evidence_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     warnings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    geography_review_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    geography_previous_region_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    geography_candidate_region_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    geography_reviewed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    geography_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    geography_review_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    geography_corrected_region_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class OpportunityPromotionReceipt(Base, TimestampMixin):

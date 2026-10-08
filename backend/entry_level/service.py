@@ -32,6 +32,8 @@ from backend.entry_level.types import (
     EntryLevelConfidence,
     StudentSeasonRecurrenceSignal,
 )
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.hiring.repository import HiringRepository
 from backend.shared.provenance import ObservationStatus
 from backend.shared.state import ObjectState, validate_transition
@@ -123,6 +125,7 @@ class EntryLevelService:
     def get_entry_level_by_pair(
         self, company_id: str, region_id: str
     ) -> CompanyRegionEntryLevel:
+        region_id = self._canonical_region_id(region_id)
         row = self._repo.get_by_pair(company_id, region_id)
         if row is None:
             raise EntryLevelNotFound(f"({company_id}, {region_id})")
@@ -136,6 +139,7 @@ class EntryLevelService:
     def create_entry_level(
         self, definition: EntryLevelDefinition
     ) -> CompanyRegionEntryLevel:
+        definition = self._canonical_definition(definition)
         self._validate_pair(definition.company_id, definition.region_id)
         if self._repo.exists(definition.entry_level_id):
             raise DuplicateEntryLevel(definition.entry_level_id)
@@ -159,6 +163,7 @@ class EntryLevelService:
     def update_entry_level(
         self, definition: EntryLevelDefinition
     ) -> CompanyRegionEntryLevel:
+        definition = self._canonical_definition(definition)
         existing = self.get_entry_level(definition.entry_level_id)
         if (
             existing.company_id != definition.company_id
@@ -185,6 +190,7 @@ class EntryLevelService:
         the stored row (rolling the freshness window forward without
         changing data is not a meaningful change).
         """
+        definition = self._canonical_definition(definition)
         self._validate_pair(definition.company_id, definition.region_id)
         existing = self._repo.get_by_pair(definition.company_id, definition.region_id)
         if existing is None:
@@ -208,6 +214,21 @@ class EntryLevelService:
         return existing, "updated"
 
     # --- internals -------------------------------------------------------
+
+    def _canonical_region_id(self, region_id: str) -> str:
+        resolution = GeographicResolver(
+            RegionRepository(self._repo.session)
+        ).resolve(region_id)
+        return resolution.region_id if resolution.resolved else region_id
+
+    def _canonical_definition(
+        self,
+        definition: EntryLevelDefinition,
+    ) -> EntryLevelDefinition:
+        canonical_region_id = self._canonical_region_id(definition.region_id)
+        if canonical_region_id == definition.region_id:
+            return definition
+        return definition.model_copy(update={"region_id": canonical_region_id})
 
     def _validate_pair(self, company_id: str, region_id: str) -> None:
         hiring = self._hiring_repo.get_by_pair(company_id, region_id)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -15,8 +15,12 @@ from backend.api.dependencies import (
 )
 from backend.api.envelope import NOT_FOUND, error_envelope, lightweight_success_envelope
 from backend.current_opportunities.repository import CurrentOpportunityRepository
-from backend.current_opportunities.schemas import WorkArrangement
+from backend.current_opportunities.schemas import (
+    OpportunityGeographyCorrectionInput,
+    WorkArrangement,
+)
 from backend.current_opportunities.service import (
+    CurrentOpportunityError,
     CurrentOpportunityNotFound,
     CurrentOpportunityService,
 )
@@ -115,6 +119,49 @@ def list_current_opportunity_refresh_runs(
                 for item in service.list_refresh_runs(source_id=source_id, limit=limit)
             ]
         }
+    )
+
+
+@router.post(
+    "/current-opportunities/geography-conflicts/{identity_evidence_id}/approve"
+)
+def approve_current_opportunity_geography_conflict(
+    identity_evidence_id: str,
+    payload: OpportunityGeographyCorrectionInput,
+    admin: CurrentAdmin = Depends(require_data_review_access),
+    session: Session = Depends(get_session),
+):
+    service = CurrentOpportunityService(CurrentOpportunityRepository(session))
+    try:
+        row = service.authorize_geography_correction(
+            identity_evidence_id,
+            corrected_region=payload.corrected_region,
+            reason=payload.reason,
+            operator_id=admin.current.user.user_id,
+        )
+    except CurrentOpportunityNotFound as exc:
+        raise HTTPException(status_code=404, detail="Geography conflict not found") from exc
+    except CurrentOpportunityError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return lightweight_success_envelope(
+        data={
+            "identity_evidence_id": identity_evidence_id,
+            "opportunity_id": row.current_opportunity_id,
+            "canonical_region_id": row.market_id,
+            "location_resolution_source": row.location_resolution_source,
+        }
+    )
+
+
+@router.get("/current-opportunities/geography-conflicts")
+def list_current_opportunity_geography_conflicts(
+    limit: int = Query(default=100, ge=1, le=500),
+    _admin: CurrentAdmin = Depends(require_data_review_access),
+    session: Session = Depends(get_session),
+):
+    service = CurrentOpportunityService(CurrentOpportunityRepository(session))
+    return lightweight_success_envelope(
+        data={"conflicts": list(service.pending_geography_conflicts(limit=limit))}
     )
 
 

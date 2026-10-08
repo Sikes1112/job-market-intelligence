@@ -11,6 +11,7 @@ from backend.geography.exceptions import GeographicAliasConflict
 from backend.geography.models import RegionAlias, RegionStateMembership
 from backend.geography.repository import RegionRepository
 from backend.geography.resolver import (
+    claim_identity_token,
     ensure_identity_token_available,
     normalize_geographic_input,
     normalize_public_slug,
@@ -77,6 +78,13 @@ def apply_curated_geography(repository: RegionRepository, region_id: str) -> boo
         region_id=region_id,
     )
     region.public_slug = definition.public_slug
+    claim_identity_token(
+        repository,
+        definition.public_slug,
+        region_id=region_id,
+        claim_type="public_slug",
+        source="data/geography/curated_markets.json",
+    )
     region.primary_city = definition.primary_city
     region.centroid_latitude = definition.centroid_latitude
     region.centroid_longitude = definition.centroid_longitude
@@ -113,6 +121,13 @@ def apply_curated_geography(repository: RegionRepository, region_id: str) -> boo
                 alias_type=alias_type,
                 source="data/geography/curated_markets.json",
             )
+        )
+        claim_identity_token(
+            repository,
+            value,
+            region_id=region_id,
+            claim_type="import_key" if alias_type == "import_key" else "alias",
+            source="data/geography/curated_markets.json",
         )
     repository.flush()
     return True

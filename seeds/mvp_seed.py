@@ -33,8 +33,9 @@ from backend.companies.repository import CompanyRepository
 from backend.companies.service import CompanyService
 from backend.entry_level.repository import EntryLevelRepository
 from backend.entry_level.service import EntryLevelService
+from backend.geography.catalog import apply_curated_geography, load_curated_geographies
 from backend.geography.repository import RegionRepository
-from backend.geography.service import GeographyService
+from backend.geography.service import GeographyService, RegionDefinition
 from backend.hiring.repository import HiringRepository
 from backend.hiring.service import HiringService
 from backend.outputs.contextual_challenge import ContextualChallengeService
@@ -141,7 +142,10 @@ def run_seed(session: Session) -> SeedResult:
     region_repo = RegionRepository(session)
     geography_service = GeographyService(region_repo)
     for definition in REGIONS:
-        region, outcome = geography_service.upsert_for_build(definition)
+        region, outcome = geography_service.upsert_for_build(
+            _with_curated_geography(definition)
+        )
+        apply_curated_geography(region_repo, region.region_id)
         result.regions[outcome] += 1
         _link_demo_fact(
             provenance_service,
@@ -256,6 +260,28 @@ def run_seed(session: Session) -> SeedResult:
         result.contextual_outputs[contextual_result.action] += 1
 
     return result
+
+
+def _with_curated_geography(definition: RegionDefinition) -> RegionDefinition:
+    """Apply the repository catalog to seed definitions before upsert.
+
+    This keeps repeat seeds unchanged instead of clearing and reapplying
+    canonical fields on every run.
+    """
+
+    curated = load_curated_geographies().get(definition.region_id)
+    if curated is None:
+        return definition
+    return definition.model_copy(
+        update={
+            "public_slug": curated.public_slug,
+            "primary_city": curated.primary_city,
+            "centroid_latitude": curated.centroid_latitude,
+            "centroid_longitude": curated.centroid_longitude,
+            "focus_bounds": curated.focus_bounds,
+            "market_support_status": curated.market_support_status,
+        }
+    )
 
 
 def _ensure_demo_provenance(provenance_service: ProvenanceService) -> str:

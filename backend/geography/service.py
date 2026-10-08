@@ -34,6 +34,7 @@ from backend.geography.models import Region, RegionAlias
 from backend.geography.repository import RegionRepository
 from backend.geography.resolver import (
     MAX_PUBLIC_SLUG_LENGTH,
+    claim_identity_token,
     ensure_identity_token_available,
     normalize_geographic_input,
     normalize_public_slug,
@@ -125,6 +126,21 @@ class GeographyService:
             market_support_status=definition.market_support_status,
         )
         self._repo.add(region)
+        claim_identity_token(
+            self._repo,
+            definition.region_id,
+            region_id=definition.region_id,
+            claim_type="region_id",
+            source="geography_service",
+        )
+        if definition.public_slug is not None:
+            claim_identity_token(
+                self._repo,
+                definition.public_slug,
+                region_id=definition.region_id,
+                claim_type="public_slug",
+                source="geography_service",
+            )
         self._repo.flush()
         return region
 
@@ -155,6 +171,13 @@ class GeographyService:
             source=source,
         )
         self._repo.add_alias(row)
+        claim_identity_token(
+            self._repo,
+            alias,
+            region_id=region_id,
+            claim_type="alias",
+            source=source or "geography_service",
+        )
         self._repo.flush()
         return row
 
@@ -218,6 +241,13 @@ class GeographyService:
                 )
             ensure_identity_token_available(
                 self._repo, definition.public_slug, region_id=region.region_id
+            )
+            claim_identity_token(
+                self._repo,
+                definition.public_slug,
+                region_id=region.region_id,
+                claim_type="public_slug",
+                source="geography_service",
             )
         region.region_name = definition.region_name
         region.display_name = definition.display_name

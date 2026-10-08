@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.opportunities.governance import assert_ranking_influence_disabled
 from backend.opportunities.models import (
     EmployerInfluenceMetadata,
@@ -23,6 +25,7 @@ from backend.opportunities.schemas import (
     OpportunityExpirationState,
     OpportunityListResponse,
     OpportunityPayload,
+    OpportunityRegionBindingCreate,
     OpportunityRegionBindingPayload,
     OpportunityReviewStatus,
     OpportunityRoleFamilyBindingPayload,
@@ -65,6 +68,19 @@ class OpportunityService:
         """
 
         assert_ranking_influence_disabled(request.employer_influence)
+        geographic_resolver = GeographicResolver(RegionRepository(self._repo.session))
+        canonical_region_bindings: list[
+            tuple[OpportunityRegionBindingCreate, str | None, str]
+        ] = []
+        for binding in request.region_bindings:
+            region_id = binding.region_id
+            region_label = binding.region_label
+            if region_id is not None:
+                resolution = geographic_resolver.require(region_id)
+                assert resolution.region_id is not None
+                region_id = resolution.region_id
+                region_label = resolution.display_name or region_label
+            canonical_region_bindings.append((binding, region_id, region_label))
         created_at = request.created_at or datetime.now(UTC)
         program = self._ensure_program(request, created_at=created_at)
         self._repo.flush()
@@ -127,7 +143,7 @@ class OpportunityService:
                     created_at=source.collected_at or created_at,
                 )
             )
-        for binding in request.region_bindings:
+        for binding, region_id, region_label in canonical_region_bindings:
             self._repo.add_region_binding(
                 OpportunityRegionBinding(
                     opportunity_region_binding_id=(
@@ -135,8 +151,8 @@ class OpportunityService:
                         or _new_id("opportunity_region")
                     ),
                     opportunity_id=opportunity_id,
-                    region_id=binding.region_id,
-                    region_label=binding.region_label,
+                    region_id=region_id,
+                    region_label=region_label,
                     metro_area=binding.metro_area,
                     binding_confidence=binding.binding_confidence.value,
                     created_at=created_at,
@@ -184,6 +200,10 @@ class OpportunityService:
     ) -> OpportunityListResponse:
         if active is not None and expired is not None:
             raise OpportunityValidationError("filter by active or expired, not both")
+        if region is not None:
+            resolution = GeographicResolver(RegionRepository(self._repo.session)).resolve(region)
+            if resolution.resolved:
+                region = resolution.region_id
         rows = self._repo.list_opportunities(
             region=region,
             role_family=role_family,
@@ -277,6 +297,11 @@ class OpportunityService:
         program = self._repo.get_employer_program(opportunity.employer_program_id)
         sources = self._repo.list_sources(opportunity.opportunity_id)
         regions = self._repo.list_region_bindings(opportunity.opportunity_id)
+        geographic_resolver = GeographicResolver(RegionRepository(self._repo.session))
+        canonical_regions = tuple(
+            _region_binding_payload(binding, resolver=geographic_resolver)
+            for binding in regions
+        )
         role_families = self._repo.list_role_family_bindings(opportunity.opportunity_id)
         influence = self._repo.get_employer_influence_metadata(opportunity.opportunity_id)
         latest_review = self._repo.latest_review_action_for_opportunity(
@@ -299,7 +324,10 @@ class OpportunityService:
             program_name=opportunity.program_name,
             program_type=opportunity.program_type,
             role_families=tuple(binding.role_family for binding in role_families),
-            regions=tuple(binding.region_id or binding.region_label for binding in regions),
+            regions=tuple(
+                binding.region_id or binding.region_label
+                for binding in canonical_regions
+            ),
             location_mode=opportunity.location_mode,
             seniority_level=opportunity.seniority_level,
             eligibility_summary=opportunity.eligibility_summary,
@@ -326,7 +354,7 @@ class OpportunityService:
             created_at=opportunity.created_at,
             updated_at=opportunity.updated_at,
             sources=tuple(_source_payload(source) for source in sources),
-            region_bindings=tuple(_region_binding_payload(binding) for binding in regions),
+            region_bindings=canonical_regions,
             role_family_bindings=tuple(
                 _role_family_binding_payload(binding) for binding in role_families
             ),
@@ -427,11 +455,20 @@ def _source_payload(row: OpportunitySource) -> OpportunitySourcePayload:
 
 def _region_binding_payload(
     row: OpportunityRegionBinding,
+    *,
+    resolver: GeographicResolver,
 ) -> OpportunityRegionBindingPayload:
+    region_id = row.region_id
+    region_label = row.region_label
+    if region_id is not None:
+        resolution = resolver.resolve(region_id)
+        if resolution.resolved:
+            region_id = resolution.region_id
+            region_label = resolution.display_name or region_label
     return OpportunityRegionBindingPayload(
         opportunity_region_binding_id=row.opportunity_region_binding_id,
-        region_id=row.region_id,
-        region_label=row.region_label,
+        region_id=region_id,
+        region_label=region_label,
         metro_area=row.metro_area,
         binding_confidence=row.binding_confidence,
         created_at=row.created_at,

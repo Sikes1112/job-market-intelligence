@@ -16,6 +16,10 @@ class _Vocabulary(StrEnum):
 
 
 class ProductEventType(_Vocabulary):
+    EXPLORE_CONTEXT_EVALUATED = "explore_context_evaluated"
+    EXPLORE_FIT_GENERATED = "explore_fit_generated"
+    EXPLORE_FIT_ABSTAINED = "explore_fit_abstained"
+    EXPLORE_CONTEXT_UNSUPPORTED = "explore_context_unsupported"
     RECOMMENDATION_GENERATED = "recommendation_generated"
     DECISION_CONSIDERED = "decision_considered"
     DECISION_SAVED = "decision_saved"
@@ -200,9 +204,7 @@ EVENT_REQUIRED_REFS: dict[ProductEventType, frozenset[str]] = {
     ProductEventType.COMMERCIAL_OFFER_INTEREST_RECORDED: frozenset(
         {"experiment_key", "variant_key"}
     ),
-    ProductEventType.COMMERCIAL_CONVERSION_RECORDED: frozenset(
-        {"experiment_key", "variant_key"}
-    ),
+    ProductEventType.COMMERCIAL_CONVERSION_RECORDED: frozenset({"experiment_key", "variant_key"}),
     ProductEventType.SUPPORT_CASE_CREATED: frozenset(),
     ProductEventType.SUPPORT_CASE_STATUS_CHANGED: frozenset(),
 }
@@ -257,7 +259,9 @@ class ProductEventCreate(BaseModel):
     @model_validator(mode="after")
     def _payload_is_canonical(self) -> Self:
         missing = [
-            key for key in EVENT_REQUIRED_REFS.get(self.event_type, frozenset()) if getattr(self, key) is None
+            key
+            for key in EVENT_REQUIRED_REFS.get(self.event_type, frozenset())
+            if getattr(self, key) is None
         ]
         if missing:
             raise ValueError(f"{self.event_type.value} requires {', '.join(sorted(missing))}")

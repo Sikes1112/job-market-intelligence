@@ -28,6 +28,7 @@ from backend.geography.market_coverage import (
     unknown_sector_coverage_metadata,
 )
 from backend.geography.models import Region
+from backend.geography.repository import RegionRepository
 from backend.hiring.models import CompanyRegionHiring
 from backend.presence.models import CompanyRegionPresence
 from backend.provenance.models import FactSourceLink
@@ -144,16 +145,18 @@ def search_regions(
     freshness_status: ApiFreshnessStatus | None = None,
     min_opportunity_score: float | None = None,
 ) -> RegionSearchResponse:
+    canonical_region_ids = _canonical_region_id_map(session)
     regions = _list_regions(session)
-    scores_by_region = {
-        score.region_id: score
-        for score in session.execute(
-            select(RegionMarketScore).order_by(RegionMarketScore.region_id)
-        ).scalars()
-    }
-    presence_by_region = _group_by_region(_list_presence(session))
-    hiring_by_region = _group_by_region(_list_hiring(session))
-    entry_by_region = _group_by_region(_list_entry_level(session))
+    scores_by_region = _scores_by_canonical_region(session, canonical_region_ids)
+    presence_by_region = _group_by_region(
+        _list_presence(session), canonical_region_ids=canonical_region_ids
+    )
+    hiring_by_region = _group_by_region(
+        _list_hiring(session), canonical_region_ids=canonical_region_ids
+    )
+    entry_by_region = _group_by_region(
+        _list_entry_level(session), canonical_region_ids=canonical_region_ids
+    )
     links = _ProvenanceIndex(_list_fact_source_links(session))
 
     items: list[RegionSearchResult] = []
@@ -248,6 +251,9 @@ def search_companies(
     has_entry_level_access: bool | None = None,
     presence_status: str | None = None,
 ) -> CompanySearchResponse:
+    canonical_region_ids = _canonical_region_id_map(session)
+    if region_id is not None:
+        region_id = canonical_region_ids.get(region_id, region_id)
     companies = _list_companies(session)
     presence_by_company = _group_by_company(_list_presence(session))
     hiring_by_company = _group_by_company(_list_hiring(session))
@@ -274,14 +280,17 @@ def search_companies(
         presence_rows = _filter_region(
             presence_by_company.get(company.company_id, ()),
             region_id=region_id,
+            canonical_region_ids=canonical_region_ids,
         )
         hiring_rows = _filter_region(
             hiring_by_company.get(company.company_id, ()),
             region_id=region_id,
+            canonical_region_ids=canonical_region_ids,
         )
         entry_rows = _filter_region(
             entry_by_company.get(company.company_id, ()),
             region_id=region_id,
+            canonical_region_ids=canonical_region_ids,
         )
         if region_id is not None and not (presence_rows or hiring_rows or entry_rows):
             continue
@@ -331,6 +340,7 @@ def search_companies(
                     presence_rows,
                     hiring_rows,
                     entry_rows,
+                    canonical_region_ids=canonical_region_ids,
                 ),
                 matched_region_coverage={
                     region_id: region_coverage[region_id]
@@ -338,6 +348,7 @@ def search_companies(
                         presence_rows,
                         hiring_rows,
                         entry_rows,
+                        canonical_region_ids=canonical_region_ids,
                     )
                     if region_id in region_coverage
                 },
@@ -361,16 +372,18 @@ def company_geography(
     if company is None:
         return None
 
+    canonical_region_ids = _canonical_region_id_map(session)
     regions_by_id = {region.region_id: region for region in _list_regions(session)}
-    scores_by_region = {
-        score.region_id: score
-        for score in session.execute(
-            select(RegionMarketScore).order_by(RegionMarketScore.region_id)
-        ).scalars()
-    }
-    all_presence_by_region = _group_by_region(_list_presence(session))
-    all_hiring_by_region = _group_by_region(_list_hiring(session))
-    all_entry_by_region = _group_by_region(_list_entry_level(session))
+    scores_by_region = _scores_by_canonical_region(session, canonical_region_ids)
+    all_presence_by_region = _group_by_region(
+        _list_presence(session), canonical_region_ids=canonical_region_ids
+    )
+    all_hiring_by_region = _group_by_region(
+        _list_hiring(session), canonical_region_ids=canonical_region_ids
+    )
+    all_entry_by_region = _group_by_region(
+        _list_entry_level(session), canonical_region_ids=canonical_region_ids
+    )
     presence_rows = tuple(
         row for row in _list_presence(session) if row.company_id == company.company_id
     )
@@ -383,14 +396,31 @@ def company_geography(
     links = _ProvenanceIndex(_list_fact_source_links(session))
 
     items: list[CompanyRegionGeographyResult] = []
-    for region_id in _matched_region_ids(presence_rows, hiring_rows, entry_rows):
+    for region_id in _matched_region_ids(
+        presence_rows,
+        hiring_rows,
+        entry_rows,
+        canonical_region_ids=canonical_region_ids,
+    ):
         region = regions_by_id.get(region_id)
         if region is None:
             continue
 
-        company_region_presence_rows = _filter_region(presence_rows, region_id=region_id)
-        company_region_hiring_rows = _filter_region(hiring_rows, region_id=region_id)
-        company_region_entry_rows = _filter_region(entry_rows, region_id=region_id)
+        company_region_presence_rows = _filter_region(
+            presence_rows,
+            region_id=region_id,
+            canonical_region_ids=canonical_region_ids,
+        )
+        company_region_hiring_rows = _filter_region(
+            hiring_rows,
+            region_id=region_id,
+            canonical_region_ids=canonical_region_ids,
+        )
+        company_region_entry_rows = _filter_region(
+            entry_rows,
+            region_id=region_id,
+            canonical_region_ids=canonical_region_ids,
+        )
         evidence = _company_region_evidence_links(
             links,
             presence_rows=company_region_presence_rows,
@@ -541,16 +571,18 @@ def explain_company_sources(
 
 
 def region_coverage_lookup(session: Session) -> dict[str, CoverageMetadataPayload]:
+    canonical_region_ids = _canonical_region_id_map(session)
     regions = _list_regions(session)
-    scores_by_region = {
-        score.region_id: score
-        for score in session.execute(
-            select(RegionMarketScore).order_by(RegionMarketScore.region_id)
-        ).scalars()
-    }
-    presence_by_region = _group_by_region(_list_presence(session))
-    hiring_by_region = _group_by_region(_list_hiring(session))
-    entry_by_region = _group_by_region(_list_entry_level(session))
+    scores_by_region = _scores_by_canonical_region(session, canonical_region_ids)
+    presence_by_region = _group_by_region(
+        _list_presence(session), canonical_region_ids=canonical_region_ids
+    )
+    hiring_by_region = _group_by_region(
+        _list_hiring(session), canonical_region_ids=canonical_region_ids
+    )
+    entry_by_region = _group_by_region(
+        _list_entry_level(session), canonical_region_ids=canonical_region_ids
+    )
     links = _ProvenanceIndex(_list_fact_source_links(session))
     coverage: dict[str, CoverageMetadataPayload] = {}
     for region in regions:
@@ -636,7 +668,32 @@ class _ProvenanceIndex:
 
 
 def _list_regions(session: Session) -> list[Region]:
-    return list(session.execute(select(Region).order_by(Region.region_id)).scalars())
+    return RegionRepository(session).list()
+
+
+def _canonical_region_id_map(session: Session) -> dict[str, str]:
+    repository = RegionRepository(session)
+    return {
+        region.region_id: repository.canonical_region_id(region.region_id)
+        for region in repository.list(include_historical=True)
+    }
+
+
+def _scores_by_canonical_region(
+    session: Session,
+    canonical_region_ids: Mapping[str, str],
+) -> dict[str, RegionMarketScore]:
+    scores: dict[str, RegionMarketScore] = {}
+    for score in session.execute(
+        select(RegionMarketScore).order_by(RegionMarketScore.region_id)
+    ).scalars():
+        canonical_region_id = canonical_region_ids.get(score.region_id, score.region_id)
+        if (
+            canonical_region_id not in scores
+            or score.region_id == canonical_region_id
+        ):
+            scores[canonical_region_id] = score
+    return scores
 
 
 def _list_companies(session: Session) -> list[Company]:
@@ -833,10 +890,17 @@ def _warnings(summary: FreshnessSourceSummary) -> list[str]:
     return [summary.low_confidence_warning] if summary.low_confidence_warning else []
 
 
-def _group_by_region(rows: Iterable[Any]) -> dict[str, tuple[Any, ...]]:
+def _group_by_region(
+    rows: Iterable[Any],
+    *,
+    canonical_region_ids: Mapping[str, str] | None = None,
+) -> dict[str, tuple[Any, ...]]:
     grouped: dict[str, list[Any]] = defaultdict(list)
     for row in rows:
-        grouped[row.region_id].append(row)
+        region_id = row.region_id
+        if canonical_region_ids is not None:
+            region_id = canonical_region_ids.get(region_id, region_id)
+        grouped[region_id].append(row)
     return {key: tuple(value) for key, value in grouped.items()}
 
 
@@ -847,10 +911,24 @@ def _group_by_company(rows: Iterable[Any]) -> dict[str, tuple[Any, ...]]:
     return {key: tuple(value) for key, value in grouped.items()}
 
 
-def _filter_region(rows: Iterable[Any], *, region_id: str | None) -> tuple[Any, ...]:
+def _filter_region(
+    rows: Iterable[Any],
+    *,
+    region_id: str | None,
+    canonical_region_ids: Mapping[str, str] | None = None,
+) -> tuple[Any, ...]:
     if region_id is None:
         return tuple(rows)
-    return tuple(row for row in rows if row.region_id == region_id)
+    return tuple(
+        row
+        for row in rows
+        if (
+            canonical_region_ids.get(row.region_id, row.region_id)
+            if canonical_region_ids is not None
+            else row.region_id
+        )
+        == region_id
+    )
 
 
 def _matches_text(query: str, *values: str | None) -> bool:
@@ -908,8 +986,21 @@ def _entry_level_access_present(row: CompanyRegionEntryLevel) -> bool:
     )
 
 
-def _matched_region_ids(*row_groups: Iterable[Any]) -> list[str]:
-    return sorted({row.region_id for rows in row_groups for row in rows})
+def _matched_region_ids(
+    *row_groups: Iterable[Any],
+    canonical_region_ids: Mapping[str, str] | None = None,
+) -> list[str]:
+    return sorted(
+        {
+            (
+                canonical_region_ids.get(row.region_id, row.region_id)
+                if canonical_region_ids is not None
+                else row.region_id
+            )
+            for rows in row_groups
+            for row in rows
+        }
+    )
 
 
 def _presence_status(rows: Iterable[CompanyRegionPresence]) -> str | None:

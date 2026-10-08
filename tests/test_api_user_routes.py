@@ -736,6 +736,7 @@ def test_export_and_deactivate_current_user_data(api_client, session) -> None:
             region_name="greater_boston",
             display_name="Greater Boston",
             region_type="metro",
+            market_support_status="supported",
         )
     )
     session.flush()

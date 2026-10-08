@@ -386,6 +386,21 @@ class OpportunityCoverageInput(BaseModel):
         return value
 
 
+class OpportunityGeographyCorrectionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    corrected_region: str = Field(min_length=1, max_length=255)
+    reason: str = Field(min_length=1, max_length=512)
+
+    @field_validator("corrected_region", "reason")
+    @classmethod
+    def _strip_correction_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("correction fields must not be blank")
+        return stripped
+
+
 class CurrentOpportunityPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -397,6 +412,8 @@ class CurrentOpportunityPayload(BaseModel):
     role_family: str
     seniority_level: str
     market_id: str | None
+    market_public_slug: str | None = None
+    original_market_id: str | None = None
     market_label: str | None
     location_text: str | None
     location_resolution_status: LocationResolutionStatus

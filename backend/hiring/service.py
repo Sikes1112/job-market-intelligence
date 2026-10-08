@@ -22,6 +22,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.hiring.exceptions import (
     DuplicateHiring,
     HiringNotFound,
@@ -146,6 +148,7 @@ class HiringService:
     def get_hiring_by_pair(
         self, company_id: str, region_id: str
     ) -> CompanyRegionHiring:
+        region_id = self._canonical_region_id(region_id)
         row = self._repo.get_by_pair(company_id, region_id)
         if row is None:
             raise HiringNotFound(f"({company_id}, {region_id})")
@@ -157,6 +160,7 @@ class HiringService:
     # --- writes ----------------------------------------------------------
 
     def create_hiring(self, definition: HiringDefinition) -> CompanyRegionHiring:
+        definition = self._canonical_definition(definition)
         self._validate_pair(definition.company_id, definition.region_id)
         if self._repo.exists(definition.hiring_id):
             raise DuplicateHiring(definition.hiring_id)
@@ -178,6 +182,7 @@ class HiringService:
         return row
 
     def update_hiring(self, definition: HiringDefinition) -> CompanyRegionHiring:
+        definition = self._canonical_definition(definition)
         existing = self.get_hiring(definition.hiring_id)
         if (
             existing.company_id != definition.company_id
@@ -205,6 +210,7 @@ class HiringService:
         comparison because rolling the freshness window forward without
         changing data is not a meaningful change.
         """
+        definition = self._canonical_definition(definition)
         self._validate_pair(definition.company_id, definition.region_id)
         existing = self._repo.get_by_pair(definition.company_id, definition.region_id)
         if existing is None:
@@ -228,6 +234,18 @@ class HiringService:
         return existing, "updated"
 
     # --- internals -------------------------------------------------------
+
+    def _canonical_region_id(self, region_id: str) -> str:
+        resolution = GeographicResolver(
+            RegionRepository(self._repo.session)
+        ).resolve(region_id)
+        return resolution.region_id if resolution.resolved else region_id
+
+    def _canonical_definition(self, definition: HiringDefinition) -> HiringDefinition:
+        canonical_region_id = self._canonical_region_id(definition.region_id)
+        if canonical_region_id == definition.region_id:
+            return definition
+        return definition.model_copy(update={"region_id": canonical_region_id})
 
     def _validate_pair(self, company_id: str, region_id: str) -> None:
         presence = self._presence_repo.get_by_pair(company_id, region_id)

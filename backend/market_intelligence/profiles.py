@@ -71,11 +71,8 @@ def _strengths(
         "employers": max((item.employer_count for item in all_metrics), default=0),
         "hiring": max((item.active_posting_total or 0 for item in all_metrics), default=0),
         "ai_cloud": max(
-            (
-                item.ai_cloud_employer_count + item.ai_cloud_activity
-                for item in all_metrics
-            ),
-            default=0,
+            (signal for item in all_metrics if (signal := _ai_cloud_signal(item)) is not None),
+            default=None,
         ),
         "internships": max((item.internship_total or 0 for item in all_metrics), default=0),
         "programs": max((item.formal_program_count for item in all_metrics), default=0),
@@ -103,8 +100,12 @@ def _strengths(
                 "Improves near-term opportunity signal.",
             )
         )
-    ai_cloud_signal = metrics.ai_cloud_employer_count + metrics.ai_cloud_activity
-    if ai_cloud_signal > 0 and ai_cloud_signal == maxima["ai_cloud"]:
+    ai_cloud_signal = _ai_cloud_signal(metrics)
+    if (
+        ai_cloud_signal is not None
+        and ai_cloud_signal > 0
+        and ai_cloud_signal == maxima["ai_cloud"]
+    ):
         strengths.append(
             _insight(
                 "strong_ai_cloud_signal",
@@ -146,6 +147,12 @@ def _strengths(
             "Use with comparison context rather than as a standalone endorsement.",
         ),
     )
+
+
+def _ai_cloud_signal(metrics: MarketMetrics) -> int | None:
+    if metrics.ai_cloud_activity is None and metrics.ai_cloud_employer_count == 0:
+        return None
+    return metrics.ai_cloud_employer_count + (metrics.ai_cloud_activity or 0)
 
 
 def _weaknesses(metrics: MarketMetrics, *, gaps: tuple[object, ...]) -> tuple[MarketInsight, ...]:

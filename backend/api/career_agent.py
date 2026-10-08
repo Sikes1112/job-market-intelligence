@@ -36,14 +36,46 @@ from backend.career_agent.tools import CareerAgentToolService
 router = APIRouter(tags=["career-agent"])
 
 
-@router.post("/career-agent/answers", response_model=None)
-def career_agent_answer(
+@router.post(
+    "/internal/legacy/career-agent/answers",
+    response_model=None,
+    deprecated=True,
+    include_in_schema=False,
+)
+def legacy_career_agent_answer(
     request: CareerAgentRequest,
     session: Session = Depends(get_session),
 ) -> Any:
     service = CareerAgentGroundingService(session)
     try:
         answer = service.answer(request)
+    except CareerAgentGuardrailViolation as exc:
+        return JSONResponse(
+            status_code=400,
+            content=error_envelope(code=VALIDATION_ERROR, message=str(exc)),
+        )
+    envelope = lightweight_success_envelope(
+        data=answer.model_dump(mode="json"),
+        state=_response_state(answer),
+    )
+    envelope["metadata"]["warnings"] = list(
+        dict.fromkeys((*answer.guardrails.warnings, *answer.limitations))
+    )
+    return envelope
+
+
+@router.post("/career-agent/answers", response_model=None)
+@router.post("/me/career-agent/answers", response_model=None)
+def authoritative_career_agent_answer(
+    request: CareerAgentRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Any:
+    """Production individual flow; legacy public answers remain compatibility-only."""
+
+    service = CareerAgentGroundingService(session)
+    try:
+        answer = service.answer_authoritative(current.user.user_id, request)
     except CareerAgentGuardrailViolation as exc:
         return JSONResponse(
             status_code=400,
@@ -86,7 +118,12 @@ def career_agent_action_plan_with_memory(
         if request.include_memory
         else None
     )
-    return _action_plan_response(request, session=session, memory_profile=memory_profile)
+    return _action_plan_response(
+        request,
+        session=session,
+        memory_profile=memory_profile,
+        user_id=current.user.user_id,
+    )
 
 
 @router.get("/me/career-memory", response_model=None)
@@ -244,10 +281,15 @@ def _action_plan_response(
     *,
     session: Session,
     memory_profile,
+    user_id: str | None = None,
 ) -> Any:  # noqa: ANN001
     service = CareerActionPlanningService(session)
     try:
-        plan = service.generate_plan(request, memory_profile=memory_profile)
+        plan = service.generate_plan(
+            request,
+            user_id=user_id,
+            memory_profile=memory_profile,
+        )
     except CareerAgentGuardrailViolation as exc:
         return JSONResponse(
             status_code=400,

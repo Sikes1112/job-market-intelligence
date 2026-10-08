@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.current_opportunities.models import (
     CurrentOpportunity,
+    CurrentOpportunityIdentityEvidence,
     CurrentOpportunitySourceLink,
     OpportunityAcquisitionRun,
     OpportunityCoverageContract,
@@ -85,6 +86,29 @@ class CurrentOpportunityRepository:
 
     def get_opportunity(self, opportunity_id: str) -> CurrentOpportunity | None:
         return self._session.get(CurrentOpportunity, opportunity_id)
+
+    def get_identity_evidence(
+        self, identity_evidence_id: str
+    ) -> CurrentOpportunityIdentityEvidence | None:
+        return self._session.get(CurrentOpportunityIdentityEvidence, identity_evidence_id)
+
+    def list_pending_geography_conflicts(
+        self, *, limit: int = 100
+    ) -> list[CurrentOpportunityIdentityEvidence]:
+        return list(
+            self._session.execute(
+                select(CurrentOpportunityIdentityEvidence)
+                .where(
+                    CurrentOpportunityIdentityEvidence.geography_review_status
+                    == "pending"
+                )
+                .order_by(
+                    CurrentOpportunityIdentityEvidence.created_at,
+                    CurrentOpportunityIdentityEvidence.identity_evidence_id,
+                )
+                .limit(limit)
+            ).scalars()
+        )
 
     def get_opportunity_by_identity_key(self, identity_key: str) -> CurrentOpportunity | None:
         return self._session.execute(

@@ -12,6 +12,10 @@ class HiringRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    @property
+    def session(self) -> Session:
+        return self._session
+
     def get(self, hiring_id: str) -> CompanyRegionHiring | None:
         return self._session.get(CompanyRegionHiring, hiring_id)
 

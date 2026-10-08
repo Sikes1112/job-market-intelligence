@@ -10,6 +10,8 @@ from sqlalchemy import select
 
 from backend.companies.models import Company
 from backend.geography.models import Region
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.opportunities.matching import (
     OpportunityMatchResult,
     match_opportunity_to_route,
@@ -304,16 +306,9 @@ class OpportunityRouteService:
         )
 
     def _resolve_region(self, requested_region: str) -> Region | None:
-        return self._repo.session.execute(
-            select(Region)
-            .where(
-                (Region.region_id == requested_region)
-                | (Region.region_name == requested_region)
-                | (Region.display_name == requested_region)
-            )
-            .order_by(Region.region_id.asc())
-            .limit(1)
-        ).scalar_one_or_none()
+        repository = RegionRepository(self._repo.session)
+        resolution = GeographicResolver(repository).resolve(requested_region)
+        return repository.get(resolution.region_id) if resolution.region_id else None
 
     def _region_market_score(self, region_id: str) -> RegionMarketScore | None:
         return self._repo.session.execute(

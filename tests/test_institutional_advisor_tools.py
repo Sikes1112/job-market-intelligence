@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 
 from backend.companies.models import Company
 from backend.entry_level.models import CompanyRegionEntryLevel
+from backend.geography.catalog import apply_curated_geography
 from backend.geography.models import Region
+from backend.geography.repository import RegionRepository
+from backend.geography.service import GeographyService, RegionDefinition
+from backend.geography.types import RegionType
 from backend.hiring.models import CompanyRegionHiring
 from backend.institutions.models import (
     InstitutionalAuditLog,
@@ -307,6 +311,48 @@ def test_org_admin_can_compare_regions_and_audit_is_recorded(
     assert len(audit_rows) == 1
     assert audit_rows[0].actor_user_id == principals["admin"][1]
     assert audit_rows[0].event_metadata["student_specific"] is False
+
+
+def test_advisor_region_references_use_canonical_resolver(
+    api_client,
+    session: Session,
+) -> None:
+    principals = _seed_principals(api_client, session, "advisor_canonical_geo_org")
+    repository = RegionRepository(session)
+    GeographyService(repository).create_region(
+        RegionDefinition(
+            region_id="sf_bay_area",
+            region_name="sf_bay_area",
+            display_name="San Francisco Bay Area",
+            region_type=RegionType.GREATER_REGION,
+        )
+    )
+    assert apply_curated_geography(repository, "sf_bay_area")
+
+    response = api_client.post(
+        _advisor_url("advisor_canonical_geo_org", "compare-regions"),
+        headers=principals["admin"][0],
+        json={
+            "regions": [
+                "sf_bay_area",
+                "san-francisco-bay-area",
+                "greater_sf",
+                "not-a-market",
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert [item["item_id"] for item in data["compared_items"][:3]] == [
+        "sf_bay_area",
+        "sf_bay_area",
+        "sf_bay_area",
+    ]
+    assert data["compared_items"][3]["item_type"] == "region"
+    assert data["compared_items"][3]["item_id"] == "not_a_market"
+    assert any("not found" in warning.lower() for warning in data["coverage_warnings"])
+    assert session.get(Region, "greater_sf") is None
 
 
 def test_advisor_can_use_company_industry_stage_and_timing_tools(

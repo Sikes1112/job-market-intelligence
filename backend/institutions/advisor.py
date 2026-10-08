@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session
 from backend.api.search import company_geography, search_companies, search_regions
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.market_coverage import CoverageMetadataPayload
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.hiring.models import CompanyRegionHiring
 
 
@@ -196,17 +198,25 @@ def build_region_comparison(
 ) -> AdvisorToolResponse:
     generated_at = _utc_now()
     search = search_regions(session)
-    by_key = _region_lookup(search.regions)
+    by_id = {region.region_id: region for region in search.regions}
+    resolver = GeographicResolver(RegionRepository(session))
     hiring_by_region = _hiring_by_region(session)
     entry_by_region = _entry_by_region(session)
     items: list[AdvisorComparedItem] = []
     coverage_warnings: list[str] = []
 
     for requested in request.regions:
-        region = by_key.get(_normalize_key(requested))
+        resolution = resolver.resolve(requested)
+        region = by_id.get(resolution.region_id or "") if resolution.resolved else None
         if region is None:
             items.append(_missing_item(requested, "region"))
-            coverage_warnings.append(f"Region not found or unavailable: {requested}.")
+            if resolution.status == "ambiguous":
+                coverage_warnings.append(
+                    f"Region reference is ambiguous: {requested}; candidates: "
+                    f"{', '.join(resolution.candidate_region_ids)}."
+                )
+            else:
+                coverage_warnings.append(f"Region not found or unavailable: {requested}.")
             continue
         hiring_rows = hiring_by_region.get(region.region_id, [])
         entry_rows = entry_by_region.get(region.region_id, [])
@@ -245,6 +255,8 @@ def build_region_comparison(
                 warnings=item_warnings,
                 metadata={
                     "region_id": region.region_id,
+                    "requested_region": requested,
+                    "resolution_source": resolution.resolution_source,
                     "freshness_status": region.freshness.freshness_status.value,
                     "data_basis": region.freshness.data_basis.value,
                 },
@@ -274,7 +286,7 @@ def build_industry_comparison(
 ) -> AdvisorToolResponse:
     generated_at = _utc_now()
     companies = search_companies(session).companies
-    region_filter = {_normalize_key(region) for region in request.region_context}
+    region_filter = _canonical_region_filter(session, request.region_context)
     items: list[AdvisorComparedItem] = []
     coverage_warnings: list[str] = []
 
@@ -286,7 +298,7 @@ def build_industry_comparison(
             and (
                 not region_filter
                 or any(
-                    _normalize_key(region_id) in region_filter
+                    region_id in region_filter
                     for region_id in company.matched_region_ids
                 )
             )
@@ -368,7 +380,7 @@ def build_company_comparison(
     generated_at = _utc_now()
     companies = search_companies(session).companies
     by_key = _company_lookup(companies)
-    region_filter = {_normalize_key(region) for region in request.region_context}
+    region_filter = _canonical_region_filter(session, request.region_context)
     items: list[AdvisorComparedItem] = []
     coverage_warnings: list[str] = []
 
@@ -384,8 +396,7 @@ def build_company_comparison(
             region_items = [
                 row
                 for row in region_items
-                if _normalize_key(row.region_id) in region_filter
-                or _normalize_key(row.region_name) in region_filter
+                if row.region_id in region_filter
             ]
         item_warnings = [
             warning
@@ -657,13 +668,13 @@ def _filtered_hiring_rows(
     regions: list[str],
     companies: list[str],
 ) -> list[CompanyRegionHiring]:
-    region_keys = {_normalize_key(region) for region in regions}
+    region_keys = _canonical_region_filter(session, regions)
     company_keys = {_normalize_key(company) for company in companies}
     rows = list(session.execute(select(CompanyRegionHiring)).scalars())
     return [
         row
         for row in rows
-        if (not region_keys or _normalize_key(row.region_id) in region_keys)
+        if (not regions or row.region_id in region_keys)
         and (not company_keys or _normalize_key(row.company_id) in company_keys)
     ]
 
@@ -674,13 +685,13 @@ def _filtered_entry_rows(
     regions: list[str],
     companies: list[str],
 ) -> list[CompanyRegionEntryLevel]:
-    region_keys = {_normalize_key(region) for region in regions}
+    region_keys = _canonical_region_filter(session, regions)
     company_keys = {_normalize_key(company) for company in companies}
     rows = list(session.execute(select(CompanyRegionEntryLevel)).scalars())
     return [
         row
         for row in rows
-        if (not region_keys or _normalize_key(row.region_id) in region_keys)
+        if (not regions or row.region_id in region_keys)
         and (not company_keys or _normalize_key(row.company_id) in company_keys)
     ]
 
@@ -694,6 +705,16 @@ def _industry_matches(session: Session, industries: list[str]) -> list[Any]:
         for company in companies
         if any(_matches_industry(company, industry) for industry in industries)
     ]
+
+
+def _canonical_region_filter(session: Session, values: list[str]) -> set[str]:
+    resolver = GeographicResolver(RegionRepository(session))
+    return {
+        resolution.region_id
+        for value in values
+        if (resolution := resolver.resolve(value)).resolved
+        and resolution.region_id is not None
+    }
 
 
 def _matches_industry(company: Any, industry: str) -> bool:

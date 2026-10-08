@@ -9,7 +9,10 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.geography.exceptions import GeographicResolutionError
 from backend.geography.market_coverage import PRIORITY_MARKETS
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.region_expansion.models import RegionExpansionWorkflow
 from backend.region_expansion.repository import RegionExpansionRepository
 
@@ -162,11 +165,21 @@ class RegionExpansionService:
             raise RegionExpansionError(
                 f"region expansion workflow already exists for {candidate.region_key!r}"
             )
+        canonical_region_id = candidate.canonical_region_id
+        if canonical_region_id is not None:
+            try:
+                resolution = GeographicResolver(
+                    RegionRepository(self._repo.session)
+                ).require(canonical_region_id)
+            except GeographicResolutionError as exc:
+                raise RegionExpansionError(str(exc)) from exc
+            assert resolution.region_id is not None
+            canonical_region_id = resolution.region_id
         row = RegionExpansionWorkflow(
             workflow_id=_new_workflow_id(),
             region_key=candidate.region_key,
             display_name=candidate.display_name,
-            canonical_region_id=candidate.canonical_region_id,
+            canonical_region_id=canonical_region_id,
             workflow_state=RegionExpansionState.CANDIDATE.value,
             region_data_mode=candidate.region_data_mode.value,
         )

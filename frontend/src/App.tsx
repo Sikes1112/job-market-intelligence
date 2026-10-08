@@ -11510,20 +11510,25 @@ function App() {
       || !selectedRegionIsKnown
       || regionDetails[selectedRegionId]
       || regionLoading[selectedRegionId]
+      || regionErrors[selectedRegionId]
     ) {
       return;
     }
     void loadRegion(selectedRegionId);
-  }, [isProductRoute, loadRegion, regionDetails, regionLoading, selectedRegionId, selectedRegionIsKnown]);
+  }, [isProductRoute, loadRegion, regionDetails, regionErrors, regionLoading, selectedRegionId, selectedRegionIsKnown]);
 
   useEffect(() => {
     if (route.page !== "explore") return;
     regionList.forEach((region) => {
-      if (!regionDetails[region.region_id] && !regionLoading[region.region_id]) {
+      if (
+        !regionDetails[region.region_id]
+        && !regionLoading[region.region_id]
+        && !regionErrors[region.region_id]
+      ) {
         void loadRegion(region.region_id);
       }
     });
-  }, [loadRegion, regionDetails, regionList, regionLoading, route.page]);
+  }, [loadRegion, regionDetails, regionErrors, regionList, regionLoading, route.page]);
 
   useEffect(() => {
     regionSourceIdsNeeded.forEach((regionId) => {
@@ -11558,7 +11563,7 @@ function App() {
     if (route.page !== "compare") return;
     [comparisonA, comparisonB].forEach((regionId) => {
       if (!regionId || !isKnownRegion(regionId, regionList, hasLoadedRegionList)) return;
-      if (!regionDetails[regionId] && !regionLoading[regionId]) {
+      if (!regionDetails[regionId] && !regionLoading[regionId] && !regionErrors[regionId]) {
         void loadRegion(regionId);
       }
     });
@@ -11568,6 +11573,7 @@ function App() {
     hasLoadedRegionList,
     loadRegion,
     regionDetails,
+    regionErrors,
     regionList,
     regionLoading,
     route.page,

@@ -603,6 +603,149 @@ def test_provider_stable_geography_upgrades_but_does_not_degrade_or_reassign(
     assert upgraded.location_resolution_status == "resolved"
 
 
+def test_geography_conflict_can_be_authoritatively_corrected_with_audit_history(
+    session: Session,
+) -> None:
+    _seed_market(session)
+    session.add(
+        Region(
+            region_id="chicago",
+            region_name="chicago",
+            display_name="Chicago",
+            region_type="metro",
+        )
+    )
+    session.flush()
+    service = _service(session)
+    service.upsert_source(_source())
+    service.upsert_coverage(_coverage())
+    service.refresh_source(
+        StaticOpportunityAdapter(
+            source_id="src_employer", records=(_record("correct-me"),), collected_at=NOW
+        ),
+        run_id="run_correction_a",
+        idempotency_key="correction-a",
+        now=NOW,
+    )
+    conflicting = _record(
+        "correct-me",
+        raw_payload={
+            **_record("correct-me")["raw_payload"],
+            "market_id": "chicago",
+            "location": "Chicago",
+        },
+    )
+    service.refresh_source(
+        StaticOpportunityAdapter(
+            source_id="src_employer",
+            records=(conflicting,),
+            collected_at=NOW + timedelta(hours=1),
+        ),
+        run_id="run_correction_b",
+        idempotency_key="correction-b",
+        now=NOW + timedelta(hours=1),
+    )
+
+    evidence = session.execute(
+        select(CurrentOpportunityIdentityEvidence).where(
+            CurrentOpportunityIdentityEvidence.geography_review_status == "pending"
+        )
+    ).scalar_one()
+    pending = service.pending_geography_conflicts()
+    assert pending == (
+        {
+            "identity_evidence_id": evidence.identity_evidence_id,
+            "opportunity_id": evidence.current_opportunity_id,
+            "source_id": "src_employer",
+            "provider_record_id": "correct-me",
+            "previous_region_id": "greater_boston",
+            "candidate_region_id": "chicago",
+            "review_status": "pending",
+            "created_at": evidence.created_at.isoformat(),
+        },
+    )
+    corrected = service.authorize_geography_correction(
+        evidence.identity_evidence_id,
+        corrected_region="chicago",
+        reason="Provider confirmed the role moved to Chicago.",
+        operator_id="operator-1",
+        reviewed_at=NOW + timedelta(hours=2),
+    )
+
+    assert corrected.market_id == "chicago"
+    assert corrected.location_resolution_source == "authorized_correction"
+    assert "|chicago|" in corrected.canonical_identity_key
+    assert evidence.geography_previous_region_id == "greater_boston"
+    assert evidence.geography_candidate_region_id == "chicago"
+    assert evidence.geography_corrected_region_id == "chicago"
+    assert evidence.geography_reviewed_by == "operator-1"
+    assert evidence.geography_review_reason == "Provider confirmed the role moved to Chicago."
+    assert service.pending_geography_conflicts() == ()
+    observation = session.get(
+        OpportunitySourceObservation,
+        evidence.source_observation_id,
+    )
+    assert observation is not None
+    assert observation.normalized_payload["market_id"] == "chicago"
+
+
+def test_provider_native_id_reuse_retires_unsupported_old_opportunity(
+    session: Session,
+) -> None:
+    _seed_market(session)
+    service = _service(session)
+    service.upsert_source(_source())
+    service.upsert_coverage(_coverage())
+    service.refresh_source(
+        StaticOpportunityAdapter(
+            source_id="src_employer", records=(_record("reused-id"),), collected_at=NOW
+        ),
+        run_id="run_reuse_old",
+        idempotency_key="reuse-old",
+        now=NOW,
+    )
+    old = session.execute(select(CurrentOpportunity)).scalar_one()
+
+    replacement = _record(
+        "reused-id",
+        raw_payload={
+            **_record("reused-id")["raw_payload"],
+            "title": "Product Manager",
+            "role_family": "product",
+            "application_url": "https://jobs.acme.example/apply/reused-id-v2",
+        },
+    )
+    service.refresh_source(
+        StaticOpportunityAdapter(
+            source_id="src_employer",
+            records=(replacement,),
+            collected_at=NOW + timedelta(hours=1),
+        ),
+        run_id="run_reuse_new",
+        idempotency_key="reuse-new",
+        now=NOW + timedelta(hours=1),
+    )
+
+    rows = session.execute(
+        select(CurrentOpportunity).order_by(CurrentOpportunity.created_at)
+    ).scalars().all()
+    assert len(rows) == 2
+    session.refresh(old)
+    assert old.canonical_status == "closed"
+    assert old.ranking_eligible is False
+    assert "no_active_source_links" in old.ranking_ineligible_reasons
+    assert "source_link_reassigned" in old.warnings
+    link = CurrentOpportunityRepository(session).get_source_link(
+        source_id="src_employer",
+        provider_record_id="reused-id",
+    )
+    assert link is not None
+    assert link.current_opportunity_id != old.current_opportunity_id
+    replacement_row = session.get(CurrentOpportunity, link.current_opportunity_id)
+    assert replacement_row is not None
+    assert replacement_row.canonical_status == "active"
+
+
 def test_cross_source_duplicates_and_low_confidence_potential_duplicates(
     session: Session,
 ) -> None:
@@ -731,6 +874,7 @@ def test_strategic_matching_uses_identity_decision_and_strategy_context(
         completeness_state="partial",
         sufficiency_state="sufficient",
         privacy_visibility="private",
+        downstream_personalization_consent_granted=True,
     )
     session.add(identity)
     session.flush()
@@ -810,6 +954,53 @@ def test_strategic_matching_uses_identity_decision_and_strategy_context(
     assert matches[0].strategic_relevance == "direct_fit"
     assert matches[0].ranking_eligible is True
     assert "career identity and decision term overlap" in matches[0].contributing_factors
+
+
+def test_strategic_matching_does_not_read_unconsented_career_identity(
+    session: Session,
+) -> None:
+    _seed_market(session)
+    session.add(User(user_id="user_match_no_consent"))
+    session.flush()
+    session.add(
+        CareerIdentity(
+            career_identity_id="identity_match_no_consent",
+            user_id="user_match_no_consent",
+            current_version=1,
+            completeness_state="partial",
+            sufficiency_state="sufficient",
+            privacy_visibility="private",
+            downstream_personalization_consent_granted=False,
+        )
+    )
+    session.add(
+        CareerIdentityFact(
+            career_identity_fact_id="private_fact_no_consent",
+            career_identity_id="identity_match_no_consent",
+            user_id="user_match_no_consent",
+            fact_type="skill",
+            normalized_key="python",
+            state="explicit",
+            payload={"name": "Python"},
+            provenance={},
+        )
+    )
+    service = _service(session)
+    service.upsert_source(_source())
+    service.upsert_coverage(_coverage())
+    service.refresh_source(
+        StaticOpportunityAdapter(source_id="src_employer", records=(_record(),), collected_at=NOW),
+        run_id="run_match_no_consent",
+        idempotency_key="match_no_consent",
+        now=NOW,
+    )
+
+    matches = service.strategic_matches("user_match_no_consent", now=NOW)
+    assert matches
+    assert "career identity and decision term overlap" not in (
+        matches[0].contributing_factors
+    )
+    assert matches[0].strategic_relevance == "weak_fit"
 
 
 def test_current_opportunity_api_auth_filters_and_payload_safety(

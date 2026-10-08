@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from backend.companies.models import Company
 from backend.entry_level.models import CompanyRegionEntryLevel
-from backend.geography.models import Region
+from backend.geography.repository import RegionRepository
 from backend.hiring.models import CompanyRegionHiring
 from backend.institutions.dashboard import (
     InstitutionalAggregateItem,
@@ -468,7 +468,7 @@ def build_institution_benchmarks(
 def _market_snapshots(session: Session) -> list[MarketDecisionSnapshot]:
     regions = {
         row.region_id: row.display_name
-        for row in session.execute(select(Region).order_by(Region.region_id)).scalars()
+        for row in RegionRepository(session).list()
     }
     markets = {
         region_id: MarketDecisionSnapshot(region_id=region_id, region_label=label)

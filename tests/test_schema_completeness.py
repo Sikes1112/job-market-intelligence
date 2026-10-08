@@ -7,6 +7,8 @@ from backend.shared.db import Base, create_all, import_all_models, make_engine
 REQUIRED_TABLES = {
     "regions",
     "region_aliases",
+    "region_canonical_redirects",
+    "region_identity_claims",
     "region_state_memberships",
     "companies",
     "company_region_presence",
@@ -221,7 +223,12 @@ USER_IDENTITY_TABLES = {
     "commercial_experiment_signals",
 }
 SYSTEM_EVENT_TABLES = {"alert_events"}
-GEOGRAPHY_LOOKUP_TABLES = {"region_aliases", "region_state_memberships"}
+GEOGRAPHY_LOOKUP_TABLES = {
+    "region_aliases",
+    "region_canonical_redirects",
+    "region_identity_claims",
+    "region_state_memberships",
+}
 OPERATOR_WORKFLOW_TABLES = {"region_expansion_workflows", "beta_cohorts", "product_feature_gates"}
 MONETIZATION_TABLES = {
     "monetization_accounts",

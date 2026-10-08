@@ -10,6 +10,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.api.search import search_companies, search_regions
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.opportunities.repository import OpportunityRepository
 from backend.opportunities.service import OpportunityService
 from backend.platform_intelligence.history_repository import HistoryRepository
@@ -233,7 +235,8 @@ class UserIntelligenceDashboardService:
         rows = UserRepository(self._session).list_saved_market_artifacts(
             user_id=current_user_id,
         )
-        return tuple(_saved_item(row) for row in rows[:limit])
+        resolver = GeographicResolver(RegionRepository(self._session))
+        return tuple(_saved_item(row, resolver=resolver) for row in rows[:limit])
 
     def _market_warnings(
         self,
@@ -535,15 +538,29 @@ def _enum_value(value: Any) -> str | None:
     return None
 
 
-def _saved_item(row: Any) -> SavedDashboardItem:
-    label = row.label or row.artifact_ref
+def _saved_item(row: Any, *, resolver: GeographicResolver) -> SavedDashboardItem:
+    artifact_ref = row.artifact_ref
+    original_artifact_ref = None
+    if row.artifact_type == "region":
+        resolution = resolver.resolve(artifact_ref)
+        if resolution.resolved:
+            artifact_ref = resolution.region_id or artifact_ref
+            original_artifact_ref = (
+                row.artifact_ref if artifact_ref != row.artifact_ref else None
+            )
+    label = row.label or artifact_ref
     return SavedDashboardItem(
         item_id=row.saved_artifact_id,
         item_type=row.artifact_type,
         label=label,
-        target_route=_saved_item_route(row.artifact_type, row.artifact_ref),
+        target_route=_saved_item_route(row.artifact_type, artifact_ref),
         metadata={
-            "artifact_ref": row.artifact_ref,
+            "artifact_ref": artifact_ref,
+            **(
+                {"original_artifact_ref": original_artifact_ref}
+                if original_artifact_ref is not None
+                else {}
+            ),
             "notes": row.notes,
         },
     )

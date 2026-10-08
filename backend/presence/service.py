@@ -19,7 +19,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.companies.repository import CompanyRepository
+from backend.geography.exceptions import GeographicInputAmbiguous
 from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.presence.evidence import (
     PresenceDecision,
     PresenceEvidence,
@@ -77,6 +79,7 @@ class PresenceService:
     def get_presence_by_pair(
         self, company_id: str, region_id: str
     ) -> CompanyRegionPresence:
+        region_id = self._canonical_region_id(region_id)
         presence = self._repo.get_by_pair(company_id, region_id)
         if presence is None:
             raise PresenceNotFound(f"({company_id}, {region_id})")
@@ -88,6 +91,7 @@ class PresenceService:
     # --- writes ----------------------------------------------------------
 
     def create_presence(self, definition: PresenceDefinition) -> CompanyRegionPresence:
+        definition = self._canonical_definition(definition)
         self._validate_existence(definition)
         if self._repo.exists(definition.presence_id):
             raise DuplicatePresence(definition.presence_id)
@@ -116,6 +120,7 @@ class PresenceService:
         return presence
 
     def update_presence(self, definition: PresenceDefinition) -> CompanyRegionPresence:
+        definition = self._canonical_definition(definition)
         existing = self.get_presence(definition.presence_id)
         if (
             existing.company_id != definition.company_id
@@ -144,6 +149,7 @@ class PresenceService:
         Reaching ``rebuilding`` requires ``stale`` per ``OBJECT_STATE_MODEL.md``
         §17 — Slices 14+.
         """
+        definition = self._canonical_definition(definition)
         self._validate_existence(definition)
         existing = self._repo.get_by_pair(definition.company_id, definition.region_id)
         if existing is None:
@@ -167,6 +173,23 @@ class PresenceService:
         return existing, "updated"
 
     # --- internals -------------------------------------------------------
+
+    def _canonical_region_id(self, region_id: str) -> str:
+        resolution = GeographicResolver(self._region_repo).resolve(region_id)
+        if resolution.status == "ambiguous":
+            raise GeographicInputAmbiguous(
+                f"ambiguous geographic input {region_id!r}: "
+                f"{list(resolution.candidate_region_ids)!r}"
+            )
+        if not resolution.resolved or resolution.region_id is None:
+            raise MissingRegionForPresence(region_id)
+        return resolution.region_id
+
+    def _canonical_definition(self, definition: PresenceDefinition) -> PresenceDefinition:
+        canonical_region_id = self._canonical_region_id(definition.region_id)
+        if canonical_region_id == definition.region_id:
+            return definition
+        return definition.model_copy(update={"region_id": canonical_region_id})
 
     def _validate_existence(self, definition: PresenceDefinition) -> None:
         if not self._company_repo.exists(definition.company_id):

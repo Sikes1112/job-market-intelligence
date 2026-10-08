@@ -16,6 +16,7 @@ from backend.career_identity.models import CareerIdentity, CareerIdentityFact
 from backend.companies.models import Company
 from backend.current_opportunities.adapters import OpportunityAcquisitionAdapter
 from backend.current_opportunities.identity import (
+    canonical_identity_keys_for_row,
     evidence_id,
     link_id,
     resolve_current_opportunity_identity,
@@ -46,6 +47,7 @@ from backend.current_opportunities.schemas import (
     FreshnessState,
     IdentityResolutionStatus,
     LicenseTermsClassification,
+    LocationResolutionStatus,
     NormalizationStatus,
     NormalizedOpportunity,
     OpportunityCoverageInput,
@@ -109,6 +111,7 @@ class CurrentOpportunityService:
             supported_markets.append(
                 resolution.region_id if resolution is not None and resolution.resolved else value
             )
+        supported_markets = list(dict.fromkeys(supported_markets))
         values = {
             "provider": request.provider,
             "display_name": request.display_name,
@@ -143,10 +146,22 @@ class CurrentOpportunityService:
 
     def upsert_coverage(self, request: OpportunityCoverageInput) -> OpportunityCoverageContract:
         resolver = GeographicResolver(RegionRepository(self._repo.session))
-        raw_market = request.market_id or request.market_key
-        resolution = resolver.resolve(raw_market) if raw_market != "*" else None
+        market_id_resolution = (
+            resolver.resolve(request.market_id) if request.market_id is not None else None
+        )
+        market_key_resolution = (
+            resolver.resolve(request.market_key) if request.market_key != "*" else None
+        )
         canonical_market_id = (
-            resolution.region_id if resolution is not None and resolution.resolved else None
+            market_id_resolution.region_id
+            if market_id_resolution is not None and market_id_resolution.resolved
+            else (
+                market_key_resolution.region_id
+                if request.market_id is None
+                and market_key_resolution is not None
+                and market_key_resolution.resolved
+                else None
+            )
         )
         if request.market_id is not None and canonical_market_id is None:
             raise CurrentOpportunityError(
@@ -157,13 +172,18 @@ class CurrentOpportunityService:
             if hasattr(request.opportunity_type, "value")
             else str(request.opportunity_type)
         )
+        canonical_market_key = (
+            market_key_resolution.region_id
+            if market_key_resolution is not None and market_key_resolution.resolved
+            else request.market_key
+        )
         row = self._repo.get_coverage(
-            market_key=request.market_key,
+            market_key=canonical_market_key,
             role_family=request.role_family,
             opportunity_type=opportunity_type,
         )
         values = {
-            "market_key": request.market_key,
+            "market_key": canonical_market_key,
             "market_id": canonical_market_id,
             "market_label": request.market_label,
             "role_family": request.role_family,
@@ -413,6 +433,7 @@ class CurrentOpportunityService:
         dict[str, list[CurrentOpportunitySourceLink]],
         dict[str, list[CurrentOpportunitySourceLink]],
         dict[str, OpportunityDataSource],
+        dict[str, dict[str, str | None]],
     ]:
         row_ids = [row.current_opportunity_id for row in rows]
         active_links_by_row = self._repo.list_source_links_for_opportunities(
@@ -428,6 +449,9 @@ class CurrentOpportunityService:
             active_links_by_row,
             all_links_by_row,
             self._repo.list_sources_by_ids(source_ids),
+            RegionRepository(self._repo.session).current_output_identities(
+                {row.market_id for row in rows if row.market_id is not None}
+            ),
         )
 
     def _visible_opportunity_payloads(
@@ -440,7 +464,12 @@ class CurrentOpportunityService:
         now: datetime,
         coverage_rows: Mapping[tuple[str, str, str], OpportunityCoverageContract],
     ) -> tuple[list[CurrentOpportunityPayload], int]:
-        active_links_by_row, all_links_by_row, source_rows = self._list_opportunity_context(rows)
+        (
+            active_links_by_row,
+            all_links_by_row,
+            source_rows,
+            market_identities,
+        ) = self._list_opportunity_context(rows)
         selected: list[CurrentOpportunityPayload] = []
         for row in rows:
             if not _row_display_allowed(
@@ -459,6 +488,7 @@ class CurrentOpportunityService:
                         links=all_links_by_row.get(row.current_opportunity_id, []),
                         source_rows=source_rows,
                         coverage_rows=coverage_rows,
+                        market_identities=market_identities,
                     )
                 )
                 if len(selected) >= limit:
@@ -478,6 +508,105 @@ class CurrentOpportunityService:
             raise CurrentOpportunityNotFound(opportunity_id)
         return self._opportunity_payload(row, now=now)
 
+    def authorize_geography_correction(
+        self,
+        identity_evidence_id: str,
+        *,
+        corrected_region: str,
+        reason: str,
+        operator_id: str,
+        reviewed_at: datetime | None = None,
+    ) -> CurrentOpportunity:
+        """Approve one recorded resolved-A → resolved-B geography conflict."""
+
+        evidence = self._repo.get_identity_evidence(identity_evidence_id)
+        if evidence is None:
+            raise CurrentOpportunityNotFound(identity_evidence_id)
+        if evidence.geography_review_status == "approved":
+            raise CurrentOpportunityError("geography conflict has already been approved")
+        candidate_region_id = evidence.geography_candidate_region_id
+        previous_region_id = evidence.geography_previous_region_id
+        if candidate_region_id is None or previous_region_id is None:
+            conflict_warning = next(
+                (
+                    warning
+                    for warning in evidence.warnings
+                    if warning.startswith("resolved_geography_conflict:")
+                ),
+                None,
+            )
+            if conflict_warning is None:
+                raise CurrentOpportunityError(
+                    "identity evidence is not a resolved geography conflict"
+                )
+            _prefix, previous_region_id, candidate_region_id = conflict_warning.split(":", 2)
+
+        resolution = GeographicResolver(RegionRepository(self._repo.session)).require(
+            corrected_region
+        )
+        assert resolution.region_id is not None
+        if resolution.region_id != candidate_region_id:
+            raise CurrentOpportunityError(
+                "authorized correction must match the conflict candidate Region"
+            )
+        opportunity = self._repo.get_opportunity(evidence.current_opportunity_id)
+        if opportunity is None:
+            raise CurrentOpportunityNotFound(evidence.current_opportunity_id)
+        if opportunity.market_id != previous_region_id:
+            raise CurrentOpportunityError(
+                "geography conflict is stale because canonical Region has changed"
+            )
+
+        identity_key, duplicate_key = canonical_identity_keys_for_row(
+            opportunity,
+            market_id=resolution.region_id,
+            provider_record_id=evidence.provider_record_id,
+        )
+        identity_owner = self._repo.get_opportunity_by_identity_key(identity_key)
+        if identity_owner is not None and identity_owner is not opportunity:
+            raise CurrentOpportunityError(
+                "corrected geography would collide with another canonical opportunity"
+            )
+
+        now = reviewed_at or _utc_now()
+        opportunity.market_id = resolution.region_id
+        opportunity.market_label = resolution.display_name
+        opportunity.location_resolution_status = LocationResolutionStatus.RESOLVED.value
+        opportunity.location_resolution_source = "authorized_correction"
+        opportunity.canonical_identity_key = identity_key
+        opportunity.duplicate_group_key = duplicate_key
+        opportunity.canonical_updated_at = now
+        opportunity.warnings = _append_unique(
+            opportunity.warnings,
+            f"authorized_geography_correction:{previous_region_id}:{resolution.region_id}",
+        )
+
+        evidence.geography_review_status = "approved"
+        evidence.geography_previous_region_id = previous_region_id
+        evidence.geography_candidate_region_id = candidate_region_id
+        evidence.geography_corrected_region_id = resolution.region_id
+        evidence.geography_reviewed_by = operator_id
+        evidence.geography_reviewed_at = now
+        evidence.geography_review_reason = reason.strip()
+        _recompute_opportunity_policy(self._repo, opportunity, now=now)
+        self._repo.flush()
+        return opportunity
+
+    def pending_geography_conflicts(self, *, limit: int = 100) -> tuple[dict[str, Any], ...]:
+        return tuple(
+            {
+                "identity_evidence_id": evidence.identity_evidence_id,
+                "opportunity_id": evidence.current_opportunity_id,
+                "source_id": evidence.source_id,
+                "provider_record_id": evidence.provider_record_id,
+                "previous_region_id": evidence.geography_previous_region_id,
+                "candidate_region_id": evidence.geography_candidate_region_id,
+                "review_status": evidence.geography_review_status,
+                "created_at": evidence.created_at.isoformat(),
+            }
+            for evidence in self._repo.list_pending_geography_conflicts(limit=limit)
+        )
+
     def list_refresh_runs(
         self,
         *,
@@ -494,6 +623,7 @@ class CurrentOpportunityService:
         user_id: str,
         *,
         decision_id: str | None = None,
+        request_terms: tuple[str, ...] = (),
         limit: int = 20,
         now: datetime | None = None,
         include_ineligible: bool = True,
@@ -502,6 +632,7 @@ class CurrentOpportunityService:
         decision_terms = _decision_terms(self._repo.session, user_id, decision_id)
         strategy_terms = _strategy_terms(self._repo.session, user_id, decision_id)
         desired = identity_terms | decision_terms | strategy_terms
+        desired.update(_tokens(" ".join(request_terms)))
         rows = self._repo.list_opportunities(
             ranking_eligible=None if include_ineligible else True,
             limit=500,
@@ -844,13 +975,12 @@ class CurrentOpportunityService:
                 opportunity.current_opportunity_id,
                 active_only=True,
             ):
-                opportunity.canonical_status = OpportunityStatus.CLOSED.value
-                opportunity.ranking_eligible = False
-                opportunity.ranking_ineligible_reasons = _append_unique(
-                    opportunity.ranking_ineligible_reasons,
-                    "closed_or_removed",
+                _retire_if_unsupported(
+                    self._repo,
+                    opportunity,
+                    now=record.collected_at,
+                    reason="closed_or_removed",
                 )
-                opportunity.canonical_updated_at = record.collected_at
                 return {
                     "change_type": "closed_removed_opportunity",
                     "provider_record_id": record.provider_record_id,
@@ -989,6 +1119,9 @@ class CurrentOpportunityService:
             source_id=source.source_id,
             provider_record_id=record.provider_record_id,
         )
+        previous_linked_opportunity_id = (
+            link.current_opportunity_id if link is not None else None
+        )
         if link is None:
             self._repo.add(
                 CurrentOpportunitySourceLink(
@@ -1021,6 +1154,38 @@ class CurrentOpportunityService:
             link.application_url = normalized.application_url
             link.identity_confidence = resolution.confidence.value
 
+        self._repo.flush()
+        if (
+            previous_linked_opportunity_id is not None
+            and previous_linked_opportunity_id != opportunity.current_opportunity_id
+        ):
+            previous_opportunity = self._repo.get_opportunity(
+                previous_linked_opportunity_id
+            )
+            if previous_opportunity is not None:
+                _retire_if_unsupported(
+                    self._repo,
+                    previous_opportunity,
+                    now=record.collected_at,
+                    reason="source_link_reassigned",
+                )
+
+        geography_conflict = next(
+            (
+                warning
+                for warning in resolution.warnings
+                if warning.startswith("resolved_geography_conflict:")
+            ),
+            None,
+        )
+        geography_previous_region_id: str | None = None
+        geography_candidate_region_id: str | None = None
+        if geography_conflict is not None:
+            (
+                _prefix,
+                geography_previous_region_id,
+                geography_candidate_region_id,
+            ) = geography_conflict.split(":", 2)
         self._repo.add(
             CurrentOpportunityIdentityEvidence(
                 identity_evidence_id=evidence_id(
@@ -1042,6 +1207,9 @@ class CurrentOpportunityService:
                     "application_host": normalized.application_host,
                 },
                 warnings=list(resolution.warnings),
+                geography_review_status="pending" if geography_conflict else None,
+                geography_previous_region_id=geography_previous_region_id,
+                geography_candidate_region_id=geography_candidate_region_id,
             )
         )
         self._repo.flush()
@@ -1065,7 +1233,29 @@ class CurrentOpportunityService:
         links: list[CurrentOpportunitySourceLink] | None = None,
         source_rows: Mapping[str, OpportunityDataSource] | None = None,
         coverage_rows: Mapping[tuple[str, str, str], OpportunityCoverageContract] | None = None,
+        market_identities: Mapping[str, Mapping[str, str | None]] | None = None,
     ) -> CurrentOpportunityPayload:
+        prefetched_market = (
+            market_identities.get(row.market_id)
+            if market_identities is not None and row.market_id is not None
+            else None
+        )
+        market_resolution = None
+        if prefetched_market is None and row.market_id is not None:
+            market_resolution = GeographicResolver(
+                RegionRepository(self._repo.session)
+            ).resolve(row.market_id)
+        output_market_id = row.market_id
+        output_market_label = row.market_label
+        output_market_public_slug = None
+        if prefetched_market is not None:
+            output_market_id = prefetched_market["region_id"]
+            output_market_label = prefetched_market["display_name"] or row.market_label
+            output_market_public_slug = prefetched_market["public_slug"]
+        elif market_resolution is not None and market_resolution.resolved:
+            output_market_id = market_resolution.region_id
+            output_market_label = market_resolution.display_name
+            output_market_public_slug = market_resolution.public_slug
         _recompute_opportunity_policy(
             self._repo,
             row,
@@ -1120,8 +1310,12 @@ class CurrentOpportunityService:
             normalized_title=row.normalized_title,
             role_family=row.role_family,
             seniority_level=row.seniority_level,
-            market_id=row.market_id,
-            market_label=row.market_label,
+            market_id=output_market_id,
+            market_public_slug=output_market_public_slug,
+            original_market_id=(
+                row.market_id if output_market_id != row.market_id else None
+            ),
+            market_label=output_market_label,
             location_text=row.location_text,
             location_resolution_status=row.location_resolution_status,
             location_resolution_source=row.location_resolution_source,
@@ -1157,6 +1351,11 @@ class CurrentOpportunityService:
                 "source_count": row.source_count,
                 "identity_key": row.canonical_identity_key,
                 "duplicate_group_key": row.duplicate_group_key,
+                **(
+                    {"original_market_id": row.market_id}
+                    if output_market_id != row.market_id
+                    else {}
+                ),
             },
             warnings=tuple(row.warnings or []),
         )
@@ -1334,6 +1533,23 @@ def _apply_canonical_diff(
     row.canonical_updated_at = collected_at
     row.warnings = _append_many(row.warnings or [], normalized.normalization_warnings)
     return changed
+
+
+def _retire_if_unsupported(
+    repo: CurrentOpportunityRepository,
+    row: CurrentOpportunity,
+    *,
+    now: datetime,
+    reason: str,
+) -> None:
+    """Close a canonical row after its final active source link moves away."""
+
+    if repo.list_source_links(row.current_opportunity_id, active_only=True):
+        return
+    row.canonical_status = OpportunityStatus.CLOSED.value
+    row.warnings = _append_unique(row.warnings, reason)
+    row.canonical_updated_at = now
+    _recompute_opportunity_policy(repo, row, now=now, active_links=[])
 
 
 def _coverage_rows_by_market(
@@ -1639,7 +1855,7 @@ def _career_identity_terms(session, user_id: str) -> set[str]:  # noqa: ANN001
     identity = session.execute(
         select(CareerIdentity).where(CareerIdentity.user_id == user_id)
     ).scalar_one_or_none()
-    if identity is None:
+    if identity is None or not identity.downstream_personalization_consent_granted:
         return set()
     facts = list(
         session.execute(

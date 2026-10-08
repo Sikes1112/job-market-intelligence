@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.data_standards.ranking_gate import ranking_eligible_fact_ids
-from backend.geography.models import Region
+from backend.geography.repository import RegionRepository
 from backend.hiring.models import CompanyRegionHiring
 from backend.outputs.models import OutputMetadata
 from backend.outputs.payloads import (
@@ -211,9 +211,7 @@ class PlatformPublicApiService:
         rows = [row for row in rows if row.hiring_id in eligible_hiring_ids]
         regions_by_id = {
             region.region_id: region
-            for region in self._session.execute(
-                select(Region).order_by(Region.region_id)
-            ).scalars()
+            for region in RegionRepository(self._session).list()
         }
 
         aggregates: dict[str, _HiringMarketAggregate] = {}

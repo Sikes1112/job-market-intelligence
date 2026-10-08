@@ -665,7 +665,7 @@ def test_api_route_returns_grounded_schema_and_redacts_private_fields(
     _seed_opportunity(session, internal_note="Internal-only career agent note")
 
     response = api_client.post(
-        "/career-agent/answers",
+        "/internal/legacy/career-agent/answers",
         json={
             "question_type": "where_should_i_apply",
             "target_region_ids": ["greater_boston"],
@@ -694,7 +694,7 @@ def test_api_route_returns_grounded_schema_and_redacts_private_fields(
 
 def test_api_rejects_free_form_prompt_field(api_client: TestClient) -> None:
     response = api_client.post(
-        "/career-agent/answers",
+        "/internal/legacy/career-agent/answers",
         json={
             "question_type": "city_fit",
             "prompt": "Tell me anything.",

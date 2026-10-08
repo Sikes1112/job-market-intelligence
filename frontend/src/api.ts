@@ -745,7 +745,7 @@ export function getOpportunityRoutes(body: TypedOpportunityRouteRequest) {
 }
 
 export function getCareerAgentAnswer(body: TypedCareerAgentRequest) {
-  return request<CareerAgentAnswer>("/career-agent/answers", {
+  return request<CareerAgentAnswer>("/me/career-agent/answers", {
     method: "POST",
     body: JSON.stringify(body),
   });

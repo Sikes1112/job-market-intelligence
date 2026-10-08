@@ -3,7 +3,7 @@
 The constants below feed :func:`seeds.mvp_seed.run_seed`. Coverage targets
 match the slice-18 prompt:
 
-* both narrowest-MVP regions (``greater_boston``, ``greater_sf``);
+* both narrowest-MVP regions (``greater_boston``, ``sf_bay_area``);
 * Mag 7, eligible mid-size, override-included, and ineligible companies;
 * presence basis variety: full triple, office+hiring, office+ops,
   satellite-only;
@@ -41,7 +41,7 @@ from backend.presence.service import PresenceDefinition
 
 # Stable region identifiers used throughout the seed pipeline.
 REGION_BOSTON = "greater_boston"
-REGION_SF = "greater_sf"
+REGION_SF = "sf_bay_area"
 
 # Synthetic "far-future" expiry stamped on every refresh-style snapshot so
 # the demo dataset reads as ``fresh`` regardless of when the seed runs.
@@ -60,7 +60,7 @@ REGIONS: tuple[RegionDefinition, ...] = (
     ),
     RegionDefinition(
         region_id=REGION_SF,
-        region_name="greater_sf",
+        region_name="sf_bay_area",
         display_name="Greater San Francisco / Silicon Valley",
         region_type=RegionType.GREATER_REGION,
         parent_region_id=None,

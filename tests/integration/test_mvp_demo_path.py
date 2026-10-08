@@ -22,7 +22,7 @@ from backend.api.dependencies import get_session
 from backend.companies.models import Company
 from backend.companies.types import EligibilityStatus
 from backend.entry_level.models import CompanyRegionEntryLevel
-from backend.geography.models import Region
+from backend.geography.models import Region, RegionAlias, RegionStateMembership
 from backend.hiring.models import CompanyRegionHiring
 from backend.outputs.models import OutputMetadata
 from backend.outputs.types import OutputType
@@ -76,6 +76,18 @@ def test_seed_creates_both_regions(seeded_session: Session) -> None:
     assert region_ids == {REGION_BOSTON, REGION_SF}
     for r in rows:
         assert r.state == "fresh"
+        assert r.public_slug
+        assert r.market_support_status == "supported"
+    sf_aliases = {
+        row.normalized_alias
+        for row in seeded_session.query(RegionAlias).filter_by(region_id=REGION_SF)
+    }
+    assert {"greater sf", "san francisco bay area", "san francisco"}.issubset(
+        sf_aliases
+    )
+    assert seeded_session.get(RegionStateMembership, (REGION_BOSTON, "MA")) is not None
+    assert seeded_session.get(RegionStateMembership, (REGION_SF, "CA")) is not None
+    assert seeded_session.get(Region, "greater_sf") is None
 
 
 def test_seed_creates_companies(seeded_session: Session) -> None:

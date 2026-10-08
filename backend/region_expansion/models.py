@@ -13,6 +13,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Index,
     String,
     UniqueConstraint,
@@ -50,7 +51,9 @@ class RegionExpansionWorkflow(Base):
     workflow_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     region_key: Mapped[str] = mapped_column(String(64), nullable=False)
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    canonical_region_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    canonical_region_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("regions.region_id"), nullable=True
+    )
     workflow_state: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -124,4 +127,3 @@ class RegionExpansionWorkflow(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
-

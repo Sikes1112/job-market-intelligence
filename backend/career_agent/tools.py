@@ -76,6 +76,7 @@ class CareerAgentToolService:
     ) -> CareerAgentToolPreview:
         generated_at = _aware(now or datetime.now(UTC))
         basis = self._basis_for_request(
+            user_id,
             request,
             memory_profile=memory_profile if request.include_memory else None,
             now=generated_at,
@@ -199,6 +200,7 @@ class CareerAgentToolService:
 
     def _basis_for_request(
         self,
+        user_id: str,
         request: CareerAgentToolRequest,
         *,
         memory_profile: CareerMemoryProfile | None,
@@ -207,6 +209,7 @@ class CareerAgentToolService:
         if request.action_plan_request is not None:
             plan = self._planning.generate_plan(
                 request.action_plan_request,
+                user_id=user_id,
                 memory_profile=memory_profile,
                 now=now,
             )
@@ -222,10 +225,17 @@ class CareerAgentToolService:
             )
         if request.career_agent_request is None:
             raise CareerAgentGuardrailViolation("Tool preview requires grounded input.")
-        answer = self._grounding.answer(request.career_agent_request, now=now)
+        answer = self._grounding.answer_for_tool_preview(
+            user_id,
+            request.career_agent_request,
+            now=now,
+        )
         if not answer.recommendations:
+            reason = " ".join(answer.limitations) or (
+                "Authoritative Decision, Explore, or current-job context is required."
+            )
             raise CareerAgentGuardrailViolation(
-                "Tool preview requires at least one grounded recommendation."
+                f"Tool preview unavailable: {reason}"
             )
         recommendation = answer.recommendations[0]
         return _GroundedToolBasis(

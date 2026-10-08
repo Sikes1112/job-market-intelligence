@@ -16,6 +16,7 @@ from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.entry_level.repository import EntryLevelRepository
 from backend.geography.models import Region
 from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.hiring.models import CompanyRegionHiring
 from backend.hiring.repository import HiringRepository
 from backend.ingestion.adapters.base import AdapterResult, AdapterResultStatus
@@ -1143,7 +1144,30 @@ class IngestionService:
             )
 
         changes = _execution_changes(operation, link)
-        target = self._get_execution_target(operation)
+        if operation.target_entity_type in {
+            "company_region_presence",
+            "company_region_hiring",
+            "company_region_entry_level",
+        }:
+            supplied_region_id = _string_change(changes, "region_id")
+            resolution = GeographicResolver(
+                RegionRepository(self._repo.session)
+            ).resolve(supplied_region_id)
+            if not resolution.resolved or resolution.region_id is None:
+                diagnostics.append(
+                    _execution_diag(
+                        "noncanonical_region_dependency",
+                        "Company-region writes require an unambiguous canonical Region.",
+                    )
+                )
+                return _execution_result(
+                    plan,
+                    status=CanonicalWriteExecutionStatus.BLOCKED,
+                    operation_type=operation.operation_type,
+                    diagnostics=diagnostics,
+                )
+            changes["region_id"] = resolution.region_id
+        target = self._get_execution_target(operation, changes=changes)
         if target is None and operation.operation_type is CanonicalWriteOperationType.UPDATE:
             diagnostics.append(
                 _execution_diag(
@@ -1504,7 +1528,10 @@ class IngestionService:
         )
 
     def _get_execution_target(
-        self, operation: CanonicalWriteOperation
+        self,
+        operation: CanonicalWriteOperation,
+        *,
+        changes: dict[str, object] | None = None,
     ) -> object | None:
         target_id = operation.target_identifier
         if target_id is None:
@@ -1513,8 +1540,9 @@ class IngestionService:
             return self._repo.get_company(target_id)
         if operation.target_entity_type == "regions":
             return self._repo.get_region(target_id)
-        company_id = _string_change(operation.proposed_field_changes, "company_id")
-        region_id = _string_change(operation.proposed_field_changes, "region_id")
+        lookup_changes = changes or operation.proposed_field_changes
+        company_id = _string_change(lookup_changes, "company_id")
+        region_id = _string_change(lookup_changes, "region_id")
         if operation.target_entity_type == "company_region_presence":
             return (
                 self._repo.get_presence_by_pair(company_id, region_id)

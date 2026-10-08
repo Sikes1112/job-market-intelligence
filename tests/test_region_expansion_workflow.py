@@ -3,6 +3,11 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.orm import Session
 
+from backend.geography.catalog import apply_curated_geography
+from backend.geography.models import Region
+from backend.geography.repository import RegionRepository
+from backend.geography.service import GeographyService, RegionDefinition
+from backend.geography.types import RegionType
 from backend.region_expansion.models import RegionExpansionWorkflow
 from backend.region_expansion.repository import RegionExpansionRepository
 from backend.region_expansion.service import (
@@ -89,6 +94,89 @@ def test_target_regions_are_represented_as_unpublished_candidates(
     assert all(row.region_data_mode == "candidate" for row in rows)
     assert not any(row.published for row in rows)
     assert not any(row.refresh_enabled for row in rows)
+
+
+def test_canonical_region_id_is_resolved_strictly_while_planning_may_remain_null(
+    session: Session,
+) -> None:
+    repository = RegionRepository(session)
+    GeographyService(repository).create_region(
+        RegionDefinition(
+            region_id="sf_bay_area",
+            region_name="sf_bay_area",
+            display_name="San Francisco Bay Area",
+            region_type=RegionType.GREATER_REGION,
+        )
+    )
+    assert apply_curated_geography(repository, "sf_bay_area")
+    session.add_all(
+        [
+            Region(
+                region_id="springfield_il",
+                region_name="Springfield",
+                display_name="Springfield",
+                region_type="city",
+            ),
+            Region(
+                region_id="springfield_ma",
+                region_name="Springfield",
+                display_name="Springfield",
+                region_type="city",
+            ),
+        ]
+    )
+    session.flush()
+    service = _service(session)
+
+    canonical = service.create_candidate(
+        RegionExpansionCreateInput(
+            region_key="sf-canonical",
+            display_name="SF canonical",
+            canonical_region_id="sf_bay_area",
+        )
+    )
+    slug = service.create_candidate(
+        RegionExpansionCreateInput(
+            region_key="sf-slug",
+            display_name="SF slug",
+            canonical_region_id="san-francisco-bay-area",
+        )
+    )
+    alias = service.create_candidate(
+        RegionExpansionCreateInput(
+            region_key="sf-alias",
+            display_name="SF alias",
+            canonical_region_id="greater_sf",
+        )
+    )
+    planned = service.create_candidate(
+        RegionExpansionCreateInput(
+            region_key="future-market",
+            display_name="Future market",
+            canonical_region_id=None,
+        )
+    )
+
+    assert {canonical.canonical_region_id, slug.canonical_region_id, alias.canonical_region_id} == {
+        "sf_bay_area"
+    }
+    assert planned.canonical_region_id is None
+    with pytest.raises(RegionExpansionError, match="unknown geographic input"):
+        service.create_candidate(
+            RegionExpansionCreateInput(
+                region_key="bad-market",
+                display_name="Bad market",
+                canonical_region_id="not-a-region",
+            )
+        )
+    with pytest.raises(RegionExpansionError, match="ambiguous geographic input"):
+        service.create_candidate(
+            RegionExpansionCreateInput(
+                region_key="ambiguous-market",
+                display_name="Ambiguous market",
+                canonical_region_id="Springfield",
+            )
+        )
 
 
 def test_valid_region_expansion_state_sequence(session: Session) -> None:

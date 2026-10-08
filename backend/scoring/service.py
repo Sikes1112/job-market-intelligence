@@ -24,6 +24,7 @@ from typing import Literal
 from backend.companies.models import Company
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.hiring.models import CompanyRegionHiring
 from backend.scoring.exceptions import (
     MissingRegionForScoring,
@@ -255,6 +256,9 @@ class RegionScoringService:
         return row
 
     def get_score_by_region(self, region_id: str) -> RegionMarketScore:
+        resolution = GeographicResolver(self._region_repo).resolve(region_id)
+        if resolution.resolved and resolution.region_id is not None:
+            region_id = resolution.region_id
         row = self._score_repo.get_score_by_region(region_id)
         if row is None:
             raise RegionScoreNotFound(region_id)
@@ -266,6 +270,9 @@ class RegionScoringService:
     # --- compute (no DB writes) ------------------------------------------
 
     def compute_scores(self, region_id: str) -> RegionScoreComputation:
+        resolution = GeographicResolver(self._region_repo).resolve(region_id)
+        if resolution.resolved and resolution.region_id is not None:
+            region_id = resolution.region_id
         if not self._region_repo.exists(region_id):
             raise MissingRegionForScoring(region_id)
 
@@ -444,6 +451,7 @@ class RegionScoringService:
         from the comparison — they describe the run, not the result).
         """
         computation = self.compute_scores(region_id)
+        region_id = computation.region_id
 
         existing = self._score_repo.get_score_by_region(region_id)
         if existing is None:

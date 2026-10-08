@@ -157,6 +157,25 @@ def duplicate_group_key(normalized: NormalizedOpportunity) -> str:
     return "|".join((company, title, market, normalized.employment_type.value))
 
 
+def canonical_identity_keys_for_row(
+    row: CurrentOpportunity,
+    *,
+    market_id: str,
+    provider_record_id: str,
+) -> tuple[str, str]:
+    """Rebuild both identity indexes after an authorized geography correction."""
+
+    company = _norm(row.company_id or row.company_name or "unknown_company")
+    title = _norm(row.normalized_title or "unknown_title")
+    market = _norm(market_id)
+    route = _norm(
+        row.application_host or row.application_url or provider_record_id
+    )
+    identity_key = "|".join((company, title, market, row.employment_type, route))
+    duplicate_key = "|".join((company, title, market, row.employment_type))
+    return identity_key, duplicate_key
+
+
 def source_identity_key(source_id: str, provider_record_id: str) -> str:
     return f"{source_id}|{provider_record_id}"
 

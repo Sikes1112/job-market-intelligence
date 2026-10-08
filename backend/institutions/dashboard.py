@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from backend.api.search import region_coverage_lookup
 from backend.companies.models import Company
 from backend.geography.market_coverage import CoverageMetadataPayload
-from backend.geography.models import Region
+from backend.geography.repository import RegionRepository
+from backend.geography.resolver import GeographicResolver
 from backend.hiring.models import CompanyRegionHiring
 from backend.institutions.models import Organization, OrganizationMembership
 from backend.institutions.roles import OrganizationMembershipStatus, OrganizationRole
@@ -98,6 +99,7 @@ def build_institutional_dashboard(
         profiles,
         saved_artifacts,
         region_labels=region_labels,
+        resolver=GeographicResolver(RegionRepository(session)),
     )
     popular_target_markets, target_suppressed = _aggregate_items(
         section="popular_target_markets",
@@ -235,7 +237,7 @@ def _saved_artifacts(
 def _region_labels(session: Session) -> dict[str, str]:
     return {
         row.region_id: row.display_name
-        for row in session.execute(select(Region).order_by(Region.region_id)).scalars()
+        for row in RegionRepository(session).list()
     }
 
 
@@ -251,21 +253,26 @@ def _target_market_contributors(
     artifacts: list[SavedMarketArtifact],
     *,
     region_labels: dict[str, str],
+    resolver: GeographicResolver,
 ) -> tuple[dict[str, set[str]], dict[str, str]]:
     contributors: dict[str, set[str]] = defaultdict(set)
     labels: dict[str, str] = {}
 
     for profile in profiles:
-        for region_id in _json_string_values(profile.preferred_regions):
+        for stored_region_id in _json_string_values(profile.preferred_regions):
+            resolution = resolver.resolve(stored_region_id)
+            region_id = resolution.region_id if resolution.resolved else stored_region_id
             contributors[region_id].add(profile.user_id)
             labels.setdefault(region_id, region_labels.get(region_id) or _display_label(region_id))
 
     for artifact in artifacts:
         if artifact.artifact_type != "region":
             continue
-        region_id = _clean_string(artifact.artifact_ref)
-        if region_id is None:
+        stored_region_id = _clean_string(artifact.artifact_ref)
+        if stored_region_id is None:
             continue
+        resolution = resolver.resolve(stored_region_id)
+        region_id = resolution.region_id if resolution.resolved else stored_region_id
         contributors[region_id].add(artifact.user_id)
         labels.setdefault(
             region_id,

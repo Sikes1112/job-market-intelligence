@@ -1118,9 +1118,9 @@ class CareerDecisionService:
             avg = sum(score_values) / len(score_values)
             assessment = (
                 FitAssessment.STRONG
-                if avg >= 75
+                if avg >= 0.75
                 else FitAssessment.MODERATE
-                if avg >= 50
+                if avg >= 0.50
                 else FitAssessment.WEAK
             )
             return FitDimension(

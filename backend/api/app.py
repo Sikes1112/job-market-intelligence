@@ -17,6 +17,7 @@ from backend.api.data_standards import router as data_standards_router
 from backend.api.deep_decisions import router as deep_decisions_router
 from backend.api.errors import register_exception_handlers
 from backend.api.exceptions import router as exceptions_router
+from backend.api.explore import router as explore_router
 from backend.api.external import router as external_router
 from backend.api.institutions import router as institutions_router
 from backend.api.integrations import router as integrations_router
@@ -28,8 +29,8 @@ from backend.api.opportunities import router as opportunities_router
 from backend.api.personalized import router as personalized_router
 from backend.api.platform_intelligence import router as platform_intelligence_router
 from backend.api.platform_public import router as platform_public_router
-from backend.api.product_measurement import router as product_measurement_router
 from backend.api.policy import router as policy_router
+from backend.api.product_measurement import router as product_measurement_router
 from backend.api.protection import APIProtectionMiddleware
 from backend.api.public_benchmarks import router as public_benchmarks_router
 from backend.api.public_reports import router as public_reports_router
@@ -108,6 +109,7 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
     app.include_router(career_agent_router)
     app.include_router(career_decisions_router)
     app.include_router(career_identity_router)
+    app.include_router(explore_router)
     app.include_router(deep_decisions_router)
     app.include_router(data_standards_router)
     app.include_router(public_benchmarks_router)

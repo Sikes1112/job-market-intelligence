@@ -72,12 +72,14 @@ def _seed_public_world(session: Session) -> None:
                 region_name="greater_boston",
                 display_name="Greater Boston",
                 region_type="greater_region",
+                market_support_status="supported",
             ),
             Region(
                 region_id="greater_sf",
                 region_name="greater_sf",
                 display_name="Greater SF",
                 region_type="greater_region",
+                market_support_status="supported",
             ),
             Company(
                 company_id="comp_a",

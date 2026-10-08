@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.companies.models import Company
 from backend.entry_level.models import CompanyRegionEntryLevel
-from backend.geography.models import Region
+from backend.geography.models import Region, RegionCanonicalRedirect
 from backend.hiring.models import CompanyRegionHiring
 from backend.outputs.models import OutputMetadata
 from backend.presence.models import CompanyRegionPresence
@@ -648,6 +648,38 @@ def test_company_geography_returns_canonical_regions_and_freshness(
     assert row["freshness"]["freshness_status"] == "fresh"
     assert row["freshness"]["source_count"] == 1
     assert row["has_real_data"] is True
+
+
+def test_company_geography_canonicalizes_historical_region_relations(
+    api_client, session: Session
+) -> None:
+    _seed_region(session, region_id="greater_sf", display_name="Greater San Francisco")
+    _seed_region(session, region_id="sf_bay_area", display_name="San Francisco Bay Area")
+    session.add(
+        RegionCanonicalRedirect(
+            legacy_region_id="greater_sf",
+            canonical_region_id="sf_bay_area",
+            reason="layer_41a_legacy_convergence",
+        )
+    )
+    _seed_company(session, company_id="legacy_sf_company", name="Legacy SF Company")
+    _seed_presence(
+        session,
+        company_id="legacy_sf_company",
+        region_id="greater_sf",
+        status="present",
+    )
+    session.flush()
+
+    geography = api_client.get("/companies/legacy_sf_company/regions").json()
+    search = api_client.get(
+        "/companies/search", params={"query": "Legacy SF Company"}
+    ).json()
+
+    assert [row["region_id"] for row in geography["data"]["regions"]] == [
+        "sf_bay_area"
+    ]
+    assert search["data"]["companies"][0]["matched_region_ids"] == ["sf_bay_area"]
 
 
 def test_company_geography_does_not_label_seeded_demo_as_real_imported(

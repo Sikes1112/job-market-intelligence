@@ -100,6 +100,62 @@ def test_layer33_health_reports_all_eight_markets_are_deterministic(
         assert counts["stale_source_count"] == 0
 
 
+def test_batched_snapshots_are_semantically_identical_to_single_market_path(
+    session: Session,
+) -> None:
+    _seed_all_markets(session)
+    batched = {
+        snapshot.market_key: snapshot
+        for snapshot in build_all_market_operational_snapshots(session, as_of=AS_OF)
+    }
+    singles = {
+        market_key: build_market_operational_snapshot(session, market_key, as_of=AS_OF)
+        for market_key in sorted(EXPECTED_MARKETS)
+    }
+
+    def projection(snapshot) -> dict[str, Any]:  # noqa: ANN001
+        return {
+            "health": dataset_health_from_snapshot(snapshot).as_dict(),
+            "source_aging": source_aging_from_snapshot(snapshot).as_dict(),
+            "fact_health": fact_health_from_snapshot(snapshot).as_dict(),
+            "coverage": coverage_gaps_from_snapshot(snapshot).as_dict(),
+            "ranking": ranking_exclusions_from_snapshot(snapshot).as_dict(),
+            "facts": tuple(
+                (
+                    fact.fact_type,
+                    fact.fact_id,
+                    fact.observation_status,
+                    fact.freshness_status,
+                    fact.confidence,
+                    fact.source_ids,
+                    fact.ranking_eligible,
+                    fact.ranking_reason_codes,
+                    fact.trust_tier,
+                    fact.risk_level,
+                    fact.count_statuses,
+                )
+                for fact in snapshot.facts
+            ),
+            "sources": tuple(
+                (
+                    source.source_id,
+                    source.observed_date,
+                    source.collected_date,
+                    source.freshness_status,
+                    source.confidence,
+                    source.fact_refs,
+                )
+                for source in snapshot.sources
+            ),
+            "source_rows": snapshot.source_rows,
+            "proposed_fact_source_ids": snapshot.proposed_fact_source_ids,
+        }
+
+    assert {key: projection(value) for key, value in batched.items()} == {
+        key: projection(value) for key, value in singles.items()
+    }
+
+
 def test_layer33_health_precedence_validation_failure_wins(
     tmp_path: Path,
     session: Session,
