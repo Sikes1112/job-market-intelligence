@@ -1,8 +1,21 @@
+from pathlib import Path
+
 import pytest
 from sqlalchemy import UniqueConstraint, inspect, text
 
 from backend.shared.db import Base, create_all, import_all_models, make_engine
 from backend.shared.migrations import upgrade_database
+
+
+def test_first_long_revision_widens_postgres_version_column() -> None:
+    migration_path = Path("alembic/versions/0016_institutional_reports_data_requests.py")
+    source = migration_path.read_text(encoding="utf-8")
+
+    assert len("0016_institutional_reports_data_requests") > 32
+    assert 'dialect.name == "postgresql"' in source
+    assert '"alembic_version"' in source
+    assert '"version_num"' in source
+    assert "type_=sa.String(length=255)" in source
 
 
 def test_alembic_upgrade_head_creates_current_schema(tmp_path) -> None:
