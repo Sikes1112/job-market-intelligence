@@ -836,6 +836,37 @@ async function addScenario(title: string, role: string, region: string) {
 }
 
 describe("DecisionWorkspacePage", () => {
+  test("returns a prioritized Decision to its source Explore comparison", async () => {
+    const onOpenExploreComparison = vi.fn();
+    render(
+      <DecisionWorkspacePage
+        auth={auth}
+        onOpenExploreComparison={onOpenExploreComparison}
+      />,
+    );
+
+    await screen.findByText("No career decisions yet");
+    fireEvent.change(screen.getByLabelText("Decision question"), {
+      target: { value: "Prioritize Greater Boston" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create decision" }));
+    await screen.findByText("Decision created.");
+    apiState.decisions[0].explore_comparison_provenance = {
+      comparison_id: "explore_comparison_42",
+      context_fingerprint: "sha256:context",
+      system_recommendation_state: "clear_recommendation",
+      system_recommended_region_ids: ["greater_nyc"],
+      user_selected_region_id: "greater_boston",
+      choice_matches_recommendation: false,
+    };
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open source comparison" }),
+    );
+    expect(onOpenExploreComparison).toHaveBeenCalledWith("explore_comparison_42");
+  });
+
   test("drives the authenticated Career Identity to decision to action to outcome product loop", async () => {
     render(<DecisionWorkspacePage auth={auth} />);
 

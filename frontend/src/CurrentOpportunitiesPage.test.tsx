@@ -145,6 +145,21 @@ describe("CurrentOpportunitiesPage", () => {
     expect(document.body.textContent).not.toMatch(/no jobs exist/i);
   });
 
+  test("consumes Explore market, role, type, work, and return context", async () => {
+    const navigate = vi.fn();
+    render(<CurrentOpportunitiesPage auth={auth} initialState={{ market: "austin", roleFamily: "product_management", opportunityType: "internship", workArrangement: "hybrid", returnTo: "/markets?focus=austin&role=product_management" }} onNavigate={navigate} />);
+
+    await waitFor(() => expect(getCurrentOpportunities).toHaveBeenCalledWith(expect.objectContaining({
+      market: "austin",
+      role_family: "product_management",
+      opportunity_type: "internship",
+      work_arrangement: "hybrid",
+    }), expect.anything()));
+    expect(screen.getByLabelText("Market")).toHaveValue("austin");
+    fireEvent.click(screen.getByRole("link", { name: /Back to Explore context/i }));
+    expect(navigate).toHaveBeenCalledWith("/markets?focus=austin&role=product_management");
+  });
+
   test("renders operator diagnostics and refresh run receipts", async () => {
     render(<CurrentOpportunitiesPage auth={auth} operations />);
 

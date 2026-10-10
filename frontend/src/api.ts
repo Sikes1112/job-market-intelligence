@@ -110,6 +110,7 @@ import type {
   MonetizationReportProductKey,
   MonetizationReportsPayload,
   MonetizationUsagePayload,
+  MySearchWorkspace,
   PartnerRegistryPayload,
   PartnerSubmissionSchemaPayload,
   PartnerImportActionRequest,
@@ -123,6 +124,13 @@ import type {
   PersonalizedResult,
   FeatureAccessDecision,
   ProductEventCreateInput,
+  ExploreContext,
+  ExploreComparisonResult,
+  ExplorePrioritization,
+  ExploreMarketsResponse,
+  ExploreSessionOverrides,
+  SavedExploreComparison,
+  SavedExploreComparisonSummary,
   PlatformEmbedAccessPayload,
   PredictiveReportPayload,
   PublicBenchmark,
@@ -151,6 +159,7 @@ import type {
   SupportCase,
   SupportCaseCreateInput,
   TrustExplanation,
+  TrackOpportunityResult,
   UserReportCreateRequest,
   UserReportSubmissionResult,
   UserAlert,
@@ -184,8 +193,9 @@ import type {
 import type { GeographicResolution } from "./geography";
 import { isFreshnessStatus, isRecord } from "./dataQuality";
 import { reportFrontendError } from "./errorMonitoring";
+import { runtimeConfig } from "./runtimeConfig";
 
-const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "");
+const configuredBaseUrl = runtimeConfig.apiBaseUrl || undefined;
 
 export const API_BASE_URL = configuredBaseUrl ?? "";
 export const API_TARGET_LABEL =
@@ -279,6 +289,8 @@ async function request<T>(
   options?: RequestInit,
 ): Promise<ApiEnvelope<T>> {
   let response: Response;
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 15_000);
 
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
@@ -287,15 +299,18 @@ async function request<T>(
         ...options?.headers,
       },
       ...options,
+      signal: options?.signal ?? controller.signal,
     });
   } catch (error) {
     const apiError = new ApiError(
-      error instanceof Error
-        ? error.message
-        : `Network request failed for ${path}`,
+      error instanceof DOMException && error.name === "AbortError"
+        ? "The request timed out. Your input is still here; try again."
+        : "The service could not be reached. Your input is still here; try again.",
     );
     reportApiFailure(path, apiError);
     throw apiError;
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
 
   let envelope: ApiEnvelope<T>;
@@ -306,7 +321,7 @@ async function request<T>(
     const message = error instanceof ApiError
       ? error.message
       : `Invalid JSON response from ${path}`;
-    const apiError = new ApiError(publicApiErrorMessage(message, requestId), {
+    const apiError = new ApiError(publicApiErrorMessage(message, requestId, response.status), {
       requestId,
       statusCode: response.status,
     });
@@ -317,7 +332,11 @@ async function request<T>(
   if (!response.ok || envelope.status === "error") {
     const requestId = apiErrorRequestId(envelope, response);
     const apiError = new ApiError(
-      publicApiErrorMessage(envelope.error?.message ?? `Request failed: ${path}`, requestId),
+      publicApiErrorMessage(
+        envelope.error?.message ?? `Request failed: ${path}`,
+        requestId,
+        response.status,
+      ),
       {
         envelope: envelope as ApiEnvelope<unknown>,
         requestId,
@@ -335,8 +354,15 @@ function apiErrorRequestId(envelope: ApiEnvelope<unknown>, response: Response): 
   return envelope.error?.request_id ?? response.headers.get("x-request-id") ?? undefined;
 }
 
-function publicApiErrorMessage(message: string, requestId: string | undefined): string {
-  return requestId ? `${message} Reference ID: ${requestId}` : message;
+function publicApiErrorMessage(
+  message: string,
+  requestId: string | undefined,
+  statusCode?: number,
+): string {
+  const safeMessage = statusCode === 401
+    ? "Your session expired. Sign in again, then retry."
+    : message;
+  return requestId ? `${safeMessage} Reference ID: ${requestId}` : safeMessage;
 }
 
 function reportApiFailure(path: string, error: ApiError): void {
@@ -374,14 +400,16 @@ async function protectedRequest<T>(
   }
 
   const token = await auth.getAccessToken();
-  if (!token) {
+  const localAuthEnabled = import.meta.env.DEV && import.meta.env.VITE_LOCAL_AUTH === "true";
+  if (!token && !localAuthEnabled) {
     throw new ApiError("Authentication required for account request", { statusCode: 401 });
   }
 
   return request<T>(path, {
     ...options,
     headers: {
-      "Authorization": `Bearer ${token}`,
+      ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+      ...(localAuthEnabled ? { "X-Verified-OIDC-Claims": JSON.stringify({ iss: "https://local.job-market-intelligence.test/", sub: "local|explorer", email: "local-explorer@example.test", name: "Local explorer" }) } : {}),
       "Content-Type": "application/json",
       ...options?.headers,
     },
@@ -1492,6 +1520,18 @@ export function createCareerActionPlan(
   );
 }
 
+export function createCareerAction(
+  decisionId: string,
+  body: CareerActionInput,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ action: CareerAction }>(
+    `/me/decisions/${encodeURIComponent(decisionId)}/actions`,
+    auth,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
 export function updateCareerAction(
   actionId: string,
   body: {
@@ -1542,6 +1582,21 @@ export function transitionCareerApplication(
       method: "PATCH",
       body: JSON.stringify(body),
     },
+  );
+}
+
+export function getMySearchWorkspace(auth: ProtectedRequestOptions) {
+  return protectedRequest<MySearchWorkspace>("/me/search-workspace", auth);
+}
+
+export function trackCurrentOpportunity(
+  body: { decision_id: string; opportunity_id: string; initial_status?: "considering" | "preparing" },
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<TrackOpportunityResult>(
+    "/me/search-workspace/applications/track",
+    auth,
+    { method: "POST", body: JSON.stringify(body) },
   );
 }
 
@@ -1624,6 +1679,80 @@ export function recordProductEvent(
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export function getExploreContext(auth: ProtectedRequestOptions) {
+  return protectedRequest<ExploreContext>("/me/explore/context", auth);
+}
+
+export function evaluateExploreMarkets(
+  sessionOverrides: ExploreSessionOverrides,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<ExploreMarketsResponse>("/me/explore/markets", auth, {
+    method: "POST",
+    body: JSON.stringify({ session_overrides: sessionOverrides }),
+  });
+}
+
+export function compareExploreMarkets(
+  marketRefs: string[],
+  sessionOverrides: ExploreSessionOverrides,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<ExploreComparisonResult>("/me/explore/compare", auth, {
+    method: "POST",
+    body: JSON.stringify({ market_refs: marketRefs, session_overrides: sessionOverrides }),
+  });
+}
+
+export function saveExploreComparison(
+  body: {
+    market_refs: string[];
+    session_overrides: ExploreSessionOverrides;
+    comparison_identity: string;
+  },
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ comparison: SavedExploreComparison }>(
+    "/me/explore/comparisons",
+    auth,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export function listExploreComparisons(auth: ProtectedRequestOptions) {
+  return protectedRequest<{ comparisons: SavedExploreComparisonSummary[] }>(
+    "/me/explore/comparisons",
+    auth,
+  );
+}
+
+export function getExploreComparison(
+  comparisonId: string,
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ comparison: SavedExploreComparison }>(
+    `/me/explore/comparisons/${encodeURIComponent(comparisonId)}`,
+    auth,
+  );
+}
+
+export function prioritizeExploreComparison(
+  body: {
+    selected_market_ref: string;
+    comparison_id?: string;
+    comparison_identity?: string;
+    market_refs?: string[];
+    session_overrides?: ExploreSessionOverrides;
+  },
+  auth: ProtectedRequestOptions,
+) {
+  return protectedRequest<{ prioritization: ExplorePrioritization }>(
+    "/me/explore/prioritize",
+    auth,
+    { method: "POST", body: JSON.stringify(body) },
+  );
 }
 
 export function getWeeklyCareerReview(auth: ProtectedRequestOptions) {

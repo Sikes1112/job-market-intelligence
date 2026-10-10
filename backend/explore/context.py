@@ -111,11 +111,13 @@ class ExploreContextService:
         elif overrides.role_families is None:
             defaults = defaults.model_copy(update={"goal": supported_goal})
         effective = effective.model_copy(update={"goal": supported_goal})
-        unsupported.extend(_unapplied_evidence_dimensions(effective))
+        unapplied = list(_unapplied_evidence_dimensions(effective))
 
-        role_families_applied = overrides.goal is None and bool(effective.role_families)
+        role_families_applied = (
+            overrides.goal is None and mapping.goal is not None and bool(effective.role_families)
+        )
         if overrides.goal is not None and effective.role_families:
-            unsupported.append(
+            unapplied.append(
                 ExploreContextItem(
                     code="role_families_overridden_by_explicit_goal",
                     field="role_families",
@@ -126,13 +128,17 @@ class ExploreContextService:
                     ),
                 )
             )
-
-        geographic_conflicts = tuple(
-            sorted(
-                set(effective.included_region_ids).intersection(
-                    effective.excluded_region_ids
+        if effective.preferred_region_ids:
+            unapplied.append(
+                _unapplied(
+                    "preferred_geography_market_fit_unavailable",
+                    "preferred_region_ids",
+                    "effective_context",
                 )
             )
+
+        geographic_conflicts = tuple(
+            sorted(set(effective.included_region_ids).intersection(effective.excluded_region_ids))
         )
         if geographic_conflicts:
             unsupported.append(
@@ -183,7 +189,13 @@ class ExploreContextService:
         else:
             state = ExplorePersonalizationState.GENERAL_MARKET_INTELLIGENCE
 
-        limitations = _context_limitations(identity, consent, mapping, unsupported)
+        limitations = _context_limitations(
+            identity,
+            consent,
+            mapping,
+            unapplied,
+            unsupported,
+        )
         applied_fields: list[str] = []
         if effective.goal:
             applied_fields.append("goal")
@@ -212,6 +224,7 @@ class ExploreContextService:
             supported_goal=supported_goal,
             goal_mapping_state=mapping.state,
             applied_context=applied,
+            unapplied_context=tuple(unapplied),
             unsupported_context=tuple(unsupported),
             limitations=limitations,
         )
@@ -425,6 +438,7 @@ def _context_limitations(
     identity: CareerIdentity | None,
     consent: bool,
     mapping: GoalMapping,
+    unapplied: list[ExploreContextItem],
     unsupported: list[ExploreContextItem],
 ) -> tuple[str, ...]:
     limitations: list[str] = []
@@ -450,10 +464,15 @@ def _context_limitations(
         limitations.append(
             "The requested role or goal is outside current governed market intelligence."
         )
+    if unapplied:
+        limitations.append(
+            "Some valid context is retained for display or filtering but does not "
+            "change Explore Fit."
+        )
     if unsupported:
         limitations.append(
-            "Some context is preserved as unapplied because no governed evidence "
-            "dimension supports it."
+            "Some requested context could not be interpreted or supported by the "
+            "current Explore contract."
         )
     return tuple(dict.fromkeys(limitations))
 
@@ -516,7 +535,19 @@ def _unsupported(code: str, field: str, source: str) -> ExploreContextItem:
         code=code,
         field=field,
         source=source,
-        reason="This input is preserved as unapplied and does not change Explore Fit.",
+        reason="This input is not supported by the current Explore context contract.",
+    )
+
+
+def _unapplied(code: str, field: str, source: str) -> ExploreContextItem:
+    return ExploreContextItem(
+        code=code,
+        field=field,
+        source=source,
+        reason=(
+            "This valid context is retained for display or filtering but does not "
+            "change Explore Fit."
+        ),
     )
 
 
@@ -531,7 +562,7 @@ def _unapplied_evidence_dimensions(
         ("timing", effective.timing),
     )
     return tuple(
-        _unsupported(f"{field}_market_evidence_unavailable", field, "effective_context")
+        _unapplied(f"{field}_market_evidence_unavailable", field, "effective_context")
         for field, value in fields
         if value not in (None, (), [])
     )

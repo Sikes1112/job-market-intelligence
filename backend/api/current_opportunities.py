@@ -64,12 +64,23 @@ def list_current_opportunity_matches(
     session: Session = Depends(get_session),
 ):
     service = CurrentOpportunityService(CurrentOpportunityRepository(session))
-    payload = service.strategic_matches(
-        current.user.user_id,
-        decision_id=decision_id,
-        include_ineligible=include_ineligible,
-        limit=limit,
-    )
+    try:
+        payload = service.strategic_matches(
+            current.user.user_id,
+            decision_id=decision_id,
+            include_ineligible=include_ineligible,
+            limit=limit,
+        )
+    except CurrentOpportunityNotFound:
+        return JSONResponse(
+            status_code=404,
+            content=error_envelope(
+                code=NOT_FOUND,
+                message="current opportunity pursuit not found",
+            ),
+        )
+    except CurrentOpportunityError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return lightweight_success_envelope(
         data={"matches": [item.model_dump(mode="json") for item in payload]}
     )
@@ -122,9 +133,7 @@ def list_current_opportunity_refresh_runs(
     )
 
 
-@router.post(
-    "/current-opportunities/geography-conflicts/{identity_evidence_id}/approve"
-)
+@router.post("/current-opportunities/geography-conflicts/{identity_evidence_id}/approve")
 def approve_current_opportunity_geography_conflict(
     identity_evidence_id: str,
     payload: OpportunityGeographyCorrectionInput,

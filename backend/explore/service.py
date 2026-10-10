@@ -140,6 +140,44 @@ class ExploreFitService:
                 return response, market
         return response, None
 
+    def selected_market_results(
+        self,
+        response: ExploreMarketsResponse,
+        region_ids: tuple[str, ...],
+    ) -> tuple[ExploreFitResult, ...]:
+        """Return authoritative results for a canonical selected set without reevaluation.
+
+        Known Regions outside the curated Layer 34 universe are represented as
+        unsupported members instead of being silently dropped.
+        """
+
+        by_region = {market.region.region_id: market for market in response.markets}
+        missing_ids = tuple(region_id for region_id in region_ids if region_id not in by_region)
+        if missing_ids:
+            metadata = self._region_metadata(missing_ids)
+            opportunity = self._opportunity_coverage(
+                missing_ids,
+                goal=response.context.supported_goal,
+                opportunity_types=response.context.effective_context.opportunity_types,
+            )
+            evidence_bundle = (
+                response.markets[0].versions.market_evidence_bundle
+                if response.markets
+                else "sha256:" + ("0" * 64)
+            )
+            for index, region_id in enumerate(missing_ids, start=1):
+                region = metadata.get(region_id)
+                if region is None:
+                    continue
+                by_region[region_id] = self._unsupported_region_result(
+                    region,
+                    display_order=len(response.markets) + index,
+                    context=response.context,
+                    evidence_bundle=evidence_bundle,
+                    opportunity=opportunity,
+                )
+        return tuple(by_region[region_id] for region_id in region_ids if region_id in by_region)
+
     def _personalized(
         self,
         context: ExploreContext,
@@ -177,10 +215,10 @@ class ExploreFitService:
             region = regions.get(region_id) or _missing_region(region_id, item.market_name)
             constraint_reasons = _hard_constraint_reasons(context, region)
             state, score, abstention = _fit_state(item, region, constraint_reasons)
-            if (
-                ranking_contradiction["contradiction_blocking"]
-                and state in {ExploreFitState.CONFIDENT, ExploreFitState.TENTATIVE}
-            ):
+            if ranking_contradiction["contradiction_blocking"] and state in {
+                ExploreFitState.CONFIDENT,
+                ExploreFitState.TENTATIVE,
+            }:
                 state = ExploreFitState.ABSTAINED
                 score = None
                 abstention = getattr(ranking, "abstention_reason", None) or (
@@ -196,11 +234,7 @@ class ExploreFitService:
                     "constraint_reasons": constraint_reasons,
                     "contradiction": _contradiction_fields(
                         item,
-                        *(
-                            (ranking,)
-                            if ranking_contradiction["contradiction_blocking"]
-                            else ()
-                        ),
+                        *((ranking,) if ranking_contradiction["contradiction_blocking"] else ()),
                     ),
                 }
             )
@@ -320,9 +354,7 @@ class ExploreFitService:
                         region_id,
                         _empty_opportunity_coverage(),
                     ),
-                    material_limitations=tuple(
-                        dict.fromkeys((*limitations, *constraint_reasons))
-                    ),
+                    material_limitations=tuple(dict.fromkeys((*limitations, *constraint_reasons))),
                     abstention_reason=abstention_reason,
                     hard_constraint_reasons=constraint_reasons,
                     **contradiction,
@@ -470,9 +502,7 @@ class ExploreFitService:
                 "This known canonical Region is outside the curated Layer 34 registry.",
                 *constraint_reasons,
             ),
-            abstention_reason=(
-                "hard_constraint_excluded" if excluded else "unsupported_market"
-            ),
+            abstention_reason=("hard_constraint_excluded" if excluded else "unsupported_market"),
             hard_constraint_reasons=constraint_reasons if excluded else (),
             versions=_versions(context, evidence_bundle),
         )

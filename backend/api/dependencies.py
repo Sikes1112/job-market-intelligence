@@ -27,6 +27,7 @@ from backend.admin.roles import (
     AdminRole,
     parse_admin_role,
 )
+from backend.api.errors import SafeHTTPException
 from backend.auth.boundary import (
     AuthBoundaryError,
     principal_from_verified_oidc_claims,
@@ -129,6 +130,26 @@ def get_current_user(
         user=resolved.user,
         identity=resolved.identity,
         profile=resolved.profile,
+    )
+
+
+def require_beta_access(
+    request: Request,
+    current: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> CurrentUser:
+    """Gate beta product routes with the existing Layer 40 cohort authority."""
+
+    if not request.app.state.settings.beta_access_required:
+        return current
+    from backend.product_measurement.service import ProductMeasurementService
+
+    if ProductMeasurementService(session).has_active_beta_access(current.user.user_id):
+        return current
+    raise SafeHTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        error_type="beta_access_required",
+        message="Active beta access is required",
     )
 
 

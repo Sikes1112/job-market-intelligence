@@ -17,7 +17,12 @@ from backend.api.dependencies import (
     require_admin_mutation_access,
     require_admin_read_access,
 )
-from backend.api.envelope import NOT_FOUND, VALIDATION_ERROR, error_envelope, lightweight_success_envelope
+from backend.api.envelope import (
+    NOT_FOUND,
+    VALIDATION_ERROR,
+    error_envelope,
+    lightweight_success_envelope,
+)
 from backend.product_measurement.repository import ProductMeasurementRepository
 from backend.product_measurement.schemas import (
     CohortCreate,
@@ -72,10 +77,14 @@ def record_product_event(
         return _not_found("Referenced product event resource not found.")
     except (ProductMeasurementValidationError, ValueError) as exc:
         return _validation(str(exc))
-    return lightweight_success_envelope(data={"event": product_event_view(row).model_dump(mode="json")})
+    return lightweight_success_envelope(
+        data={"event": product_event_view(row).model_dump(mode="json")}
+    )
 
 
-@router.post("/me/recommendation-feedback", status_code=status.HTTP_201_CREATED, response_model=None)
+@router.post(
+    "/me/recommendation-feedback", status_code=status.HTTP_201_CREATED, response_model=None
+)
 def submit_recommendation_feedback(
     request: RecommendationFeedbackCreate,
     current: CurrentUser = Depends(get_current_user),
@@ -99,7 +108,9 @@ def list_my_recommendation_feedback(
 ) -> dict:
     rows = _service(session).list_my_feedback(current.user.user_id)
     return lightweight_success_envelope(
-        data={"feedback": [recommendation_feedback_view(row).model_dump(mode="json") for row in rows]}
+        data={
+            "feedback": [recommendation_feedback_view(row).model_dump(mode="json") for row in rows]
+        }
     )
 
 
@@ -163,7 +174,9 @@ def create_support_case(
         row = _service(session).create_support_case(current.user.user_id, request)
     except (ProductMeasurementNotFound, CrossUserAccessBlocked):
         return _not_found("Referenced support-case resource not found.")
-    return lightweight_success_envelope(data={"support_case": support_case_view(row).model_dump(mode="json")})
+    return lightweight_success_envelope(
+        data={"support_case": support_case_view(row).model_dump(mode="json")}
+    )
 
 
 @router.get("/me/support-cases", response_model=None)
@@ -229,7 +242,11 @@ def assign_beta_membership(
     except (ProductMeasurementNotFound, UserNotFound):
         return _not_found("User or cohort not found.")
     return lightweight_success_envelope(
-        data={"membership": membership_view(row, cohort_key=request.cohort_key).model_dump(mode="json")}
+        data={
+            "membership": membership_view(row, cohort_key=request.cohort_key).model_dump(
+                mode="json"
+            )
+        }
     )
 
 
@@ -275,7 +292,11 @@ def assign_experiment(
     except UserNotFound:
         return _not_found("User not found.")
     return lightweight_success_envelope(
-        data={"assignment": experiment_assignment_view(row, cohort_key=request.cohort_key).model_dump(mode="json")}
+        data={
+            "assignment": experiment_assignment_view(row, cohort_key=request.cohort_key).model_dump(
+                mode="json"
+            )
+        }
     )
 
 
@@ -332,7 +353,9 @@ def admin_update_support_case(
         )
     except ProductMeasurementNotFound:
         return _not_found("Support case not found.")
-    return lightweight_success_envelope(data={"support_case": support_case_view(row).model_dump(mode="json")})
+    return lightweight_success_envelope(
+        data={"support_case": support_case_view(row).model_dump(mode="json")}
+    )
 
 
 @router.get("/admin/beta/analytics", response_model=None)

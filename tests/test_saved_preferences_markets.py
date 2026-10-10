@@ -269,6 +269,35 @@ def test_save_list_delete_market_artifact_types(
         service.get_saved_market_artifact("user_a", saved.saved_artifact_id)
 
 
+def test_repeated_region_save_is_idempotent_after_canonical_resolution(
+    session: Session,
+) -> None:
+    _seed_users(session)
+    _seed_market_rows(session)
+    service = _service(session)
+
+    first = service.save_market_artifact(
+        "user_a",
+        SavedMarketArtifactInput(
+            artifact_type="region",
+            artifact_ref="greater_boston",
+            label="Greater Boston",
+        ),
+    )
+    repeated = service.save_market_artifact(
+        "user_a",
+        SavedMarketArtifactInput(
+            artifact_type="region",
+            artifact_ref="Greater Boston",
+            label="Boston",
+        ),
+    )
+
+    assert repeated.saved_artifact_id == first.saved_artifact_id
+    assert repeated.artifact_ref == "greater_boston"
+    assert len(service.list_saved_market_artifacts("user_a", artifact_type="region")) == 1
+
+
 def test_invalid_saved_artifact_type_fails(session: Session) -> None:
     _seed_users(session)
     service = _service(session)

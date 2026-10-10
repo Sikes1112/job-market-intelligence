@@ -1,7 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import {
   ApiError,
-  API_TARGET_LABEL,
   acceptPartnerImport,
   archivePartnerImport,
   createApiClient,
@@ -73,6 +72,7 @@ import {
   listSavedMarketArtifacts,
   markAlertRead,
   previewScoringOverlay,
+  resolveGeography,
   rejectPartnerImport,
   revokeApiKey,
   runInstitutionAdvisorComparison,
@@ -83,11 +83,12 @@ import {
   type ProtectedRequestOptions,
 } from "./api";
 import { useFrontendAuth, type FrontendAuthContextValue } from "./auth";
+import { BetaFeedback } from "./BetaFeedback";
+import { runtimeConfig } from "./runtimeConfig";
 import {
   canonicalRegionIdForToken,
   geographicRouteToken,
 } from "./geography";
-import { isPublicDemoBlockedProduct } from "./demoMode";
 import {
   coverageComponentEntries,
   coverageDescription,
@@ -279,18 +280,23 @@ import {
   isProductPage,
   landingUrl,
   marketIntelligenceUrl,
+  mySearchUrl,
   opportunityRoutesUrl,
   policyLandingUrl,
   parseRoute,
   personalizedDiscoveryUrl,
+  profileUrl,
+  roleExploreValueForQuery,
   plansUrl,
   publicBenchmarkUrl,
   publicPageUrl,
   publicReportUrl,
   recommendationsUrl,
   regionDetailUrl,
+  savedExploreComparisonUrl,
   userIntelligenceDashboardUrl,
   type DiscoveryFilters,
+  type AppPage,
   type ProductPage,
   type PublicPage,
   type RouteState,
@@ -316,6 +322,12 @@ import {
   type PublicSeoPage,
 } from "./publicSeoContent";
 const PolicyIntelligencePage = lazy(() => import("./PolicyIntelligencePage"));
+const ExplorePage = lazy(() => import("./ExplorePage"));
+const ExploreComparisonPage = lazy(() => import("./ExploreComparisonPage"));
+const MySearchPage = lazy(() => import("./MySearchPage"));
+const ProfileSummaryPage = lazy(() =>
+  import("./ProductPages").then((module) => ({ default: module.ProfileSummaryPage })),
+);
 const MarketIntelligencePage = lazy(() =>
   import("./MarketIntelligencePage").then((module) => ({ default: module.MarketIntelligencePage })),
 );
@@ -568,23 +580,9 @@ const INTEGRATION_EXPORT_OPTIONS: Array<{
 ];
 
 const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
-  { id: "dashboard", label: "Dashboard", kicker: "User intelligence" },
-  { id: "explore", label: "Explore Markets", kicker: "Market map" },
-  { id: "intelligence", label: "Market Intelligence", kicker: "Goal rankings" },
-  { id: "region", label: "Region Detail", kicker: "Regional output" },
-  { id: "company", label: "Company Geography", kicker: "Presence and hiring" },
-  { id: "compare", label: "Compare Markets", kicker: "Score comparison" },
-  { id: "discovery", label: "Personalized Discovery", kicker: "Personal overlay" },
-  { id: "career-identity", label: "Career Identity", kicker: "Profile source" },
-  { id: "decisions", label: "Decisions", kicker: "Decision workspace" },
-  { id: "recommendations", label: "Recommendations", kicker: "Decision support" },
-  { id: "career-agent", label: "Career Agent", kicker: "Grounded answers" },
-  { id: "opportunity-routes", label: "Opportunity Routes", kicker: "Route guidance" },
-  { id: "current-opportunities", label: "Current Opportunities", kicker: "Strategic openings" },
-  { id: "policy", label: "Policy", kicker: "Workforce intel" },
-  { id: "plans", label: "Plans", kicker: "Access model" },
-  { id: "institution", label: "Institution", kicker: "Cohort dashboard" },
-  { id: "account", label: "Account", kicker: "Saved overlays" },
+  { id: "explore", label: "Explore", kicker: "Market Fit" },
+  { id: "my-search", label: "My Search", kicker: "Saved progress" },
+  { id: "profile", label: "Profile", kicker: "Career Identity" },
 ];
 
 const REMOTE_HYBRID_OPTIONS: RemoteHybridPreference[] = ["remote", "hybrid", "onsite", "flexible"];
@@ -681,6 +679,8 @@ function getNavigationUrl(
   discoveryFilters: DiscoveryFilters,
 ): string {
   if (page === "dashboard") return userIntelligenceDashboardUrl();
+  if (page === "my-search") return mySearchUrl();
+  if (page === "profile") return profileUrl();
   if (page === "intelligence") return marketIntelligenceUrl();
   if (page === "region") return regionDetailUrl(selectedRegionId);
   if (page === "company") return companyGeographyUrl(selectedCompanyId);
@@ -1903,6 +1903,8 @@ function LoadingBlock({ label = "Loading data" }: { label?: string }) {
   );
 }
 
+// Retained for legacy surfaces until the later retirement batch.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AuthStatusPanel({
   auth,
   onOpenAccount,
@@ -10242,9 +10244,21 @@ function App() {
   const auth = useFrontendAuth();
   const [route, setRoute] = useState<RouteState>(() => readCurrentRoute());
   const isProductRoute = isProductPage(route.page);
-  const visibleNavItems = NAV_ITEMS.filter(
-    (item) => !isPublicDemoBlockedProduct(item.id),
+  const isExploreComparison = route.page === "compare"
+    && (route.explore.selected.length > 0 || Boolean(route.savedComparisonId));
+  const usesIndividualShell = !(["institution", "policy", "current-opportunity-operations"] as AppPage[]).includes(route.page);
+  const selfContainedPages: AppPage[] = ["explore", "my-search", "profile", "career-identity", "decisions", "career-agent", "opportunity-routes", "current-opportunities", "current-opportunity-operations", "account", "plans", "recommendations"];
+  const needsLegacyProductData = isProductRoute && (
+    route.page === "explore"
+      ? !auth.isAuthenticated
+      : route.page === "compare" && isExploreComparison
+        ? false
+        : !selfContainedPages.includes(route.page)
   );
+  const needsGlobalAccountData = !isExploreComparison
+    && (["account", "region", "company", "compare", "discovery", "recommendations", "plans"] as AppPage[]).includes(route.page);
+  const visibleNavItems = NAV_ITEMS;
+  const [shellSearch, setShellSearch] = useState("");
   const [health, setHealth] = useState<LoadState<{ service: string }>>(emptyLoadState);
   const [regions, setRegions] = useState<LoadState<{ regions: RegionListItem[] }>>(emptyLoadState);
   const [marketCoverageState, setMarketCoverageState] =
@@ -10442,8 +10456,8 @@ function App() {
   const canUseIntegrations = canSavePersonalOverlays;
   const regionSourceIdsNeeded = useMemo(() => {
     const ids: string[] = [];
-    if (isProductRoute && selectedRegionId && selectedRegionIsKnown) ids.push(selectedRegionId);
-    if (route.page === "compare") {
+    if (needsLegacyProductData && selectedRegionId && selectedRegionIsKnown) ids.push(selectedRegionId);
+    if (route.page === "compare" && !isExploreComparison) {
       if (comparisonRegionAKnown) ids.push(comparisonA);
       if (comparisonRegionBKnown) ids.push(comparisonB);
     }
@@ -10460,9 +10474,10 @@ function App() {
     comparisonRegionBKnown,
     discoveryFilters.selectedRegions,
     hasLoadedRegionList,
-    isProductRoute,
+    needsLegacyProductData,
     regionList,
     route.page,
+    isExploreComparison,
     selectedRegionId,
     selectedRegionIsKnown,
   ]);
@@ -10480,6 +10495,43 @@ function App() {
     }
     setRoute(readCurrentRoute());
   }, []);
+
+  const submitShellSearch = useCallback(async () => {
+    const query = shellSearch.trim();
+    if (!query) {
+      navigateTo(exploreUrl());
+      return;
+    }
+    const role = roleExploreValueForQuery(query);
+    if (role) {
+      navigateTo(exploreUrl({ goal: role }));
+      return;
+    }
+    try {
+      const resolved = (await resolveGeography(query)).data;
+      const focus = resolved?.public_slug || resolved?.region_id;
+      if (focus) {
+        navigateTo(exploreUrl({ focus }));
+        return;
+      }
+    } catch {
+      // The Explore authority will render an honest unsupported-role state.
+    }
+    navigateTo(exploreUrl({ goal: query }));
+  }, [navigateTo, shellSearch]);
+
+  useEffect(() => {
+    if (auth.isAuthenticated && route.page === "landing" && window.location.pathname === "/") {
+      navigateTo(exploreUrl(), { replace: true });
+    }
+  }, [auth.isAuthenticated, navigateTo, route.page]);
+
+  useEffect(() => {
+    if (!isProductRoute) return;
+    const pageTitle = route.page === "explore" ? "Explore" : route.page === "my-search" ? "My Search" : route.page === "profile" ? "Profile" : segmentLabel(route.page);
+    document.title = `${pageTitle} · Job Market Intelligence`;
+    document.getElementById("main-content")?.focus({ preventScroll: true });
+  }, [isProductRoute, route.page]);
 
   const loadPublicBenchmarks = useCallback(async () => {
     setPublicBenchmarkListState((current) => ({ ...current, loading: true, error: null }));
@@ -10891,8 +10943,9 @@ function App() {
       setAccountDeactivated(false);
       return;
     }
+    if (!needsGlobalAccountData) return;
     void loadAccountData();
-  }, [auth.isAuthenticated, loadAccountData, resetAccountState]);
+  }, [auth.isAuthenticated, loadAccountData, needsGlobalAccountData, resetAccountState]);
 
   useEffect(() => {
     if (route.page !== "institution") return;
@@ -11182,7 +11235,7 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (!auth.isAuthenticated || accountDeactivated) {
+    if (!auth.isAuthenticated || accountDeactivated || route.page !== "account") {
       setCareerPlatformRegistryState(emptyLoadState());
       return;
     }
@@ -11220,6 +11273,7 @@ function App() {
     careerPlatformRegistryState.error,
     careerPlatformRegistryState.loading,
     protectedOptions,
+    route.page,
   ]);
 
   useEffect(() => {
@@ -11227,7 +11281,7 @@ function App() {
   }, [auth.isAuthenticated]);
 
   useEffect(() => {
-    if (!isProductRoute) return;
+    if (!needsLegacyProductData) return;
 
     async function loadInitialData() {
       setHealth((current) => ({ ...current, loading: true, error: null }));
@@ -11301,10 +11355,10 @@ function App() {
     }
 
     void loadInitialData();
-  }, [isProductRoute, loadRegion]);
+  }, [loadRegion, needsLegacyProductData]);
 
   useEffect(() => {
-    if (!isProductRoute) return;
+    if (!needsLegacyProductData) return;
 
     async function loadRegionSearch() {
       setRegionSearchState((current) => ({ ...current, loading: true, error: null }));
@@ -11321,7 +11375,7 @@ function App() {
     }
 
     void loadRegionSearch();
-  }, [isProductRoute]);
+  }, [needsLegacyProductData]);
 
   useEffect(() => {
     if (route.page !== "recommendations") return;
@@ -11463,7 +11517,7 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (!isProductRoute) return;
+    if (!["recommendations", "plans", "account"].includes(route.page)) return;
 
     ACCESS_PREVIEW_REQUESTS.forEach((request) => {
       const key = accessPreviewKey(request);
@@ -11498,13 +11552,13 @@ function App() {
   }, [
     accountDeactivated,
     auth.isAuthenticated,
-    isProductRoute,
     monetizationAccessPreviewStates,
     protectedOptions,
+    route.page,
   ]);
 
   useEffect(() => {
-    if (!isProductRoute) return;
+    if (!needsLegacyProductData) return;
     if (
       !selectedRegionId
       || !selectedRegionIsKnown
@@ -11515,10 +11569,10 @@ function App() {
       return;
     }
     void loadRegion(selectedRegionId);
-  }, [isProductRoute, loadRegion, regionDetails, regionErrors, regionLoading, selectedRegionId, selectedRegionIsKnown]);
+  }, [loadRegion, needsLegacyProductData, regionDetails, regionErrors, regionLoading, selectedRegionId, selectedRegionIsKnown]);
 
   useEffect(() => {
-    if (route.page !== "explore") return;
+    if (route.page !== "explore" || !needsLegacyProductData) return;
     regionList.forEach((region) => {
       if (
         !regionDetails[region.region_id]
@@ -11528,7 +11582,7 @@ function App() {
         void loadRegion(region.region_id);
       }
     });
-  }, [loadRegion, regionDetails, regionErrors, regionList, regionLoading, route.page]);
+  }, [loadRegion, needsLegacyProductData, regionDetails, regionErrors, regionList, regionLoading, route.page]);
 
   useEffect(() => {
     regionSourceIdsNeeded.forEach((regionId) => {
@@ -11580,7 +11634,7 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (!isProductRoute) return;
+    if (!needsLegacyProductData) return;
     if (!selectedRegionId || !selectedRegionIsKnown) return;
     const current = regionCompanySearchStates[selectedRegionId];
     if (current?.loading || current?.envelope || current?.error) return;
@@ -11606,7 +11660,7 @@ function App() {
           },
         }));
       });
-  }, [isProductRoute, regionCompanySearchStates, selectedRegionId, selectedRegionIsKnown]);
+  }, [needsLegacyProductData, regionCompanySearchStates, selectedRegionId, selectedRegionIsKnown]);
 
   useEffect(() => {
     if (route.page === "region" && !route.regionId && selectedRegionId) {
@@ -11631,7 +11685,7 @@ function App() {
   }, [navigateTo, route.companyId, route.page, selectedCompanyId]);
 
   useEffect(() => {
-    if (!isProductRoute) {
+    if (!needsLegacyProductData) {
       setCompanyState(emptyLoadState());
       return;
     }
@@ -11655,10 +11709,10 @@ function App() {
     }
 
     void loadCompany();
-  }, [isProductRoute, selectedCompanyId]);
+  }, [needsLegacyProductData, selectedCompanyId]);
 
   useEffect(() => {
-    if (!isProductRoute) return;
+    if (!needsLegacyProductData) return;
     if (!selectedCompanyId) return;
     const current = companySourceStates[selectedCompanyId];
     if (current?.loading || current?.envelope || current?.error) return;
@@ -11684,10 +11738,10 @@ function App() {
           },
         }));
       });
-  }, [companySourceStates, isProductRoute, selectedCompanyId]);
+  }, [companySourceStates, needsLegacyProductData, selectedCompanyId]);
 
   useEffect(() => {
-    if (!isProductRoute) return;
+    if (!needsLegacyProductData) return;
     if (!selectedCompanyId) return;
     const current = companyGeographyStates[selectedCompanyId];
     if (current?.loading || current?.envelope || current?.error) return;
@@ -11713,10 +11767,10 @@ function App() {
           },
         }));
       });
-  }, [companyGeographyStates, isProductRoute, selectedCompanyId]);
+  }, [companyGeographyStates, needsLegacyProductData, selectedCompanyId]);
 
   useEffect(() => {
-    if (!isProductRoute) return;
+    if (!needsLegacyProductData) return;
     if (comparisonValidationError) {
       setComparisonState(emptyLoadState());
       return;
@@ -11738,7 +11792,7 @@ function App() {
     }
 
     void loadComparison();
-  }, [comparisonA, comparisonB, comparisonValidationError, isProductRoute]);
+  }, [comparisonA, comparisonB, comparisonValidationError, needsLegacyProductData]);
 
   useEffect(() => {
     discoveryRequestKey.current += 1;
@@ -12687,17 +12741,17 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${usesIndividualShell ? "redesigned-app-shell" : "secondary-context-shell"}`}>
       <a className="skip-link" href="#main-content">Skip to main content</a>
-      <aside className="sidebar">
-        <div className="brand-block">
-          <span className="brand-mark">JM</span>
-          <div>
-            <strong>Job Market Intelligence</strong>
-            <small>MVP demo</small>
-          </div>
-        </div>
-        <nav className="nav-list" aria-label="Main navigation">
+      {usesIndividualShell ? <header className="product-header">
+        <a className="product-brand" href={exploreUrl()} onClick={(event) => handleRouteLink(event, exploreUrl())}>
+          <span className="brand-mark">JM</span><strong>Job Market Intelligence</strong>{runtimeConfig.deploymentMode === "beta" ? <span className="release-mode-badge">Beta</span> : null}
+        </a>
+        <form className="global-search" onSubmit={(event) => { event.preventDefault(); void submitShellSearch(); }} role="search">
+          <label className="sr-only" htmlFor="global-search-input">Search markets or roles</label>
+          <input id="global-search-input" onChange={(event) => setShellSearch(event.target.value)} placeholder="Search markets or supported roles…" type="search" value={shellSearch} />
+        </form>
+        <nav className="primary-product-nav" aria-label="Main navigation">
           {visibleNavItems.map((item) => {
             const url = getNavigationUrl(
               item.id,
@@ -12709,40 +12763,25 @@ function App() {
             );
             return (
               <a
-                className={route.page === item.id ? "nav-item nav-item-active" : "nav-item"}
+                aria-current={route.page === item.id ? "page" : undefined}
+                className={route.page === item.id ? "primary-nav-item primary-nav-item-active" : "primary-nav-item"}
                 href={url}
                 key={item.id}
                 onClick={(event) => handleRouteLink(event, url)}
               >
-                <span>{item.label}</span>
-                <small>{item.kicker}</small>
+                {item.label}
               </a>
             );
           })}
         </nav>
-        <AuthStatusPanel auth={auth} onOpenAccount={() => navigateTo(accountUrl())} />
-        <PublicInfoLinks activePage={null} onNavigate={handleRouteLink} variant="sidebar" />
-        <div className="api-target">
-          <span>API target</span>
-          <code>{API_TARGET_LABEL}</code>
-        </div>
-      </aside>
+        <details className="account-menu">
+          <summary aria-label="Account menu">{auth.user?.picture ? <img alt="" src={auth.user.picture} /> : (auth.user?.name ?? auth.user?.email ?? "Account").slice(0, 2).toUpperCase()}</summary>
+          <div><strong>{auth.user?.name ?? auth.user?.email ?? (auth.isAuthenticated ? "Account" : "Signed out")}</strong>{auth.isAuthenticated ? <><button onClick={() => navigateTo(accountUrl())} type="button">Account settings</button><button onClick={auth.logout} type="button">Sign out</button></> : <button onClick={() => void auth.login()} type="button">Sign in</button>}</div>
+        </details>
+      </header> : <header className="secondary-context-header"><a className="product-brand" href="/" onClick={(event) => handleRouteLink(event, "/")}><span className="brand-mark">JM</span><strong>Job Market Intelligence</strong></a><strong>{route.page === "institution" ? "Institution workspace" : route.page === "policy" ? "Policy intelligence" : "Opportunity data operations"}</strong></header>}
 
-      <main className="content-shell" id="main-content">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">Prepared market truth · derived outputs · personal overlays</p>
-            <h1>Job Market Intelligence</h1>
-            {route.unknownPath ? <p className="meta-copy">Unknown path redirected to Explore Markets.</p> : null}
-          </div>
-          <div className="topbar-badges">
-            <StateBadge envelope={health.envelope} loading={health.loading} error={health.error} />
-            <span className="badge">{regionList.length} regions</span>
-            <span className="badge">{companyOptions.length} companies</span>
-          </div>
-        </header>
-
-        <DemoDisclosure compact />
+      <main className={usesIndividualShell ? "content-shell redesigned-content-shell" : "content-shell"} id="main-content" tabIndex={-1}>
+        {route.unknownPath ? <p className="meta-copy">Unknown path redirected to Explore.</p> : null}
 
         {route.page !== "account" && accountAction.message ? (
           <div className="notice-state">
@@ -12756,7 +12795,7 @@ function App() {
 
         <LazyRoute>
         {route.page === "explore" ? (
-          <ExploreMarkets
+          auth.isAuthenticated ? <ExplorePage auth={auth} onNavigate={navigateTo} state={route.explore} /> : <ExploreMarkets
             health={health}
             marketCoverage={marketCoverageState}
             marketOperations={marketOperationsState}
@@ -12768,6 +12807,10 @@ function App() {
             regions={regions}
           />
         ) : null}
+
+        {route.page === "my-search" ? <MySearchPage applicationId={route.applicationId} auth={auth} onNavigate={navigateTo} pursuitId={route.pursuitId} /> : null}
+
+        {route.page === "profile" ? <ProfileSummaryPage auth={auth} onNavigate={navigateTo} /> : null}
 
         {route.page === "dashboard" ? (
           <UserIntelligenceDashboardPage />
@@ -12826,7 +12869,16 @@ function App() {
           />
         ) : null}
 
-        {route.page === "compare" ? (
+        {route.page === "compare" && isExploreComparison ? (
+          <ExploreComparisonPage
+            auth={auth}
+            onNavigate={navigateTo}
+            savedComparisonId={route.savedComparisonId}
+            state={route.explore}
+          />
+        ) : null}
+
+        {route.page === "compare" && !isExploreComparison ? (
           <ComparisonView
             canExplainGuidance={canExplainGuidance}
             canSavePersonalOverlays={canSavePersonalOverlays}
@@ -12913,6 +12965,9 @@ function App() {
           <DecisionWorkspacePage
             auth={auth}
             onOpenCareerIdentity={() => navigateTo(careerIdentityUrl())}
+            onOpenExploreComparison={(comparisonId) =>
+              navigateTo(savedExploreComparisonUrl(comparisonId))
+            }
           />
         ) : null}
 
@@ -12946,6 +13001,7 @@ function App() {
         {route.page === "current-opportunities" ? (
           <CurrentOpportunitiesPage
             auth={auth}
+            initialState={route.currentOpportunities}
             onNavigate={navigateTo}
             opportunityId={route.opportunityId}
           />
@@ -13188,8 +13244,12 @@ function App() {
         ) : null}
         </LazyRoute>
 
-        <PublicFooter activePage={null} onNavigate={handleRouteLink} />
+        {!(["explore", "my-search", "profile"] as AppPage[]).includes(route.page) ? <PublicFooter activePage={null} onNavigate={handleRouteLink} /> : null}
       </main>
+      {usesIndividualShell && auth.isAuthenticated ? (
+        <BetaFeedback auth={auth} route={`${window.location.pathname}${window.location.search}`} />
+      ) : null}
+      {usesIndividualShell ? <nav className="mobile-product-nav" aria-label="Mobile navigation">{visibleNavItems.map((item) => { const url = getNavigationUrl(item.id, selectedRegionRouteToken, selectedCompanyId, comparisonA, comparisonB, discoveryFilters); return <a aria-current={route.page === item.id ? "page" : undefined} href={url} key={item.id} onClick={(event) => handleRouteLink(event, url)}>{item.label}</a>; })}</nav> : null}
     </div>
   );
 }

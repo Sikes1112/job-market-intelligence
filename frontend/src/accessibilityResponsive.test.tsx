@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
 import type { ApiEnvelope, CareerIdentity, CareerIdentityCompleteness } from "./types";
@@ -21,6 +21,8 @@ const authState = vi.hoisted(() => ({
 vi.mock("./auth", () => ({
   useFrontendAuth: () => authState.value,
 }));
+
+vi.mock("./ExplorePage", () => ({ default: () => <div>Explore route content</div> }));
 
 function envelope<T>(data: T): ApiEnvelope<T> {
   return {
@@ -132,7 +134,43 @@ describe("Layer 39C accessibility and responsive shell contracts", () => {
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
     expect(screen.getByRole("status")).toHaveTextContent("Loading workspace");
     expect(container.querySelector(".app-shell")).toBeInTheDocument();
-    expect(container.querySelector(".nav-list")).toBeInTheDocument();
+    expect(container.querySelector(".primary-product-nav")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Explore" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "My Search" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Profile" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: "Institution" })).not.toBeInTheDocument();
     expect(container.querySelector(".skip-link")).toBeInTheDocument();
+  });
+
+  test("does not start legacy, account, or monetization requests on authenticated Explore", async () => {
+    stubFetch();
+    window.history.pushState(null, "", "/markets");
+    render(<App />);
+    expect(await screen.findByText("Explore route content")).toBeInTheDocument();
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
+  test("global role search writes the Explore role override rather than free-text q", async () => {
+    stubFetch();
+    window.history.pushState(null, "", "/markets");
+    render(<App />);
+    const search = screen.getByRole("searchbox", { name: "Search markets or roles" });
+    fireEvent.change(search, { target: { value: "AI / machine learning" } });
+    fireEvent.submit(search.closest("form")!);
+    await waitFor(() => expect(window.location.search).toBe("?role=ai_ml"));
+  });
+
+  test.each([
+    ["institution", "/markets/institution", "Institution workspace"],
+    ["policy", "/markets/policy", "Policy intelligence"],
+    ["operator", "/markets/current-opportunities/operations", "Opportunity data operations"],
+  ])("keeps the %s route outside the individual shell", async (_family, path, heading) => {
+    stubFetch();
+    window.history.pushState(null, "", path);
+    const { container } = render(<App />);
+    expect(await screen.findByText(heading)).toBeInTheDocument();
+    expect(container.querySelector(".secondary-context-shell")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Main navigation" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Mobile navigation" })).not.toBeInTheDocument();
   });
 });

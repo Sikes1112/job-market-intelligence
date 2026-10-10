@@ -8,7 +8,12 @@ from backend.config.settings import AppEnv, Settings, get_settings, redact_datab
 SETTINGS_ENV_VARS = (
     "APP_ENV",
     "DATABASE_URL",
+    "DATABASE_POOL_SIZE",
+    "DATABASE_MAX_OVERFLOW",
+    "DATABASE_POOL_RECYCLE_SECONDS",
     "CORS_ALLOWED_ORIGINS",
+    "API_DOCS_ENABLED",
+    "BETA_ACCESS_REQUIRED",
     "LOG_LEVEL",
     "SERVICE_NAME",
     "RELEASE_ID",
@@ -57,10 +62,15 @@ def test_default_settings_are_local_and_demo_safe() -> None:
 
     assert settings.app_env == AppEnv.LOCAL
     assert settings.database_url == "sqlite:///./jmi.db"
+    assert settings.database_pool_size == 5
+    assert settings.database_max_overflow == 10
+    assert settings.database_pool_recycle_seconds == 300
     assert settings.cors_allowed_origin_list == []
     assert settings.log_level == "INFO"
     assert settings.service_name == "jmi-backend"
     assert settings.release_id == "unknown"
+    assert settings.api_docs_enabled is True
+    assert settings.beta_access_required is False
     assert settings.readiness_require_migration_current is False
     assert settings.job_stale_after_seconds == 3600
     assert settings.error_monitoring_dsn == ""
@@ -200,13 +210,48 @@ def test_non_local_database_url_is_accepted_without_exposing_repr() -> None:
     settings = Settings(
         app_env="production",
         database_url="postgresql://user:secret@example.test/db",
+        cors_allowed_origins="https://app.example.test",
+        auth0_issuer="https://tenant.example.test/",
+        auth0_audience="https://api.example.test",
+        release_id="release-test",
         _env_file=None,
     )
 
     assert settings.app_env == AppEnv.PRODUCTION
     assert settings.database_url == "postgresql://user:secret@example.test/db"
     assert settings.readiness_require_migration_current is True
+    assert settings.api_docs_enabled is False
+    assert settings.beta_access_required is True
     assert "secret" not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"cors_allowed_origins": ""}, "CORS_ALLOWED_ORIGINS"),
+        ({"cors_allowed_origins": "http://app.example.test"}, "must use HTTPS"),
+        ({"auth0_issuer": ""}, "AUTH0_ISSUER and AUTH0_AUDIENCE"),
+        ({"auth0_audience": ""}, "AUTH0_ISSUER and AUTH0_AUDIENCE"),
+        ({"release_id": "unknown"}, "RELEASE_ID is required"),
+        ({"api_docs_enabled": True}, "API_DOCS_ENABLED must be false"),
+    ],
+)
+def test_production_rejects_missing_or_unsafe_critical_config(
+    override: dict[str, object], message: str
+) -> None:
+    values: dict[str, object] = {
+        "app_env": "production",
+        "database_url": "postgresql://user:secret@example.test/db",
+        "cors_allowed_origins": "https://app.example.test",
+        "auth0_issuer": "https://tenant.example.test/",
+        "auth0_audience": "https://api.example.test",
+        "release_id": "release-test",
+        "_env_file": None,
+    }
+    values.update(override)
+
+    with pytest.raises(ValidationError, match=message):
+        Settings(**values)
 
 
 def test_invalid_database_url_is_rejected_without_echoing_value() -> None:
@@ -379,16 +424,28 @@ def test_staging_production_and_legacy_prod_default_deferred_flags_to_enabled() 
     staging = Settings(
         app_env="staging",
         database_url="postgresql://user:secret@example.test/staging",
+        cors_allowed_origins="https://staging.example.test",
+        auth0_issuer="https://tenant.example.test/",
+        auth0_audience="https://api.example.test",
+        release_id="staging-test",
         _env_file=None,
     )
     production = Settings(
         app_env="production",
         database_url="postgresql://user:secret@example.test/prod",
+        cors_allowed_origins="https://app.example.test",
+        auth0_issuer="https://tenant.example.test/",
+        auth0_audience="https://api.example.test",
+        release_id="production-test",
         _env_file=None,
     )
     legacy_prod = Settings(
         app_env="prod",
         database_url="postgresql://user:secret@example.test/prod",
+        cors_allowed_origins="https://app.example.test",
+        auth0_issuer="https://tenant.example.test/",
+        auth0_audience="https://api.example.test",
+        release_id="prod-test",
         _env_file=None,
     )
 
@@ -442,9 +499,7 @@ def test_get_settings_reads_environment(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_redact_database_url_hides_credentials() -> None:
-    redacted = redact_database_url(
-        "postgresql://user:secret@example.test/db?sslmode=require"
-    )
+    redacted = redact_database_url("postgresql://user:secret@example.test/db?sslmode=require")
 
     assert "secret" not in redacted
     assert "user:***@" in redacted

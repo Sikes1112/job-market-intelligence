@@ -11,16 +11,13 @@ from backend.product_measurement.models import (
     BetaCohort,
     BetaCohortMembership,
     CommercialExperimentSignal,
-    DecisionReflection,
     ExperimentAssignment,
     ProductAnalyticsEvent,
-    ProductUserVisit,
     ProductEntitlementGrant,
     ProductFeatureGate,
+    ProductUserVisit,
     RecommendationFeedback,
-    StrategyChange,
     SupportCase,
-    SupportCaseEvent,
 )
 
 
@@ -158,9 +155,7 @@ class ProductMeasurementRepository:
     def list_feature_gates(self, *, limit: int = 500) -> list[ProductFeatureGate]:
         return list(
             self._session.execute(
-                select(ProductFeatureGate)
-                .order_by(ProductFeatureGate.feature_key)
-                .limit(limit)
+                select(ProductFeatureGate).order_by(ProductFeatureGate.feature_key).limit(limit)
             ).scalars()
         )
 

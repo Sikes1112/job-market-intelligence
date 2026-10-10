@@ -2441,6 +2441,144 @@ export type CareerApplicationCreateInput = {
   metadata?: Record<string, unknown>;
 };
 
+export type MySearchPursuitOption = {
+  option_id: string;
+  title: string;
+  region_id: string | null;
+  public_slug: string | null;
+};
+
+export type MySearchAction = {
+  action_id: string;
+  action_type: CareerActionType;
+  status: CareerActionStatus;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  priority: number | null;
+  completed_at: string | null;
+  updated_at: string;
+};
+
+export type MySearchApplication = {
+  application_id: string;
+  decision_id: string | null;
+  company_id: string | null;
+  company_name: string;
+  region_id: string | null;
+  market_name: string | null;
+  role_title: string;
+  status: CareerApplicationStatus;
+  applied_at: string | null;
+  follow_up_at: string | null;
+  source_url: string | null;
+  current_opportunity_id: string | null;
+  needs_attention: boolean;
+  attention_reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MySearchSourceComparison = {
+  comparison_id: string;
+  compared_markets: string[];
+  system_recommendation: string[];
+  original_user_choice: string;
+  original_choice_matches_recommendation: boolean | null;
+  current_user_choice: string;
+  current_choice_matches_recommendation: boolean | null;
+  recommendation_state: string;
+  recommendation_summary: string | null;
+  generated_at: string | null;
+};
+
+export type MySearchOpportunitySummary = {
+  market_id: string | null;
+  coverage_status: string;
+  coverage_rationale: string;
+  coverage_limitations: string[];
+  observed_active_count: number;
+  ranking_eligible_count: number;
+  fresh_count: number;
+  latest_observed_at: string | null;
+  top_opportunities: Array<{
+    opportunity_id: string;
+    company_name: string;
+    role_title: string;
+    freshness_state: string;
+    ranking_eligible: boolean;
+    application_url_available: boolean;
+  }>;
+};
+
+export type MySearchPursuit = {
+  decision_id: string;
+  decision_type: CareerDecisionType;
+  status: CareerDecisionStatus;
+  title: string;
+  selected_priority: MySearchPursuitOption;
+  alternatives: MySearchPursuitOption[];
+  target_context: string | null;
+  prioritized_at: string | null;
+  next_action: MySearchAction | null;
+  open_action_count: number;
+  completed_action_count: number;
+  applications: MySearchApplication[];
+  active_application_count: number;
+  applications_needing_attention: number;
+  source_comparison: MySearchSourceComparison | null;
+  current_opportunities: MySearchOpportunitySummary;
+  latest_meaningful_update_at: string;
+};
+
+export type MySearchSavedComparison = {
+  comparison_id: string;
+  market_names: string[];
+  context_summary: string;
+  recommendation_state: string;
+  recommendation_summary: string;
+  winner_region_ids: string[];
+  generated_at: string;
+  saved_at: string;
+};
+
+export type MySearchSavedItem = {
+  saved_artifact_id: string;
+  artifact_type: string;
+  artifact_ref: string;
+  label: string | null;
+  notes: string | null;
+  region_id: string | null;
+  public_slug: string | null;
+  display_name: string | null;
+  created_at: string;
+};
+
+export type MySearchHistoryItem = {
+  history_id: string;
+  kind: string;
+  title: string;
+  detail: string | null;
+  occurred_at: string;
+  decision_id: string | null;
+  application_id: string | null;
+};
+
+export type MySearchWorkspace = {
+  active_pursuits: MySearchPursuit[];
+  applications: MySearchApplication[];
+  saved_comparisons: MySearchSavedComparison[];
+  saved_items: MySearchSavedItem[];
+  history: MySearchHistoryItem[];
+  generated_at: string;
+};
+
+export type TrackOpportunityResult = {
+  application: MySearchApplication;
+  created: boolean;
+  external_application_url: string | null;
+};
+
 export type CareerOutcome = {
   outcome_id: string;
   decision_id: string | null;
@@ -2604,7 +2742,12 @@ export type ProductEventCreateInput = {
   event_type:
     | "recommendation_viewed"
     | "coverage_limitation_viewed"
-    | "trust_explanation_viewed";
+    | "trust_explanation_viewed"
+    | "comparison_recommendation_viewed"
+    | "comparison_abstained_viewed"
+    | "market_inspected"
+    | "comparison_selection_ready"
+    | "my_search_viewed";
   event_source: "frontend";
   schema_version?: number;
   anonymous_session_id?: string | null;
@@ -2621,6 +2764,230 @@ export type ProductEventCreateInput = {
   coverage_status?: string | null;
   recommendation_state?: string | null;
   payload?: Record<string, unknown>;
+};
+
+export type ExplorePersonalizationState =
+  | "personalized"
+  | "needs_input"
+  | "general_market_intelligence"
+  | "unsupported";
+
+export type ExploreContextValues = {
+  goal: string | null;
+  role_families: string[];
+  industries: string[];
+  opportunity_types: string[];
+  career_stage: string | null;
+  work_arrangements: string[];
+  preferred_region_ids: string[];
+  included_region_ids: string[];
+  excluded_region_ids: string[];
+  timing: string[];
+};
+
+export type ExploreSessionOverrides = {
+  goal?: string | null;
+  role_families?: string[] | null;
+  industries?: string[] | null;
+  opportunity_types?: string[] | null;
+  work_arrangements?: string[] | null;
+  geographic_scope?: {
+    region_refs?: string[];
+    excluded_region_refs?: string[];
+  } | null;
+};
+
+export type ExploreContext = {
+  career_identity_id: string | null;
+  career_identity_version: number | null;
+  personalization_consent: boolean;
+  profile_defaults: ExploreContextValues;
+  session_overrides: ExploreContextValues;
+  effective_context: ExploreContextValues;
+  context_fingerprint: string;
+  fingerprint_version: string;
+  personalization_state: ExplorePersonalizationState;
+  supported_goal: string | null;
+  goal_mapping_state: "supported" | "missing" | "ambiguous" | "unsupported";
+  applied_context: string[];
+  unapplied_context: Array<{ code: string; field: string; source: string; reason: string }>;
+  unsupported_context: Array<{ code: string; field: string; source: string; reason: string }>;
+  limitations: string[];
+};
+
+export type ExploreFitState =
+  | "confident"
+  | "tentative"
+  | "insufficient_evidence"
+  | "unsupported"
+  | "abstained"
+  | "hard_constraint_excluded"
+  | "general_market_intelligence";
+
+export type ExploreRegion = {
+  region_id: string;
+  public_slug: string | null;
+  display_name: string;
+  region_type: string | null;
+  state_codes: string[];
+  primary_city: string | null;
+  centroid: { latitude: number; longitude: number } | null;
+  focus_bounds: Record<string, number> | null;
+  market_support_status: string;
+};
+
+export type ExploreFitResult = {
+  market_key: string;
+  region: ExploreRegion;
+  state: ExploreFitState;
+  fit_score: number | null;
+  fit_band: string | null;
+  rank: number | null;
+  display_order: number;
+  tied_region_ids: string[];
+  near_tie_region_ids: string[];
+  primary_drivers: Array<Record<string, unknown>>;
+  tradeoffs: string[];
+  confidence: string;
+  evidence_sufficiency: string;
+  freshness: string;
+  market_coverage: {
+    authority: string;
+    summary: string;
+    evidence_areas_used: string[];
+    evidence_areas_missing: string[];
+  };
+  opportunity_coverage: {
+    authority: string;
+    status: string;
+    active_opportunity_count: number;
+    ranking_eligible_opportunity_count: number;
+    fresh_opportunity_count: number;
+    rationale: string | null;
+    limitations: string[];
+    affects_explore_fit: false;
+  };
+  material_limitations: string[];
+  abstention_reason: string | null;
+  hard_constraint_reasons: string[];
+  contradiction_status: string;
+  contradiction_findings: Array<Record<string, unknown>>;
+  contradiction_blocking: boolean;
+  contradiction_summary: string | null;
+  evidence_hooks: Record<string, unknown>;
+  versions: Record<string, unknown>;
+};
+
+export type ExploreMarketsResponse = {
+  context: ExploreContext;
+  ranking_universe: {
+    kind: string;
+    label: string;
+    region_ids: string[];
+    market_count: number;
+    nationally_representative: boolean;
+  };
+  markets: ExploreFitResult[];
+  evaluated_at: string;
+  authority: "explore_fit";
+  authority_version: string;
+  contradiction_status: string;
+  contradiction_findings: Array<Record<string, unknown>>;
+  contradiction_blocking: boolean;
+  contradiction_summary: string | null;
+  limitations: string[];
+};
+
+export type ExploreComparisonRecommendationState =
+  | "clear_recommendation"
+  | "near_tie"
+  | "exact_tie"
+  | "insufficient_evidence"
+  | "blocking_contradiction"
+  | "unsupported_member"
+  | "outside_constraints";
+
+export type ExploreComparisonFactor = {
+  code: string;
+  label: string;
+  summary: string;
+  region_ids: string[];
+  evidence: string[];
+};
+
+export type ExploreComparisonMarket = {
+  fit: ExploreFitResult;
+  comparison_rank: number | null;
+  key_advantages: string[];
+  key_tradeoffs: string[];
+  confidence_caveat: string;
+  missing_evidence: string[];
+  company_evidence: Array<{
+    company_id: string;
+    company_name: string;
+    evidence_kind: "current_hiring" | "presence" | string;
+    active_posting_count: number | null;
+    confidence: string | null;
+  }>;
+};
+
+export type ExploreComparisonResult = {
+  comparison_identity: string;
+  compared_markets: ExploreComparisonMarket[];
+  recommendation_state: ExploreComparisonRecommendationState;
+  recommendation_summary: string;
+  winner_region_ids: string[];
+  tied_region_ids: string[];
+  near_tie_region_ids: string[];
+  abstained: boolean;
+  abstention_reason: string | null;
+  differentiating_factors: ExploreComparisonFactor[];
+  shared_strengths: ExploreComparisonFactor[];
+  shared_weaknesses: ExploreComparisonFactor[];
+  confidence: string;
+  contradiction_state: string;
+  contradiction_findings: Array<Record<string, unknown>>;
+  missing_evidence: Record<string, string[]>;
+  market_coverage: Record<string, ExploreFitResult["market_coverage"]>;
+  opportunity_coverage: Record<string, ExploreFitResult["opportunity_coverage"]>;
+  context_fingerprint: string;
+  effective_context: ExploreContextValues;
+  algorithm_version: string;
+  evidence_authority_version: string;
+  evidence_bundle: string;
+  calibration_version: string;
+  generated_at: string;
+  authority: "explore_fit_n_way_comparison";
+  limitations: string[];
+};
+
+export type SavedExploreComparisonSummary = {
+  comparison_id: string;
+  selected_region_ids: string[];
+  selected_public_slugs: string[];
+  market_names: string[];
+  context_fingerprint: string;
+  context_summary: string;
+  recommendation_state: ExploreComparisonRecommendationState;
+  recommendation_summary: string;
+  winner_region_ids: string[];
+  confidence: string;
+  generated_at: string;
+  saved_at: string | null;
+};
+
+export type SavedExploreComparison = SavedExploreComparisonSummary & {
+  result: ExploreComparisonResult;
+};
+
+export type ExplorePrioritization = {
+  decision_id: string;
+  comparison_id: string;
+  selected_region_id: string;
+  system_recommended_region_ids: string[];
+  choice_matches_recommendation: boolean | null;
+  created: boolean;
+  decision: CareerDecision;
 };
 
 export type CareerDecision = {
@@ -2643,6 +3010,14 @@ export type CareerDecision = {
   context: CareerDecisionContext | null;
   options: CareerDecisionOption[];
   recommendation: DecisionRecommendation | null;
+  explore_comparison_provenance?: {
+    comparison_id: string;
+    context_fingerprint: string;
+    system_recommendation_state: string;
+    system_recommended_region_ids: string[];
+    user_selected_region_id: string;
+    choice_matches_recommendation: boolean | null;
+  } | null;
   action_plan: CareerActionPlan | null;
   applications: CareerApplication[];
   outcomes: CareerOutcome[];
@@ -3031,6 +3406,12 @@ export type SavedMarketArtifactInput = {
 export type SavedMarketArtifact = SavedMarketArtifactInput & {
   saved_artifact_id: string;
   user_id: string;
+  original_artifact_ref?: string | null;
+  region_identity?: {
+    region_id: string;
+    public_slug: string | null;
+    display_name: string | null;
+  } | null;
   created_at: string | null;
   updated_at: string | null;
 };

@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -292,6 +293,13 @@ class CareerActionPlan(Base):
         ),
         Index("ix_career_action_plans_decision", "decision_id"),
         Index("ix_career_action_plans_user_status", "user_id", "status"),
+        Index(
+            "uq_career_action_plans_active_decision",
+            "decision_id",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
+            postgresql_where=text("status = 'active'"),
+        ),
     )
 
     action_plan_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -368,6 +376,12 @@ class CareerApplication(Base):
         Index("ix_career_applications_decision", "decision_id"),
         Index("ix_career_applications_company", "company_id"),
         Index("ix_career_applications_follow_up", "follow_up_at"),
+        UniqueConstraint(
+            "user_id",
+            "decision_id",
+            "current_opportunity_id",
+            name="uq_career_applications_pursuit_opportunity",
+        ),
     )
 
     application_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -384,6 +398,9 @@ class CareerApplication(Base):
     )
     region_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("regions.region_id"), nullable=True
+    )
+    current_opportunity_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("current_opportunities.current_opportunity_id"), nullable=True
     )
     role_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="considering")

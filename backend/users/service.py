@@ -207,6 +207,7 @@ class UserPrivacyDeletionResult:
     deleted_user_alerts: int
     deleted_career_decision_records: int
     deleted_deep_decision_records: int
+    deleted_explore_comparison_records: int
     deleted_profiles: int
     deleted_external_auth_identities: int
     scrubbed_external_auth_identities: int
@@ -515,6 +516,13 @@ class UserPersonalizationPersistenceService:
             resolution = self._geographic_resolver.require(artifact_ref)
             assert resolution.region_id is not None
             artifact_ref = resolution.region_id
+        existing = self._repo.get_saved_market_artifact_by_identity(
+            user_id=current_user_id,
+            artifact_type=artifact.artifact_type,
+            artifact_ref=artifact_ref,
+        )
+        if existing is not None:
+            return existing
         row = SavedMarketArtifact(
             saved_artifact_id=_new_saved_artifact_id(),
             user_id=current_user_id,
@@ -691,6 +699,10 @@ class UserPersonalizationPersistenceService:
                 self._repo.list_advisory_findings_for_user(owner_user_id),
                 self._repo.list_strategic_career_reviews_for_user(owner_user_id),
             ),
+            "explore_comparisons": _export_explore_comparison_bundle(
+                self._repo.list_explore_comparisons_for_user(owner_user_id),
+                self._repo.list_explore_decision_provenance_for_user(owner_user_id),
+            ),
         }
 
     def delete_preference_profile(
@@ -746,6 +758,14 @@ class UserPersonalizationPersistenceService:
         deleted_user_alerts = self._repo.delete_user_alerts_for_user(owner_user_id)
         self._repo.delete_career_memory_for_user(owner_user_id)
         self._repo.delete_career_agent_tool_records_for_user(owner_user_id)
+        # Product measurement rows are user-owned overlays and can reference the
+        # Decision, recommendation, action, outcome, and Career Identity graphs.
+        # Remove them first so the existing privacy cleanup remains atomic and
+        # referentially valid.
+        self._repo.delete_product_measurement_data_for_user(owner_user_id)
+        deleted_explore_comparisons = self._repo.delete_explore_comparison_data_for_user(
+            owner_user_id
+        )
         deleted_deep_decisions = self._repo.delete_deep_decision_data_for_user(owner_user_id)
         deleted_career_decisions = self._repo.delete_career_decision_data_for_user(owner_user_id)
         (
@@ -781,6 +801,7 @@ class UserPersonalizationPersistenceService:
             deleted_user_alerts=deleted_user_alerts,
             deleted_career_decision_records=deleted_career_decisions,
             deleted_deep_decision_records=deleted_deep_decisions,
+            deleted_explore_comparison_records=deleted_explore_comparisons,
             deleted_profiles=deleted_profiles,
             deleted_external_auth_identities=0,
             scrubbed_external_auth_identities=scrubbed_identities,
@@ -1498,6 +1519,56 @@ def _export_deep_decision_bundle(
                 "updated_at": _export_datetime(row.updated_at),
             }
             for row in reviews
+        ],
+    }
+
+
+def _export_explore_comparison_bundle(
+    comparisons: list[Any],
+    decision_provenance: list[Any],
+) -> dict[str, Any]:
+    return {
+        "snapshots": [
+            {
+                "comparison_id": row.comparison_id,
+                "user_id": row.user_id,
+                "snapshot_schema_version": row.snapshot_schema_version,
+                "comparison_identity": row.comparison_identity,
+                "selected_region_ids": deepcopy(row.selected_region_ids),
+                "selected_public_slugs": deepcopy(row.selected_public_slugs),
+                "context_fingerprint": row.context_fingerprint,
+                "effective_context_summary": deepcopy(row.effective_context_summary),
+                "recommendation_state": row.recommendation_state,
+                "winner_region_ids": deepcopy(row.winner_region_ids),
+                "tie_region_ids": deepcopy(row.tie_region_ids),
+                "confidence": row.confidence,
+                "algorithm_version": row.algorithm_version,
+                "evidence_authority_version": row.evidence_authority_version,
+                "evidence_bundle": row.evidence_bundle,
+                "calibration_version": row.calibration_version,
+                "result": deepcopy(row.snapshot_payload),
+                "recommendation_summary": row.recommendation_summary,
+                "generated_at": _export_datetime(row.generated_at),
+                "saved_at": _export_datetime(row.saved_at),
+                "created_at": _export_datetime(row.created_at),
+            }
+            for row in comparisons
+        ],
+        "decision_provenance": [
+            {
+                "provenance_id": row.provenance_id,
+                "user_id": row.user_id,
+                "decision_id": row.decision_id,
+                "comparison_id": row.comparison_id,
+                "context_fingerprint": row.context_fingerprint,
+                "market_set_fingerprint": row.market_set_fingerprint,
+                "system_recommendation_state": row.system_recommendation_state,
+                "system_recommended_region_ids": deepcopy(row.system_recommended_region_ids),
+                "user_selected_region_id": row.user_selected_region_id,
+                "choice_matches_recommendation": row.choice_matches_recommendation,
+                "created_at": _export_datetime(row.created_at),
+            }
+            for row in decision_provenance
         ],
     }
 

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from backend.api.dependencies import CurrentUser, get_current_user, get_session
+from backend.api.dependencies import CurrentUser, get_current_user, get_session, require_beta_access
 from backend.api.envelope import (
     NOT_FOUND,
     VALIDATION_ERROR,
@@ -26,6 +26,7 @@ from backend.career_decisions.schemas import (
     ActionPlanCreateInput,
     ApplicationCreateInput,
     ApplicationTransitionInput,
+    CareerActionInput,
     CareerActionUpdateInput,
     DecisionCreateInput,
     DecisionOptionInput,
@@ -42,7 +43,9 @@ from backend.scoring.repository import RegionScoreRepository
 from backend.users.exceptions import CrossUserAccessBlocked, UserNotFound
 from backend.users.repository import UserRepository
 
-router = APIRouter(prefix="/me", tags=["career-decisions"])
+router = APIRouter(
+    prefix="/me", tags=["career-decisions"], dependencies=[Depends(require_beta_access)]
+)
 
 
 def _service(session: Session) -> CareerDecisionService:
@@ -225,6 +228,26 @@ def list_actions(
     return lightweight_success_envelope(
         data={"actions": [action.model_dump(mode="json") for action in actions]}
     )
+
+
+@router.post(
+    "/decisions/{decision_id}/actions",
+    status_code=status.HTTP_201_CREATED,
+    response_model=None,
+)
+def create_action(
+    decision_id: str,
+    request: CareerActionInput,
+    current: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Any:
+    try:
+        action = _service(session).create_action(current.user.user_id, decision_id, request)
+    except (CareerDecisionNotFound, CrossUserAccessBlocked):
+        return _not_found("Decision or option not found.")
+    except CareerDecisionValidationError as exc:
+        return _validation(str(exc), code=exc.code)
+    return lightweight_success_envelope(data={"action": action.model_dump(mode="json")})
 
 
 @router.patch("/actions/{action_id}", response_model=None)

@@ -27,6 +27,8 @@ REQUIRED_TABLES = {
     "user_preference_profiles",
     "saved_market_artifacts",
     "personalized_recommendation_snapshots",
+    "explore_comparison_snapshots",
+    "explore_decision_provenance",
     "alert_events",
     "user_alerts",
     "region_expansion_workflows",
@@ -174,6 +176,10 @@ ADMIN_REVIEW_TABLES = {
     "admin_overrides",
     "admin_repair_actions",
 }
+EXPLORE_WORKFLOW_TABLES = {
+    "explore_comparison_snapshots",
+    "explore_decision_provenance",
+}
 CANONICAL_METADATA_TABLES = (
     REQUIRED_TABLES
     - {"jobs"}
@@ -181,6 +187,7 @@ CANONICAL_METADATA_TABLES = (
     - VISIT_TELEMETRY_TABLES
     - HISTORICAL_INTELLIGENCE_TABLES
     - ADMIN_REVIEW_TABLES
+    - EXPLORE_WORKFLOW_TABLES
 )  # jobs, logs, and history rows carry their own metadata shapes
 USER_IDENTITY_TABLES = {
     "users",

@@ -105,14 +105,10 @@ class _FakeRanking:
     def __init__(self, items: tuple[_FakeItem, ...]) -> None:
         self.ranked_markets = items
         self.limitations = ()
-        self.contradictions = tuple(
-            finding for item in items for finding in item.contradictions
-        )
+        self.contradictions = tuple(finding for item in items for finding in item.contradictions)
         self.contradiction_status = (
             ContradictionStatus.BLOCKING
-            if any(
-                item.contradiction_status is ContradictionStatus.BLOCKING for item in items
-            )
+            if any(item.contradiction_status is ContradictionStatus.BLOCKING for item in items)
             else ContradictionStatus.CLEAR
         )
         self.abstention_reason = (
@@ -321,6 +317,14 @@ def test_context_defaults_overrides_and_fingerprint_are_deterministic(
     assert overridden.supported_goal == "product_management"
     assert overridden.effective_context.industries == ("health tech",)
     assert overridden.effective_context.opportunity_types == ("internship",)
+    assert set(overridden.applied_context) == {"goal"}
+    assert {item.field for item in overridden.unapplied_context} == {
+        "role_families",
+        "industries",
+        "opportunity_types",
+        "career_stage",
+    }
+    assert overridden.unsupported_context == ()
     assert overridden.context_fingerprint != first.context_fingerprint
     identity = CareerIdentityRepository(session).get_identity_for_user("explore_user")
     assert identity is not None and identity.current_version == 3
@@ -425,6 +429,8 @@ def test_soft_geography_is_not_hard_scope_and_explicit_conflict_needs_input(
     soft = service.build("explore_user")
     assert soft.effective_context.preferred_region_ids == ("greater_boston",)
     assert soft.effective_context.included_region_ids == ()
+    assert any(item.field == "preferred_region_ids" for item in soft.unapplied_context)
+    assert "preferred_region_ids" not in soft.applied_context
     monkeypatch.setattr("backend.explore.service.load_market_registry", _registry)
     evaluated = ExploreFitService(
         session,
@@ -437,8 +443,7 @@ def test_soft_geography_is_not_hard_scope_and_explicit_conflict_needs_input(
         clock=lambda: NOW,
     ).evaluate("explore_user")
     assert all(
-        market.state is not ExploreFitState.HARD_CONSTRAINT_EXCLUDED
-        for market in evaluated.markets
+        market.state is not ExploreFitState.HARD_CONSTRAINT_EXCLUDED for market in evaluated.markets
     )
 
     session.add(
@@ -464,9 +469,14 @@ def test_soft_geography_is_not_hard_scope_and_explicit_conflict_needs_input(
         ),
         clock=lambda: NOW,
     ).evaluate("explore_user")
-    assert next(
-        market for market in excluded.markets if market.region.region_id == "greater_seattle"
-    ).state is ExploreFitState.HARD_CONSTRAINT_EXCLUDED
+    assert (
+        next(
+            market for market in excluded.markets if market.region.region_id == "greater_seattle"
+        ).state
+        is ExploreFitState.HARD_CONSTRAINT_EXCLUDED
+    )
+    profile_scope = service.build("explore_user")
+    assert "excluded_region_ids" in profile_scope.applied_context
 
     conflict = service.build(
         "explore_user",
@@ -479,8 +489,7 @@ def test_soft_geography_is_not_hard_scope_and_explicit_conflict_needs_input(
     )
     assert conflict.personalization_state == "needs_input"
     assert any(
-        item.code == "conflicting_geographic_constraints"
-        for item in conflict.unsupported_context
+        item.code == "conflicting_geographic_constraints" for item in conflict.unsupported_context
     )
 
 
@@ -495,8 +504,63 @@ def test_explicit_goal_marks_superseded_role_context_unapplied(session: Session)
     assert "role_families" not in context.applied_context
     assert any(
         item.code == "role_families_overridden_by_explicit_goal"
+        for item in context.unapplied_context
+    )
+    assert all(
+        item.code != "role_families_overridden_by_explicit_goal"
         for item in context.unsupported_context
     )
+
+
+def test_context_classification_separates_valid_unapplied_from_unsupported(
+    session: Session,
+) -> None:
+    _seed_identity(session)
+    session.add(
+        CareerIdentityFact(
+            career_identity_fact_id="timing_explore_user",
+            career_identity_id="identity_explore_user",
+            user_id="explore_user",
+            fact_type="timing_preference",
+            normalized_key="timing:active_search",
+            state="explicit",
+            payload={"timing_type": "active_search", "urgency": "soon"},
+            provenance={},
+        )
+    )
+    session.flush()
+    service = _context_service(session)
+
+    supported = service.build(
+        "explore_user",
+        ExploreSessionOverrides(
+            role_families=("Software Engineer",),
+            industries=("Health Tech",),
+            opportunity_types=("internship",),
+            work_arrangements=("hybrid",),
+        ),
+    )
+    assert {"goal", "role_families"}.issubset(supported.applied_context)
+    assert {
+        "industries",
+        "opportunity_types",
+        "career_stage",
+        "timing",
+        "work_arrangements",
+    }.issubset({item.field for item in supported.unapplied_context})
+    assert supported.unsupported_context == ()
+
+    unsupported = service.build(
+        "explore_user",
+        ExploreSessionOverrides(
+            goal="Actuary",
+            industries=("Health Tech",),
+        ),
+    )
+    assert unsupported.applied_context == ()
+    assert "industries" in {item.field for item in unsupported.unapplied_context}
+    assert "goal" in {item.field for item in unsupported.unsupported_context}
+    assert "goal" not in {item.field for item in unsupported.unapplied_context}
 
 
 def test_explicit_no_relocation_semantics_create_hard_geographic_scope(
@@ -523,6 +587,7 @@ def test_explicit_no_relocation_semantics_create_hard_geographic_scope(
     session.flush()
     context = _context_service(session).build("explore_user")
     assert context.effective_context.included_region_ids == ("greater_boston",)
+    assert "included_region_ids" in context.applied_context
     assert context.effective_context.preferred_region_ids == ()
 
 
@@ -653,14 +718,10 @@ def test_general_fallback_honors_explicit_hard_geography(session: Session, monke
         clock=lambda: NOW,
     ).evaluate(
         "general_user",
-        ExploreSessionOverrides(
-            geographic_scope=GeographicScopeInput(region_refs=("Boston",))
-        ),
+        ExploreSessionOverrides(geographic_scope=GeographicScopeInput(region_refs=("Boston",))),
     )
     by_region = {item.region.region_id: item for item in result.markets}
-    assert by_region["greater_boston"].state is (
-        ExploreFitState.GENERAL_MARKET_INTELLIGENCE
-    )
+    assert by_region["greater_boston"].state is (ExploreFitState.GENERAL_MARKET_INTELLIGENCE)
     assert by_region["greater_seattle"].state is ExploreFitState.HARD_CONSTRAINT_EXCLUDED
     assert by_region["greater_seattle"].hard_constraint_reasons
     assert result.ranking_universe.region_ids == ("greater_boston",)
@@ -714,9 +775,7 @@ def test_known_unsupported_region_is_returned_and_detail_matches_list(
     assert denver.fit_band is None
     assert denver.rank is None
     assert denver.abstention_reason == "unsupported_market"
-    detail_response, detail = service.market_detail(
-        "unsupported_region_user", "denver", overrides
-    )
+    detail_response, detail = service.market_detail("unsupported_region_user", "denver", overrides)
     assert detail is not None
     listed = next(
         item for item in detail_response.markets if item.region.region_id == "greater_denver"
@@ -790,9 +849,7 @@ def test_structured_contradictions_propagate_through_list_and_detail(
     assert listed.state is ExploreFitState.ABSTAINED
     assert listed.contradiction_status == "blocking"
     assert listed.contradiction_blocking is True
-    assert listed.contradiction_findings[0]["code"] == (
-        "high_confidence_insufficient_evidence"
-    )
+    assert listed.contradiction_findings[0]["code"] == ("high_confidence_insufficient_evidence")
     assert listed.contradiction_summary
     assert response.contradiction_status == "blocking"
     assert response.contradiction_blocking is True
@@ -1104,12 +1161,8 @@ def test_every_production_career_agent_question_type_is_explicitly_authoritative
 
     monkeypatch.setattr(CareerAgentGroundingService, "answer", forbidden_legacy_answer)
     monkeypatch.setattr(CareerAgentAuthorityAdapter, "geographic_fit", geographic_fit)
-    monkeypatch.setattr(
-        CareerAgentAuthorityAdapter, "current_job_matches", current_job_matches
-    )
-    monkeypatch.setattr(
-        CareerAgentAuthorityAdapter, "current_job_coverage", current_job_coverage
-    )
+    monkeypatch.setattr(CareerAgentAuthorityAdapter, "current_job_matches", current_job_matches)
+    monkeypatch.setattr(CareerAgentAuthorityAdapter, "current_job_coverage", current_job_coverage)
     monkeypatch.setattr(CareerAgentAuthorityAdapter, "durable_decision", durable_decision)
 
     response = api_client.post(
@@ -1320,9 +1373,7 @@ def test_production_career_agent_next_step_uses_layer36_and_layer37(
     )
     assert response.status_code == 200
     body = response.json()["data"]
-    assert body["recommendations"][0]["recommendation_type"] == (
-        "layer_36_durable_decision"
-    )
+    assert body["recommendations"][0]["recommendation_type"] == ("layer_36_durable_decision")
     assert body["recommendations"][0]["action"] == "Review Layer 37 risk findings."
     assert "Layer 36 durable Decision with Layer 37 analysis" in body["summary"]
     assert legacy_calls == 0
@@ -1358,9 +1409,7 @@ def test_production_career_agent_next_step_without_decision_does_not_rescore_mar
     assert response.status_code == 200
     body = response.json()["data"]
     assert body["recommendations"] == []
-    assert "did not create a competing market recommendation" in " ".join(
-        body["limitations"]
-    )
+    assert "did not create a competing market recommendation" in " ".join(body["limitations"])
     assert legacy_calls == 0
 
 
@@ -1377,7 +1426,11 @@ def test_internal_legacy_career_agent_route_deliberately_invokes_legacy_service(
         return original_answer(self, request, now=now)
 
     def forbidden_authoritative_answer(
-        self, user_id, request, *, now=None  # noqa: ANN001, ANN201
+        self,
+        user_id,
+        request,
+        *,
+        now=None,  # noqa: ANN001, ANN201
     ):
         raise AssertionError("internal legacy route invoked authoritative dispatch")
 
@@ -1532,9 +1585,7 @@ def test_all_production_intelligence_routes_have_zero_legacy_calls(
     monkeypatch.setattr(
         CareerAgentAuthorityAdapter,
         "geographic_fit",
-        lambda self, user_id, overrides=None, as_of=None: (
-            _authoritative_explore_response()
-        ),
+        lambda self, user_id, overrides=None, as_of=None: _authoritative_explore_response(),
     )
     headers = None
     if authenticated:
@@ -1590,9 +1641,7 @@ def test_action_plan_authority_modes_and_fail_closed_behavior(
         "durable_decision_actions",
         lambda self, user_id, decision_id, limit=20: (decision_action,),
     )
-    durable = service.generate_plan(
-        _regional_plan_request(), user_id="planning_user", now=NOW
-    )
+    durable = service.generate_plan(_regional_plan_request(), user_id="planning_user", now=NOW)
     assert durable.evidence_refs[0].data_basis == "layer_36_durable_decision"
     assert {ref.data_basis for ref in durable.evidence_refs} == {
         "layer_36_durable_decision",
@@ -1608,13 +1657,9 @@ def test_action_plan_authority_modes_and_fail_closed_behavior(
     monkeypatch.setattr(
         CareerAgentAuthorityAdapter,
         "geographic_fit",
-        lambda self, user_id, overrides=None, as_of=None: (
-            _authoritative_explore_response()
-        ),
+        lambda self, user_id, overrides=None, as_of=None: _authoritative_explore_response(),
     )
-    explore = service.generate_plan(
-        _regional_plan_request(), user_id="planning_user", now=NOW
-    )
+    explore = service.generate_plan(_regional_plan_request(), user_id="planning_user", now=NOW)
     assert explore.evidence_refs[0].data_basis == "layer_34_market_intelligence"
 
     current_request = CareerActionPlanRequest(
@@ -1638,14 +1683,12 @@ def test_action_plan_authority_modes_and_fail_closed_behavior(
     monkeypatch.setattr(
         CareerAgentAuthorityAdapter,
         "geographic_fit",
-        lambda self, user_id, overrides=None, as_of=None: (
-            _authoritative_explore_response(markets=False)
+        lambda self, user_id, overrides=None, as_of=None: _authoritative_explore_response(
+            markets=False
         ),
     )
     with pytest.raises(CareerAgentGuardrailViolation, match="Action plan unavailable"):
-        service.generate_plan(
-            _regional_plan_request(), user_id="planning_user", now=NOW
-        )
+        service.generate_plan(_regional_plan_request(), user_id="planning_user", now=NOW)
 
     def failing_plan_explore(  # noqa: ANN001, ANN201
         self, user_id, overrides=None, *, as_of=None
@@ -1658,9 +1701,7 @@ def test_action_plan_authority_modes_and_fail_closed_behavior(
         failing_plan_explore,
     )
     with pytest.raises(CareerAgentGuardrailViolation, match="Explore Fit"):
-        service.generate_plan(
-            _regional_plan_request(), user_id="planning_user", now=NOW
-        )
+        service.generate_plan(_regional_plan_request(), user_id="planning_user", now=NOW)
 
     def failing_decision(self, user_id):  # noqa: ANN001, ANN201
         raise RuntimeError("forced Layer 36/37 dependency failure")
@@ -1671,9 +1712,7 @@ def test_action_plan_authority_modes_and_fail_closed_behavior(
         failing_decision,
     )
     with pytest.raises(CareerAgentGuardrailViolation, match="Durable Decision"):
-        service.generate_plan(
-            _regional_plan_request(), user_id="planning_user", now=NOW
-        )
+        service.generate_plan(_regional_plan_request(), user_id="planning_user", now=NOW)
 
     monkeypatch.setattr(
         CareerAgentAuthorityAdapter,
@@ -1688,11 +1727,9 @@ def test_action_plan_authority_modes_and_fail_closed_behavior(
     monkeypatch.setattr(
         CareerAgentAuthorityAdapter,
         "current_job_coverage",
-        lambda self, market_key, role_family, opportunity_type="*", as_of=None: (
-            SimpleNamespace(
-                effective_status=SimpleNamespace(value="unavailable"),
-                limitations=("Layer 38 coverage dependency is unavailable.",),
-            )
+        lambda self, market_key, role_family, opportunity_type="*", as_of=None: SimpleNamespace(
+            effective_status=SimpleNamespace(value="unavailable"),
+            limitations=("Layer 38 coverage dependency is unavailable.",),
         ),
     )
     with pytest.raises(CareerAgentGuardrailViolation, match="Layer 38"):
@@ -1722,9 +1759,7 @@ def test_tool_preview_authority_nested_planning_and_failures(
     monkeypatch.setattr(
         CareerAgentAuthorityAdapter,
         "geographic_fit",
-        lambda self, user_id, overrides=None, as_of=None: (
-            _authoritative_explore_response()
-        ),
+        lambda self, user_id, overrides=None, as_of=None: _authoritative_explore_response(),
     )
     service = CareerAgentToolService(session)
     direct = service.preview_tool(

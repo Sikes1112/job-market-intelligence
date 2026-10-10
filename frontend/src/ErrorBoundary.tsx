@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from "react";
 import { reportFrontendError } from "./errorMonitoring";
+import { runtimeConfig } from "./runtimeConfig";
 
 type AppErrorBoundaryProps = {
   children: ReactNode;
@@ -28,13 +29,12 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
       return (
         <main className="fatal-error-shell" role="alert">
           <section className="fatal-error-panel">
-            <p className="eyebrow">Public demo error</p>
-            <h1>Demo temporarily unavailable</h1>
+            <p className="eyebrow">Beta · release {runtimeConfig.releaseId}</p>
+            <h1>This page temporarily failed</h1>
             <p>
-              The demo failed safely while rendering this page. Refresh the page or try the
-              markets demo entry again.
+              Your saved work is still on the server. Reload this page or return to Explore.
             </p>
-            <a className="primary-link" href="/markets">Open demo</a>
+            <a className="primary-link" href="/markets">Return to Explore</a>
           </section>
         </main>
       );

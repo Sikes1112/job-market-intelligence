@@ -62,7 +62,14 @@ def _normalize_database_url(database_url: str) -> str:
     return database_url
 
 
-def make_engine(database_url: str, *, echo: bool = False) -> Engine:
+def make_engine(
+    database_url: str,
+    *,
+    echo: bool = False,
+    pool_size: int = 5,
+    max_overflow: int = 10,
+    pool_recycle: int = 300,
+) -> Engine:
     is_sqlite = database_url.startswith("sqlite")
     engine_url = _normalize_database_url(database_url)
     connect_args: dict = {}
@@ -86,6 +93,9 @@ def make_engine(database_url: str, *, echo: bool = False) -> Engine:
         engine_kwargs["poolclass"] = poolclass
     if not is_sqlite:
         engine_kwargs["pool_pre_ping"] = True
+        engine_kwargs["pool_size"] = pool_size
+        engine_kwargs["max_overflow"] = max_overflow
+        engine_kwargs["pool_recycle"] = pool_recycle
 
     engine = create_engine(engine_url, **engine_kwargs)
     if is_sqlite:
@@ -132,6 +142,7 @@ def import_all_models() -> None:
     from backend.data_standards import models as _data_standards  # noqa: F401
     from backend.deep_decisions import models as _deep_decisions  # noqa: F401
     from backend.entry_level import models as _entry_level  # noqa: F401
+    from backend.explore import models as _explore  # noqa: F401
     from backend.geography import models as _geography  # noqa: F401
     from backend.hiring import models as _hiring  # noqa: F401
     from backend.ingestion import models as _ingestion  # noqa: F401
@@ -143,8 +154,8 @@ def import_all_models() -> None:
     from backend.outputs import models as _outputs  # noqa: F401
     from backend.platform import models as _platform  # noqa: F401
     from backend.platform_intelligence import models as _platform_intelligence  # noqa: F401
-    from backend.product_measurement import models as _product_measurement  # noqa: F401
     from backend.presence import models as _presence  # noqa: F401
+    from backend.product_measurement import models as _product_measurement  # noqa: F401
     from backend.provenance import models as _provenance  # noqa: F401
     from backend.region_expansion import models as _region_expansion  # noqa: F401
     from backend.scoring import models as _scoring  # noqa: F401

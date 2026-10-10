@@ -18,9 +18,10 @@ def test_demo_database_target_blocks_production_environments(app_env: str) -> No
     settings = Settings(
         app_env=app_env,
         database_url="postgresql://user:secret@example.test/db",
-        cors_allowed_origins=(
-            "https://demo.example" if app_env == "public_demo" else ""
-        ),
+        cors_allowed_origins="https://demo.example",
+        auth0_issuer=("https://tenant.example.test/" if app_env != "public_demo" else ""),
+        auth0_audience="https://api.example.test" if app_env != "public_demo" else "",
+        release_id="demo-safety-test" if app_env != "public_demo" else "unknown",
         _env_file=None,
     )
 

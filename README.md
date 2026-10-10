@@ -13,7 +13,7 @@ Comparison is a feature, not the product core.
 - Vite + React + TypeScript frontend demo under `frontend/`, including Auth0 sign-in/sign-out and app-account UX for protected `/me` routes.
 - Local SQLite demo workflow via `scripts/seed_demo.py`.
 
-Current status: internal-production baseline for a local, single-process architecture. It is suitable for local demo/presentation and internal reliability exercises, but it is not external-production ready. It has an Auth0/JWKS-protected user API foundation and frontend account workflows, but does not expose scraping, external APIs, maps, admin tooling, provider-side account deletion/session revocation, or full production deployment configuration.
+Current status: controlled-beta production-hardening baseline. The intended Vercel + Render + Neon + Auth0 topology, strict production environment contract, release identity, readiness, beta cohort gate, deterministic reference bootstrap, and smoke/runbook workflow are documented in `docs/LAYER_44A_BETA_OPERATIONS.md`. A user-facing beta remains gated on fresh curated evidence and production-like acceptance; Current Opportunity coverage is not comprehensive.
 
 ## Run The Local Demo
 
@@ -52,11 +52,11 @@ Useful backend endpoints:
 - `POST http://127.0.0.1:8000/discover/personalized`
 - `POST http://127.0.0.1:8000/me/scoring-preview` with Auth0 Bearer auth
 
-## Private Cloud Demo Deployment Notes
+## Controlled Beta Deployment Notes
 
-This repo is prepared only for a private seeded Vercel + Render + Neon cloud
-demo. It is not external-production ready, and the seeded cloud data must not
-be presented as production or factual market data.
+The production target is a small invite-only Vercel + Render + Neon deployment.
+Use curated beta reference data, never the synthetic demo seed, and follow the
+release gates in `docs/LAYER_44A_BETA_OPERATIONS.md`.
 
 Vercel frontend settings:
 

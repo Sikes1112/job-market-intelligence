@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: jmi-backend
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: RELEASE_ID=$RENDER_GIT_COMMIT python -m alembic upgrade head && RELEASE_ID=$RENDER_GIT_COMMIT python -m scripts.beta_reference_data bootstrap
+    startCommand: RELEASE_ID=$RENDER_GIT_COMMIT uvicorn backend.api.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /ready
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: SERVICE_NAME
+        value: jmi-backend
+      - key: API_DOCS_ENABLED
+        value: "false"
+      - key: BETA_ACCESS_REQUIRED
+        value: "true"
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: SECURITY_HEADERS_ENABLED
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: AUTH0_ISSUER
+        sync: false
+      - key: AUTH0_AUDIENCE
+        sync: false
+      - key: ERROR_MONITORING_DSN
+        sync: false

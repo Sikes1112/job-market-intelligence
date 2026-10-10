@@ -86,6 +86,60 @@ class ExploreMarketsRequest(BaseModel):
     session_overrides: ExploreSessionOverrides = Field(default_factory=ExploreSessionOverrides)
 
 
+class ExploreComparisonRecommendationState(_Vocabulary):
+    CLEAR_RECOMMENDATION = "clear_recommendation"
+    NEAR_TIE = "near_tie"
+    EXACT_TIE = "exact_tie"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    BLOCKING_CONTRADICTION = "blocking_contradiction"
+    UNSUPPORTED_MEMBER = "unsupported_member"
+    OUTSIDE_CONSTRAINTS = "outside_constraints"
+
+
+class ExploreComparisonRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    market_refs: tuple[str, ...] = Field(min_length=2, max_length=4)
+    session_overrides: ExploreSessionOverrides = Field(default_factory=ExploreSessionOverrides)
+
+    @field_validator("market_refs", mode="before")
+    @classmethod
+    def _clean_market_refs(cls, value: object) -> tuple[str, ...]:
+        cleaned = _clean_optional_tuple(value) or ()
+        if len(cleaned) != len(set(item.casefold() for item in cleaned)):
+            raise ValueError("comparison markets must be unique")
+        return cleaned
+
+
+class SaveExploreComparisonRequest(ExploreComparisonRequest):
+    comparison_identity: str = Field(min_length=8, max_length=80)
+
+
+class PrioritizeExploreComparisonRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    selected_market_ref: str = Field(min_length=1, max_length=255)
+    comparison_id: str | None = Field(default=None, min_length=1, max_length=64)
+    comparison_identity: str | None = Field(default=None, min_length=8, max_length=80)
+    market_refs: tuple[str, ...] = Field(default_factory=tuple, max_length=4)
+    session_overrides: ExploreSessionOverrides = Field(default_factory=ExploreSessionOverrides)
+
+    @field_validator("selected_market_ref")
+    @classmethod
+    def _clean_selected_market_ref(cls, value: str) -> str:
+        return _clean_text(value)
+
+    @field_validator("market_refs", mode="before")
+    @classmethod
+    def _clean_prioritize_refs(cls, value: object) -> tuple[str, ...]:
+        return _clean_optional_tuple(value) or ()
+
+    @field_validator("comparison_identity")
+    @classmethod
+    def _clean_comparison_identity(cls, value: str | None) -> str | None:
+        return _clean_text(value) if value is not None else None
+
+
 class ExploreContextValues(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -125,6 +179,7 @@ class ExploreContext(BaseModel):
     supported_goal: str | None
     goal_mapping_state: GoalMappingState
     applied_context: tuple[str, ...] = ()
+    unapplied_context: tuple[ExploreContextItem, ...] = ()
     unsupported_context: tuple[ExploreContextItem, ...] = ()
     limitations: tuple[str, ...] = ()
 
@@ -230,6 +285,103 @@ class ExploreMarketsResponse(BaseModel):
     contradiction_blocking: bool = False
     contradiction_summary: str | None = None
     limitations: tuple[str, ...] = ()
+
+
+class ComparisonFactor(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    code: str
+    label: str
+    summary: str
+    region_ids: tuple[str, ...] = ()
+    evidence: tuple[str, ...] = ()
+
+
+class ComparisonCompanyEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    company_id: str
+    company_name: str
+    evidence_kind: str
+    active_posting_count: int | None = None
+    confidence: str | None = None
+
+
+class ExploreComparisonMarket(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    fit: ExploreFitResult
+    comparison_rank: int | None = Field(default=None, ge=1)
+    key_advantages: tuple[str, ...] = ()
+    key_tradeoffs: tuple[str, ...] = ()
+    confidence_caveat: str
+    missing_evidence: tuple[str, ...] = ()
+    company_evidence: tuple[ComparisonCompanyEvidence, ...] = ()
+
+
+class ExploreComparisonResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    comparison_identity: str
+    compared_markets: tuple[ExploreComparisonMarket, ...]
+    recommendation_state: ExploreComparisonRecommendationState
+    recommendation_summary: str
+    winner_region_ids: tuple[str, ...] = ()
+    tied_region_ids: tuple[str, ...] = ()
+    near_tie_region_ids: tuple[str, ...] = ()
+    abstained: bool
+    abstention_reason: str | None = None
+    differentiating_factors: tuple[ComparisonFactor, ...] = ()
+    shared_strengths: tuple[ComparisonFactor, ...] = ()
+    shared_weaknesses: tuple[ComparisonFactor, ...] = ()
+    confidence: str
+    contradiction_state: str
+    contradiction_findings: tuple[dict[str, Any], ...] = ()
+    missing_evidence: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    market_coverage: dict[str, MarketEvidenceCoverage] = Field(default_factory=dict)
+    opportunity_coverage: dict[str, OpportunityCoverage] = Field(default_factory=dict)
+    context_fingerprint: str
+    effective_context: ExploreContextValues
+    algorithm_version: str
+    evidence_authority_version: str
+    evidence_bundle: str
+    calibration_version: str
+    generated_at: datetime
+    authority: str = "explore_fit_n_way_comparison"
+    limitations: tuple[str, ...] = ()
+
+
+class SavedExploreComparisonSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    comparison_id: str
+    selected_region_ids: tuple[str, ...]
+    selected_public_slugs: tuple[str, ...]
+    market_names: tuple[str, ...]
+    context_fingerprint: str
+    context_summary: str
+    recommendation_state: ExploreComparisonRecommendationState
+    recommendation_summary: str
+    winner_region_ids: tuple[str, ...]
+    confidence: str
+    generated_at: datetime
+    saved_at: datetime | None
+
+
+class SavedExploreComparisonView(SavedExploreComparisonSummary):
+    result: ExploreComparisonResult
+
+
+class PrioritizedExploreDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    decision_id: str
+    comparison_id: str
+    selected_region_id: str
+    system_recommended_region_ids: tuple[str, ...]
+    choice_matches_recommendation: bool | None
+    created: bool
+    decision: dict[str, Any]
 
 
 def _clean_text(value: str) -> str:

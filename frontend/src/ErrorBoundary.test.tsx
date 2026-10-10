@@ -27,12 +27,13 @@ describe("frontend error boundary", () => {
       </AppErrorBoundary>,
     );
 
-    expect(screen.getByRole("heading", { name: "Demo temporarily unavailable" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "This page temporarily failed" })).toBeTruthy();
     expect(screen.queryByText(/secret stack trace detail/i)).toBeNull();
     expect(reporter).toHaveBeenCalledWith(expect.objectContaining({
       source: "error_boundary",
       name: "Error",
-      message: "secret stack trace detail",
+      message: "Frontend runtime error",
+      releaseId: "unknown",
     }));
   });
 });

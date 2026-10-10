@@ -33,6 +33,28 @@ def test_health_response_header_includes_request_id(client: TestClient) -> None:
     response = client.get("/health")
 
     assert response.headers["x-request-id"]
+    assert response.headers["x-release-id"] == "unknown"
+
+
+def test_deployed_api_documentation_is_disabled(session: Session) -> None:
+    app = create_app(
+        engine=session.bind,
+        settings=Settings(
+            app_env="production",
+            database_url="postgresql://user:secret@example.test/db",
+            cors_allowed_origins="https://app.example.test",
+            auth0_issuer="https://tenant.example.test/",
+            auth0_audience="https://api.example.test",
+            release_id="release-test",
+            _env_file=None,
+        ),
+    )
+    deployed = TestClient(app)
+
+    assert deployed.get("/docs").status_code == 404
+    assert deployed.get("/redoc").status_code == 404
+    assert deployed.get("/openapi.json").status_code == 404
+    assert deployed.get("/health").headers["x-release-id"] == "release-test"
 
 
 def test_health_preserves_valid_inbound_request_id(client: TestClient) -> None:

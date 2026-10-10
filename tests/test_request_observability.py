@@ -56,6 +56,8 @@ def test_request_logging_includes_observability_fields(client: TestClient) -> No
     assert isinstance(fields["duration_ms"], float)
     assert fields["duration_ms"] >= 0
     assert fields["error_type"] is None
+    assert fields["release_id"] == "unknown"
+    assert fields["service"] == "jmi-backend"
     assert get_request_id() is None
 
 

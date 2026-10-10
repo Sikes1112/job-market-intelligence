@@ -27,8 +27,12 @@ def _utc_now() -> datetime:
 
 
 EVENT_TYPE_SQL = (
-    "'explore_context_evaluated', 'explore_fit_generated', "
+    "'authenticated_visit', 'explore_context_evaluated', 'explore_fit_generated', "
     "'explore_fit_abstained', 'explore_context_unsupported', "
+    "'market_inspected', 'comparison_selection_ready', 'my_search_viewed', "
+    "'comparison_generated', 'comparison_saved', 'prioritize_initiated', "
+    "'prioritize_completed', 'comparison_recommendation_overridden', "
+    "'comparison_recommendation_viewed', 'comparison_abstained_viewed', "
     "'recommendation_generated', 'decision_considered', 'decision_saved', "
     "'recommendation_changed_decision', 'user_acted', 'action_succeeded', "
     "'outcome_recorded', 'reflection_recorded', 'strategy_changed', "

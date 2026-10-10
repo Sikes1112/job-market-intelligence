@@ -111,6 +111,7 @@ const APPLICATION_TRANSITIONS: Record<CareerApplicationStatus, CareerApplication
 type DecisionWorkspacePageProps = {
   auth: FrontendAuthContextValue;
   onOpenCareerIdentity?: () => void;
+  onOpenExploreComparison?: (comparisonId: string) => void;
 };
 
 type CreateDecisionDraft = {
@@ -347,7 +348,11 @@ function itemBody(item: Record<string, unknown>): string | null {
   return truthyString(item.message) ?? truthyString(item.description) ?? truthyString(item.reason) ?? null;
 }
 
-export default function DecisionWorkspacePage({ auth, onOpenCareerIdentity }: DecisionWorkspacePageProps) {
+export default function DecisionWorkspacePage({
+  auth,
+  onOpenCareerIdentity,
+  onOpenExploreComparison,
+}: DecisionWorkspacePageProps) {
   const protectedOptions = useMemo<ProtectedRequestOptions>(
     () => ({ getAccessToken: auth.getAccessTokenSilently }),
     [auth.getAccessTokenSilently],
@@ -976,7 +981,12 @@ export default function DecisionWorkspacePage({ auth, onOpenCareerIdentity }: De
         <div className="decision-flow">
           {selected ? (
             <>
-              <DecisionSummary decision={selected} selectedOption={selectedOption} recommendedOption={recommendedOption} />
+              <DecisionSummary
+                decision={selected}
+                selectedOption={selectedOption}
+                recommendedOption={recommendedOption}
+                onOpenExploreComparison={onOpenExploreComparison}
+              />
               <OptionBuilder
                 decision={selected}
                 draft={optionDraft}
@@ -1373,10 +1383,12 @@ function DecisionSummary({
   decision,
   selectedOption,
   recommendedOption,
+  onOpenExploreComparison,
 }: {
   decision: CareerDecision;
   selectedOption: CareerDecisionOption | null;
   recommendedOption: CareerDecisionOption | null;
+  onOpenExploreComparison?: (comparisonId: string) => void;
 }) {
   return (
     <section className="decision-panel decision-summary-panel">
@@ -1397,6 +1409,15 @@ function DecisionSummary({
         <Fact label="Target" value={compactDate(decision.target_date)} />
         <Fact label="Review" value={compactDate(decision.planned_review_at)} />
       </div>
+      {decision.explore_comparison_provenance && onOpenExploreComparison ? (
+        <button
+          className="secondary-button"
+          onClick={() => onOpenExploreComparison(decision.explore_comparison_provenance!.comparison_id)}
+          type="button"
+        >
+          Open source comparison
+        </button>
+      ) : null}
     </section>
   );
 }

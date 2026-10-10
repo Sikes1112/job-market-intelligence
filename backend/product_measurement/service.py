@@ -78,22 +78,26 @@ from backend.users.exceptions import CrossUserAccessBlocked, UserNotFound
 from backend.users.models import User
 
 FUNNEL_STAGES: tuple[tuple[str, tuple[ProductEventType, ...]], ...] = (
-    ("onboarding_started", (ProductEventType.ONBOARDING_STARTED,)),
-    ("onboarding_completed", (ProductEventType.ONBOARDING_COMPLETED,)),
-    ("identity_sufficient", (ProductEventType.CAREER_IDENTITY_SUFFICIENT,)),
+    ("signed_in", (ProductEventType.AUTHENTICATED_VISIT,)),
+    ("profile_essentials_sufficient", (ProductEventType.CAREER_IDENTITY_SUFFICIENT,)),
     (
-        "decision",
-        (ProductEventType.DECISION_CREATED, ProductEventType.DECISION_CONSIDERED),
-    ),
-    (
-        "action",
+        "explore_viewed",
         (
-            ProductEventType.ACTION_CREATED,
-            ProductEventType.APPLICATION_RECORDED,
-            ProductEventType.USER_ACTED,
+            ProductEventType.EXPLORE_CONTEXT_EVALUATED,
+            ProductEventType.EXPLORE_FIT_GENERATED,
+            ProductEventType.EXPLORE_FIT_ABSTAINED,
         ),
     ),
-    ("outcome", (ProductEventType.OUTCOME_RECORDED, ProductEventType.OUTCOME_UPDATED)),
+    ("market_inspected", (ProductEventType.MARKET_INSPECTED,)),
+    ("two_plus_markets_selected", (ProductEventType.COMPARISON_SELECTION_READY,)),
+    ("comparison_generated", (ProductEventType.COMPARISON_GENERATED,)),
+    (
+        "comparison_saved_or_prioritized",
+        (ProductEventType.COMPARISON_SAVED, ProductEventType.PRIORITIZE_COMPLETED),
+    ),
+    ("my_search_viewed", (ProductEventType.MY_SEARCH_VIEWED,)),
+    ("action_completed", (ProductEventType.ACTION_SUCCEEDED,)),
+    ("application_tracking_started", (ProductEventType.APPLICATION_RECORDED,)),
     ("return", (ProductEventType.USER_RETURNED,)),
 )
 
@@ -148,10 +152,7 @@ class ProductMeasurementService:
                 assignment
                 for assignment in self._repo.list_assignments(user_id=user_id, limit=100)
                 if assignment.status == "assigned"
-                and (
-                    assignment.expires_at is None
-                    or _aware(assignment.expires_at) > self._clock()
-                )
+                and (assignment.expires_at is None or _aware(assignment.expires_at) > self._clock())
             ]
             if len(assignments) == 1:
                 experiment_key = experiment_key or assignments[0].experiment_key
@@ -249,6 +250,18 @@ class ProductMeasurementService:
         )
         self._repo.add(visit)
         self._repo.flush()
+        self.record_event(
+            user_id,
+            ProductEventCreate(
+                event_type=ProductEventType.AUTHENTICATED_VISIT,
+                event_source=ProductEventSource.BACKEND,
+                product_surface=product_surface,
+                cohort_key=primary_cohort_key,
+                experiment_key=primary_assignment.experiment_key if primary_assignment else None,
+                variant_key=primary_assignment.variant_key if primary_assignment else None,
+                payload={"visit_id": visit.visit_id},
+            ),
+        )
         if latest is None:
             return visit
 
@@ -265,7 +278,9 @@ class ProductMeasurementService:
                     "return_definition": "authenticated_visit_after_30_minutes_inactivity",
                     "previous_visit_id": latest.visit_id,
                     "current_visit_id": visit.visit_id,
-                    "minutes_since_last_seen": int((now - _aware(latest.last_seen_at)).total_seconds() // 60),
+                    "minutes_since_last_seen": int(
+                        (now - _aware(latest.last_seen_at)).total_seconds() // 60
+                    ),
                     "cohort_keys": list(cohort_keys),
                     "experiment_assignments": [
                         {
@@ -288,7 +303,9 @@ class ProductMeasurementService:
     ) -> RecommendationFeedback:
         recommendation = self._owned_recommendation(user_id, request.recommendation_id)
         if recommendation.decision_id != request.decision_id:
-            raise ProductMeasurementValidationError("feedback recommendation does not match decision")
+            raise ProductMeasurementValidationError(
+                "feedback recommendation does not match decision"
+            )
         row = RecommendationFeedback(
             feedback_id=_new_id("rec_feedback"),
             user_id=user_id,
@@ -907,6 +924,12 @@ class ProductMeasurementService:
             ],
         }
 
+    def has_active_beta_access(self, user_id: str) -> bool:
+        """Use the existing Layer 40 cohort authority for the production beta gate."""
+
+        self._ensure_user(user_id)
+        return bool(self._active_memberships(user_id))
+
     def list_cohorts(self) -> list[BetaCohort]:
         return self._repo.list_cohorts()
 
@@ -941,9 +964,7 @@ class ProductMeasurementService:
             matching = [event for event in events if event.event_type in type_values]
             users = {event.user_id for event in matching if event.user_id is not None}
             conversion = (
-                None
-                if previous_user_count in {None, 0}
-                else len(users) / previous_user_count
+                None if previous_user_count in {None, 0} else len(users) / previous_user_count
             )
             stage_views.append(
                 FunnelStageCount(
@@ -979,7 +1000,9 @@ class ProductMeasurementService:
             support_cases=dict(Counter(row.case_type for row in support_rows)),
             commercial_signals=dict(Counter(row.signal_type for row in commercial_rows)),
             trust_exposures=dict(
-                Counter(event.event_type for event in events if event.event_type in trust_event_types)
+                Counter(
+                    event.event_type for event in events if event.event_type in trust_event_types
+                )
             ),
             causal_limitation=CAUSAL_LIMITATION,
         )

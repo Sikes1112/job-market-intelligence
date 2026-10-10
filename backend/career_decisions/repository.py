@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import case, select, text
 from sqlalchemy.orm import Session
 
 from backend.career_decisions.models import (
@@ -30,6 +30,25 @@ class CareerDecisionRepository:
 
     def get_decision(self, decision_id: str) -> CareerDecision | None:
         return self._session.get(CareerDecision, decision_id)
+
+    def serialize_action_plan_generation(self) -> None:
+        """Acquire SQLite's write lock before reads when no transaction has begun.
+
+        Production databases use the Decision row lock below. SQLite ignores
+        ``FOR UPDATE``, so local/test requests need an immediate transaction to
+        keep the read-then-insert sequence idempotent across connections.
+        """
+
+        bind = self._session.get_bind()
+        if bind.dialect.name == "sqlite" and not self._session.in_transaction():
+            self._session.execute(text("BEGIN IMMEDIATE"))
+
+    def get_decision_for_update(self, decision_id: str) -> CareerDecision | None:
+        return self._session.execute(
+            select(CareerDecision)
+            .where(CareerDecision.decision_id == decision_id)
+            .with_for_update()
+        ).scalar_one_or_none()
 
     def list_decisions(self, user_id: str, *, limit: int = 100) -> list[CareerDecision]:
         return list(
@@ -61,6 +80,15 @@ class CareerDecisionRepository:
     def get_recommendation(self, recommendation_id: str) -> DecisionRecommendation | None:
         return self._session.get(DecisionRecommendation, recommendation_id)
 
+    def get_explore_provenance(self, decision_id: str):  # noqa: ANN201
+        from backend.explore.models import ExploreDecisionProvenance
+
+        return self._session.execute(
+            select(ExploreDecisionProvenance).where(
+                ExploreDecisionProvenance.decision_id == decision_id
+            )
+        ).scalar_one_or_none()
+
     def list_recommendations(self, decision_id: str) -> list[DecisionRecommendation]:
         return list(
             self._session.execute(
@@ -90,7 +118,28 @@ class CareerDecisionRepository:
         return self._session.execute(
             select(CareerActionPlan)
             .where(CareerActionPlan.decision_id == decision_id)
-            .order_by(CareerActionPlan.created_at.desc(), CareerActionPlan.action_plan_id)
+            .order_by(
+                case((CareerActionPlan.status == "active", 0), else_=1),
+                CareerActionPlan.updated_at.desc(),
+                CareerActionPlan.created_at.desc(),
+                CareerActionPlan.action_plan_id,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+
+    def get_active_action_plan_for_decision(self, decision_id: str) -> CareerActionPlan | None:
+        return self._session.execute(
+            select(CareerActionPlan)
+            .where(
+                CareerActionPlan.decision_id == decision_id,
+                CareerActionPlan.status == "active",
+            )
+            .order_by(
+                CareerActionPlan.updated_at.desc(),
+                CareerActionPlan.created_at.desc(),
+                CareerActionPlan.action_plan_id,
+            )
+            .limit(1)
         ).scalar_one_or_none()
 
     def get_action_plan(self, action_plan_id: str) -> CareerActionPlan | None:
@@ -130,6 +179,13 @@ class CareerDecisionRepository:
 
     def get_application(self, application_id: str) -> CareerApplication | None:
         return self._session.get(CareerApplication, application_id)
+
+    def get_application_for_update(self, application_id: str) -> CareerApplication | None:
+        return self._session.execute(
+            select(CareerApplication)
+            .where(CareerApplication.application_id == application_id)
+            .with_for_update()
+        ).scalar_one_or_none()
 
     def list_applications(
         self,

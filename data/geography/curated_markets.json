@@ -1,9 +1,9 @@
 {
-  "version": "2026-10-07",
+  "version": "2026-10-08",
   "provenance": {
     "identity": "Repository-controlled reconciliation of data/imports/markets.json and each curated regions.json file.",
     "state_membership": "Copied from the source-controlled state_codes fields in curated regions.json.",
-    "map_metadata": "No trustworthy coordinates or bounds existed in the repository at Layer 41A; centroid and focus_bounds remain null intentionally."
+    "map_metadata": "Centroids are U.S. Census Bureau 2024 Gazetteer incorporated-place representative coordinates for each market's primary city, rounded to four decimals. They are point-display proxies, not metro boundaries. Focus bounds remain null."
   },
   "markets": [
     {
@@ -12,7 +12,7 @@
       "primary_city": "Boston",
       "state_codes": ["MA"],
       "market_support_status": "supported",
-      "centroid": null,
+      "centroid": {"latitude": 42.3327, "longitude": -71.0726},
       "focus_bounds": null,
       "aliases": [
         {"value": "boston", "type": "import_key"},
@@ -26,7 +26,7 @@
       "primary_city": "New York",
       "state_codes": ["CT", "NJ", "NY"],
       "market_support_status": "supported",
-      "centroid": null,
+      "centroid": {"latitude": 40.6635, "longitude": -73.9387},
       "focus_bounds": null,
       "aliases": [
         {"value": "nyc", "type": "import_key"},
@@ -40,7 +40,7 @@
       "primary_city": "Seattle",
       "state_codes": ["WA"],
       "market_support_status": "supported",
-      "centroid": null,
+      "centroid": {"latitude": 47.6205, "longitude": -122.3509},
       "focus_bounds": null,
       "aliases": [
         {"value": "seattle", "type": "import_key"},
@@ -53,7 +53,7 @@
       "primary_city": "San Francisco",
       "state_codes": ["CA"],
       "market_support_status": "supported",
-      "centroid": null,
+      "centroid": {"latitude": 37.7272, "longitude": -123.0322},
       "focus_bounds": null,
       "aliases": [
         {"value": "san_francisco_bay_area", "type": "import_key"},
@@ -69,7 +69,7 @@
       "primary_city": "Washington",
       "state_codes": ["DC", "MD", "VA"],
       "market_support_status": "supported",
-      "centroid": null,
+      "centroid": {"latitude": 38.9041, "longitude": -77.0171},
       "focus_bounds": null,
       "aliases": [
         {"value": "Washington DC", "type": "import_key"},
@@ -83,7 +83,7 @@
       "primary_city": "Atlanta",
       "state_codes": ["GA"],
       "market_support_status": "supported",
-      "centroid": null,
+      "centroid": {"latitude": 33.7629, "longitude": -84.4227},
       "focus_bounds": null,
       "aliases": [
         {"value": "greater_atlanta", "type": "legacy_id"}
@@ -95,7 +95,7 @@
       "primary_city": "Austin",
       "state_codes": ["TX"],
       "market_support_status": "supported",
-      "centroid": null,
+      "centroid": {"latitude": 30.3004, "longitude": -97.7522},
       "focus_bounds": null,
       "aliases": [
         {"value": "greater_austin", "type": "legacy_id"}
@@ -107,7 +107,7 @@
       "primary_city": "Chicago",
       "state_codes": ["IL"],
       "market_support_status": "supported",
-      "centroid": null,
+      "centroid": {"latitude": 41.8376, "longitude": -87.6818},
       "focus_bounds": null,
       "aliases": []
     }

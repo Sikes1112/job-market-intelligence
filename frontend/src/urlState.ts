@@ -15,6 +15,8 @@ export const CAREER_STAGE_OPTIONS = ["entry_level"];
 export type ProductPage =
   | "dashboard"
   | "explore"
+  | "my-search"
+  | "profile"
   | "intelligence"
   | "region"
   | "company"
@@ -106,14 +108,92 @@ export type RouteState = {
   policyView?: PolicyView;
   policyReportId?: string;
   opportunityId?: string;
+  pursuitId?: string;
+  applicationId?: string;
+  savedComparisonId?: string;
   organizationId?: string;
   institutionView?: InstitutionView;
   comparison: ComparisonUrlState;
   discovery: DiscoveryFilters;
   intelligence: MarketIntelligenceUrlState;
   recommendationGoalMode: string;
+  explore: ExploreUrlState;
+  currentOpportunities: CurrentOpportunityUrlState;
   unknownPath?: string;
 };
+
+export type ExploreUrlState = {
+  query?: string;
+  focus?: string;
+  view: "map" | "list";
+  selected: string[];
+  goal?: string;
+  opportunityTypes: string[];
+  workArrangements: string[];
+  geographicScope: string[];
+  industries: string[];
+};
+
+export type CurrentOpportunityUrlState = {
+  market?: string;
+  roleFamily?: string;
+  opportunityType?: string;
+  workArrangement?: string;
+  returnTo?: string;
+};
+
+export type ExploreGeographicIdentity = {
+  region_id: string;
+  public_slug: string | null;
+  aliases?: string[];
+};
+
+export const EXPLORE_ROLE_OPTIONS = [
+  ["software_engineering", "Software engineering"],
+  ["product_management", "Product management"],
+  ["ai_ml", "AI / machine learning"],
+  ["cybersecurity", "Cybersecurity"],
+  ["data_science", "Data science"],
+] as const;
+
+export function roleExploreValueForQuery(query: string): string | undefined {
+  const normalized = query.trim().toLowerCase().replaceAll("-", " ").replaceAll("_", " ");
+  return EXPLORE_ROLE_OPTIONS.find(([value, roleLabel]) =>
+    value.replaceAll("_", " ") === normalized || roleLabel.toLowerCase() === normalized
+  )?.[0];
+}
+
+export function canonicalizeExploreState(
+  state: ExploreUrlState,
+  identities: ExploreGeographicIdentity[],
+): ExploreUrlState {
+  const lookup = new Map<string, string>();
+  for (const identity of identities) {
+    const slug = identity.public_slug || identity.region_id;
+    for (const token of [identity.region_id, identity.public_slug, ...(identity.aliases ?? [])]) {
+      const normalized = token?.trim().toLowerCase();
+      if (normalized) lookup.set(normalized, slug);
+    }
+  }
+  const resolve = (token: string | undefined): string | undefined => {
+    const normalized = token?.trim().toLowerCase();
+    return normalized ? lookup.get(normalized) : undefined;
+  };
+  const resolvedSelected = unique(state.selected.flatMap((token) => {
+    const slug = resolve(token);
+    return slug ? [slug] : [];
+  })).slice(0, 4);
+  const resolvedGeography = unique(state.geographicScope.flatMap((token) => {
+    const slug = resolve(token);
+    return slug ? [slug] : [];
+  }));
+  return {
+    ...state,
+    focus: resolve(state.focus),
+    selected: resolvedSelected,
+    geographicScope: resolvedGeography,
+  };
+}
 
 export const DEFAULT_DISCOVERY_FILTERS: DiscoveryFilters = {
   selectedRegions: [DEFAULT_REGION_A, DEFAULT_REGION_B],
@@ -158,6 +238,8 @@ export const PUBLIC_PAGE_PATHS: Record<Exclude<PublicPage, "landing">, string> =
 const PRODUCT_PAGES: ProductPage[] = [
   "dashboard",
   "explore",
+  "my-search",
+  "profile",
   "intelligence",
   "region",
   "company",
@@ -205,6 +287,15 @@ function parseListParam(
   fallback: string[],
   allowedValues?: readonly string[],
 ): string[] {
+  return unique(parseRawListParam(params, key, fallback, allowedValues));
+}
+
+function parseRawListParam(
+  params: URLSearchParams,
+  key: string,
+  fallback: string[],
+  allowedValues?: readonly string[],
+): string[] {
   if (!params.has(key)) return [...fallback];
 
   const allowed = allowedValues ? new Set(allowedValues) : null;
@@ -215,7 +306,7 @@ function parseListParam(
     .filter((value) => value.length > 0)
     .filter((value) => !allowed || allowed.has(value));
 
-  return unique(values);
+  return values;
 }
 
 function parsePreference(
@@ -303,6 +394,9 @@ function baseRoute(
     | "policyView"
     | "policyReportId"
     | "opportunityId"
+    | "pursuitId"
+    | "applicationId"
+    | "savedComparisonId"
     | "organizationId"
     | "institutionView"
     | "unknownPath"
@@ -314,7 +408,35 @@ function baseRoute(
     discovery: parseDiscovery(params),
     intelligence: parseMarketIntelligence(params),
     recommendationGoalMode: cleanToken(params.get("goal")) ?? DEFAULT_RECOMMENDATION_GOAL_MODE,
+    explore: parseExploreState(params),
+    currentOpportunities: parseCurrentOpportunityState(params),
     ...extra,
+  };
+}
+
+function parseCurrentOpportunityState(params: URLSearchParams): CurrentOpportunityUrlState {
+  const returnTo = cleanToken(params.get("return"));
+  return {
+    market: cleanToken(params.get("market")),
+    roleFamily: cleanToken(params.get("role")),
+    opportunityType: cleanToken(params.get("opportunity_type") ?? params.get("opportunity")),
+    workArrangement: cleanToken(params.get("work_arrangement") ?? params.get("work")),
+    returnTo: returnTo?.startsWith("/markets") ? returnTo : undefined,
+  };
+}
+
+function parseExploreState(params: URLSearchParams): ExploreUrlState {
+  const view = params.get("view") === "map" ? "map" : "list";
+  return {
+    query: cleanToken(params.get("q")),
+    focus: cleanToken(params.get("focus")),
+    view,
+    selected: parseRawListParam(params, "selected", []),
+    goal: cleanToken(params.get("role") ?? params.get("goal")),
+    opportunityTypes: parseListParam(params, "opportunity", []),
+    workArrangements: parseListParam(params, "work", []),
+    geographicScope: parseListParam(params, "geography", []),
+    industries: parseListParam(params, "industry", []),
   };
 }
 
@@ -392,14 +514,27 @@ export function parseRoute(pathname: string, search: string): RouteState {
   }
 
   if (section === "compare") return baseRoute("compare", params);
+  if (section === "comparisons" && segments[2]) {
+    return baseRoute("compare", params, {
+      savedComparisonId: cleanToken(segments[2]),
+    });
+  }
+  if (section === "my-search") {
+    if (segments[2] === "pursuits" && segments[3]) {
+      return baseRoute("my-search", params, { pursuitId: cleanToken(segments[3]) });
+    }
+    if (segments[2] === "applications" && segments[3]) {
+      return baseRoute("my-search", params, { applicationId: cleanToken(segments[3]) });
+    }
+    return baseRoute("my-search", params);
+  }
   if (section === "dashboard") {
     return baseRoute("dashboard", params);
   }
   if (section === "intelligence") return baseRoute("intelligence", params);
   if (section === "discovery") return baseRoute("discovery", params);
-  if (section === "career-identity" || section === "profile") {
-    return baseRoute("career-identity", params);
-  }
+  if (section === "career-identity") return baseRoute("career-identity", params);
+  if (section === "profile") return baseRoute("profile", params);
   if (section === "decisions" || section === "decision-workspace") {
     return baseRoute("decisions", params);
   }
@@ -489,8 +624,48 @@ function appendListParam(params: URLSearchParams, key: string, values: string[])
   params.set(key, unique(values).join(","));
 }
 
-export function exploreUrl(): string {
-  return PRODUCT_ROOT;
+function exploreStateParams(state?: Partial<ExploreUrlState>): URLSearchParams {
+  const params = new URLSearchParams();
+  if (state?.query) params.set("q", state.query);
+  if (state?.focus) params.set("focus", state.focus);
+  if (state?.view === "map") params.set("view", "map");
+  if (state?.selected?.length) params.set("selected", unique(state.selected).slice(0, 4).join(","));
+  if (state?.goal) params.set("role", state.goal);
+  if (state?.opportunityTypes?.length) params.set("opportunity", unique(state.opportunityTypes).join(","));
+  if (state?.workArrangements?.length) params.set("work", unique(state.workArrangements).join(","));
+  if (state?.geographicScope?.length) params.set("geography", unique(state.geographicScope).join(","));
+  if (state?.industries?.length) params.set("industry", unique(state.industries).join(","));
+  return params;
+}
+
+export function exploreUrl(state?: Partial<ExploreUrlState>): string {
+  const query = exploreStateParams(state).toString();
+  return `${PRODUCT_ROOT}${query ? `?${query}` : ""}`;
+}
+
+export function exploreComparisonUrl(state: Partial<ExploreUrlState>): string {
+  const query = exploreStateParams(state).toString();
+  return `${PRODUCT_ROOT}/compare${query ? `?${query}` : ""}`;
+}
+
+export function savedExploreComparisonUrl(comparisonId: string): string {
+  return `${PRODUCT_ROOT}/comparisons/${encodePathValue(comparisonId)}`;
+}
+
+export function mySearchUrl(): string {
+  return `${PRODUCT_ROOT}/my-search`;
+}
+
+export function mySearchPursuitUrl(decisionId: string): string {
+  return `${PRODUCT_ROOT}/my-search/pursuits/${encodePathValue(decisionId)}`;
+}
+
+export function mySearchApplicationUrl(applicationId: string): string {
+  return `${PRODUCT_ROOT}/my-search/applications/${encodePathValue(applicationId)}`;
+}
+
+export function profileUrl(): string {
+  return `${PRODUCT_ROOT}/profile`;
 }
 
 export function userIntelligenceDashboardUrl(): string {
@@ -567,8 +742,9 @@ export function careerIdentityUrl(): string {
   return `${PRODUCT_ROOT}/career-identity`;
 }
 
-export function decisionsUrl(): string {
-  return `${PRODUCT_ROOT}/decisions`;
+export function decisionsUrl(decisionId?: string): string {
+  if (!decisionId) return `${PRODUCT_ROOT}/decisions`;
+  return `${PRODUCT_ROOT}/decisions?decision=${encodeURIComponent(decisionId)}`;
 }
 
 export function recommendationsUrl(goalMode = DEFAULT_RECOMMENDATION_GOAL_MODE): string {
@@ -584,8 +760,15 @@ export function opportunityRoutesUrl(): string {
   return `${PRODUCT_ROOT}/opportunity-routes`;
 }
 
-export function currentOpportunitiesUrl(): string {
-  return `${PRODUCT_ROOT}/current-opportunities`;
+export function currentOpportunitiesUrl(state?: CurrentOpportunityUrlState): string {
+  const params = new URLSearchParams();
+  if (state?.market) params.set("market", state.market);
+  if (state?.roleFamily) params.set("role", state.roleFamily);
+  if (state?.opportunityType) params.set("opportunity_type", state.opportunityType);
+  if (state?.workArrangement) params.set("work_arrangement", state.workArrangement);
+  if (state?.returnTo?.startsWith("/markets")) params.set("return", state.returnTo);
+  const query = params.toString();
+  return `${PRODUCT_ROOT}/current-opportunities${query ? `?${query}` : ""}`;
 }
 
 export function currentOpportunityDetailUrl(opportunityId: string): string {

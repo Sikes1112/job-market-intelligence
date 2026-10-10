@@ -23,6 +23,7 @@ import {
   currentOpportunityDetailUrl,
   currentOpportunityOperationsUrl,
   decisionsUrl,
+  type CurrentOpportunityUrlState,
 } from "./urlState";
 
 type LoadState<T> = {
@@ -47,6 +48,7 @@ type CurrentOpportunitiesPageProps = {
   opportunityId?: string;
   operations?: boolean;
   onNavigate?: (url: string) => void;
+  initialState?: CurrentOpportunityUrlState;
 };
 
 const DEFAULT_FILTERS: OpportunityFilters = {
@@ -69,11 +71,12 @@ function emptyLoad<T>(): LoadState<T> {
 
 export default function CurrentOpportunitiesPage({
   auth,
+  initialState,
   opportunityId,
   operations = false,
   onNavigate,
 }: CurrentOpportunitiesPageProps) {
-  const [filters, setFilters] = useState<OpportunityFilters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<OpportunityFilters>(() => filtersFromUrl(initialState));
   const [matchesState, setMatchesState] = useState<LoadState<CurrentOpportunityMatchPayload[]>>(emptyLoad);
   const [opportunitiesState, setOpportunitiesState] = useState<LoadState<CurrentOpportunityPayload[]>>(emptyLoad);
   const [coverageState, setCoverageState] = useState<LoadState<CurrentOpportunityCoveragePayload>>(emptyLoad);
@@ -90,6 +93,11 @@ export default function CurrentOpportunitiesPage({
     event.preventDefault();
     onNavigate(url);
   }, [onNavigate]);
+
+  useEffect(() => {
+    if (operations) return;
+    setFilters(filtersFromUrl(initialState));
+  }, [initialState, operations]);
 
   useEffect(() => {
     if (operations || auth.isLoading || !auth.isAuthenticated) return;
@@ -255,6 +263,7 @@ export default function CurrentOpportunitiesPage({
           Matches are ranked by the backend using Career Identity, decisions, strategic reviews, and governed current opportunity data.
         </p>
         <div className="opportunity-link-row">
+          {initialState?.returnTo ? <a href={initialState.returnTo} onClick={(event) => navigate(event, initialState.returnTo!)}>← Back to Explore context</a> : null}
           <a href={careerIdentityUrl()} onClick={(event) => navigate(event, careerIdentityUrl())}>Career Identity</a>
           <a href={decisionsUrl()} onClick={(event) => navigate(event, decisionsUrl())}>Decision Workspace</a>
         </div>
@@ -291,6 +300,16 @@ export default function CurrentOpportunitiesPage({
       ) : null}
     </PageFrame>
   );
+}
+
+function filtersFromUrl(state?: CurrentOpportunityUrlState): OpportunityFilters {
+  return {
+    ...DEFAULT_FILTERS,
+    market: state?.market ?? DEFAULT_FILTERS.market,
+    roleFamily: state?.roleFamily ?? DEFAULT_FILTERS.roleFamily,
+    opportunityType: state?.opportunityType ?? DEFAULT_FILTERS.opportunityType,
+    workArrangement: state?.workArrangement ?? DEFAULT_FILTERS.workArrangement,
+  };
 }
 
 function OperationsView({

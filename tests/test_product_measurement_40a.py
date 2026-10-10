@@ -24,8 +24,8 @@ from backend.career_decisions.schemas import (
     OutcomeCreateInput,
 )
 from backend.career_decisions.service import CareerDecisionService
-from backend.career_identity.repository import CareerIdentityRepository
 from backend.career_identity.models import CareerIdentity
+from backend.career_identity.repository import CareerIdentityRepository
 from backend.companies.repository import CompanyRepository
 from backend.geography.repository import RegionRepository
 from backend.product_measurement.models import (
@@ -68,7 +68,11 @@ from backend.users.repository import UserRepository
 from tests.test_api_user_routes import _auth_headers
 from tests.test_career_decisions import (
     _decision_request as _layer36_decision_request,
+)
+from tests.test_career_decisions import (
     _seed_identity as _seed_layer36_identity,
+)
+from tests.test_career_decisions import (
     _seed_market as _seed_layer36_market,
 )
 from tests.test_recommendation_ranking import _region_output
@@ -200,6 +204,36 @@ def test_event_model_validates_required_refs_and_sensitive_payloads(session: Ses
     assert "resume_text" not in json.dumps(event.payload)
 
 
+def test_explore_coverage_and_trust_events_match_frontend_contract(api_client) -> None:
+    headers = _auth_headers("auth0|explore_measurement")
+    coverage = api_client.post(
+        "/me/product-events",
+        headers=headers,
+        json={
+            "event_type": "coverage_limitation_viewed",
+            "event_source": "frontend",
+            "product_surface": "explore_market_detail",
+            "coverage_status": "unsupported",
+            "confidence_bucket": "low",
+            "payload": {"region_id": "greater_boston"},
+        },
+    )
+    trust = api_client.post(
+        "/me/product-events",
+        headers=headers,
+        json={
+            "event_type": "trust_explanation_viewed",
+            "event_source": "frontend",
+            "product_surface": "explore_market_detail",
+            "confidence_bucket": "low",
+            "payload": {"region_id": "greater_boston"},
+        },
+    )
+
+    assert coverage.status_code == 201
+    assert trust.status_code == 201
+
+
 def test_feedback_is_version_tied_preserved_and_measurable(session: Session) -> None:
     decision_id, recommendation_id = _seed_decision_graph(session)
     service = _service(session)
@@ -319,6 +353,41 @@ def test_cohort_feature_gate_entitlement_and_admin_audit(session: Session) -> No
     assert session.query(AdminEventLog).count() >= 5
 
 
+def test_beta_route_access_uses_existing_active_cohort_authority(
+    api_client, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(api_client.app.state.settings, "beta_access_required", True)
+    headers = _auth_headers("auth0|controlled_beta_member")
+    current = api_client.get("/me", headers=headers)
+    assert current.status_code == 200
+    user_id = current.json()["data"]["user"]["user_id"]
+
+    denied = api_client.get("/me/explore/context", headers=headers)
+    assert denied.status_code == 403
+    assert denied.json()["error"]["message"] == "Active beta access is required"
+
+    _seed_user(session, "admin_beta_access")
+    service = _service(session)
+    service.upsert_cohort(
+        CohortCreate(
+            cohort_key="controlled_beta_1",
+            name="Controlled beta 1",
+            status="active",
+        ),
+        actor_user_id="admin_beta_access",
+        role=AdminRole.ADMIN,
+    )
+    service.assign_cohort_membership(
+        CohortMembershipCreate(user_id=user_id, cohort_key="controlled_beta_1"),
+        actor_user_id="admin_beta_access",
+        role=AdminRole.ADMIN,
+    )
+
+    allowed = api_client.get("/me/explore/context", headers=headers)
+    assert allowed.status_code == 200
+    assert allowed.json()["data"]["personalization_state"] == "general_market_intelligence"
+
+
 def test_support_privacy_dispute_and_strategy_workflows(session: Session) -> None:
     decision_id, recommendation_id = _seed_decision_graph(session)
     _seed_user(session, "admin_user")
@@ -409,7 +478,10 @@ def test_commercial_signals_do_not_record_fake_payment(session: Session) -> None
 
     assert signal.conversion_ref is None
     assert signal.signal_type == "interested"
-    assert session.query(ProductAnalyticsEvent).one().event_type == "commercial_offer_interest_recorded"
+    assert (
+        session.query(ProductAnalyticsEvent).one().event_type
+        == "commercial_offer_interest_recorded"
+    )
 
 
 def test_return_visit_semantics_with_cohort_and_experiment_segmentation(session: Session) -> None:
@@ -523,8 +595,12 @@ def test_complete_funnel_counts_order_conversion_and_return_without_duplicate_in
     _seed_layer36_market(session)
     _seed_layer36_identity(session, user_id)
     identity = session.query(CareerIdentity).filter_by(user_id=user_id).one()
-    service.record_event(user_id, ProductEventCreate(event_type=ProductEventType.ONBOARDING_STARTED))
-    service.record_event(user_id, ProductEventCreate(event_type=ProductEventType.ONBOARDING_COMPLETED))
+    service.record_event(
+        user_id, ProductEventCreate(event_type=ProductEventType.ONBOARDING_STARTED)
+    )
+    service.record_event(
+        user_id, ProductEventCreate(event_type=ProductEventType.ONBOARDING_COMPLETED)
+    )
     service.record_event(
         user_id,
         ProductEventCreate(
@@ -532,6 +608,18 @@ def test_complete_funnel_counts_order_conversion_and_return_without_duplicate_in
             career_identity_id=identity.career_identity_id,
         ),
     )
+    for event_type, surface in (
+        (ProductEventType.EXPLORE_CONTEXT_EVALUATED, "explore"),
+        (ProductEventType.MARKET_INSPECTED, "explore_market_detail"),
+        (ProductEventType.COMPARISON_SELECTION_READY, "explore"),
+        (ProductEventType.COMPARISON_GENERATED, "explore_comparison"),
+        (ProductEventType.COMPARISON_SAVED, "explore_comparison"),
+        (ProductEventType.MY_SEARCH_VIEWED, "my_search"),
+    ):
+        service.record_event(
+            user_id,
+            ProductEventCreate(event_type=event_type, product_surface=surface),
+        )
 
     decision_service = _decision_service_with_measurement(session, service)
     decision = decision_service.create_decision(user_id, _layer36_decision_request())
@@ -542,7 +630,9 @@ def test_complete_funnel_counts_order_conversion_and_return_without_duplicate_in
         decision.decision_id,
         OptionSelectInput(option_id=recommendation.recommended_option_id),
     )
-    plan = decision_service.create_action_plan(user_id, decision.decision_id, ActionPlanCreateInput())
+    plan = decision_service.create_action_plan(
+        user_id, decision.decision_id, ActionPlanCreateInput()
+    )
     decision_service.update_action(
         user_id,
         plan.actions[0].action_id,
@@ -578,21 +668,22 @@ def test_complete_funnel_counts_order_conversion_and_return_without_duplicate_in
     summary = service.beta_analytics_summary(cohort_key="private_beta_a")
     stages = {stage.stage: stage for stage in summary.funnel}
     assert [stage.stage for stage in summary.funnel] == [
-        "onboarding_started",
-        "onboarding_completed",
-        "identity_sufficient",
-        "decision",
-        "action",
-        "outcome",
+        "signed_in",
+        "profile_essentials_sufficient",
+        "explore_viewed",
+        "market_inspected",
+        "two_plus_markets_selected",
+        "comparison_generated",
+        "comparison_saved_or_prioritized",
+        "my_search_viewed",
+        "action_completed",
+        "application_tracking_started",
         "return",
     ]
     assert stages["return"].user_count == 1
     assert stages["return"].event_count == 1
     assert all(stage.user_count == 1 for stage in summary.funnel)
-    assert all(
-        stage.conversion_from_previous in {None, 1.0}
-        for stage in summary.funnel
-    )
+    assert all(stage.conversion_from_previous in {None, 1.0} for stage in summary.funnel)
 
 
 def test_batch_40b_domain_observation_points_are_wired_to_actual_product_paths(
@@ -612,7 +703,9 @@ def test_batch_40b_domain_observation_points_are_wired_to_actual_product_paths(
         decision.decision_id,
         OptionSelectInput(option_id=recommendation.recommended_option_id),
     )
-    plan = decision_service.create_action_plan(user_id, decision.decision_id, ActionPlanCreateInput())
+    plan = decision_service.create_action_plan(
+        user_id, decision.decision_id, ActionPlanCreateInput()
+    )
     decision_service.update_action(
         user_id,
         plan.actions[0].action_id,
@@ -724,9 +817,9 @@ def test_commercial_state_cannot_influence_core_recommendation_ranking(session: 
         goal_mode=RecommendationGoalMode.MAXIMIZE_ENTRY_LEVEL_ACCESS,
     )
 
-    assert [
-        item.target.target_id for item in baseline.ranked_recommendations
-    ] == [item.target.target_id for item in after_commercial_state.ranked_recommendations]
-    assert [
-        item.final_score for item in baseline.ranked_recommendations
-    ] == [item.final_score for item in after_commercial_state.ranked_recommendations]
+    assert [item.target.target_id for item in baseline.ranked_recommendations] == [
+        item.target.target_id for item in after_commercial_state.ranked_recommendations
+    ]
+    assert [item.final_score for item in baseline.ranked_recommendations] == [
+        item.final_score for item in after_commercial_state.ranked_recommendations
+    ]

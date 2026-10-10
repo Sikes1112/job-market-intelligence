@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from hashlib import sha256
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -48,6 +49,8 @@ class RequestObservabilityMiddleware:
                 headers = MutableHeaders(scope=message)
                 headers[REQUEST_ID_HEADER] = request_id
                 settings = getattr(getattr(scope.get("app"), "state", None), "settings", None)
+                if settings is not None:
+                    headers["X-Release-ID"] = settings.release_id
                 if settings is not None and settings.security_headers_enabled:
                     apply_security_headers(headers)
             await send(message)
@@ -65,19 +68,17 @@ class RequestObservabilityMiddleware:
                 duration_ms=duration_ms,
             )
             self._log_request(
+                scope=scope,
                 level=logging.INFO,
                 request_id=request_id,
                 method=method,
-                path=path,
                 route=route,
                 status_code=status_code,
                 duration_ms=duration_ms,
                 error_type=state.get("error_type"),
             )
         except Exception as exc:
-            error_type = (
-                "database_error" if isinstance(exc, SQLAlchemyError) else "internal_error"
-            )
+            error_type = "database_error" if isinstance(exc, SQLAlchemyError) else "internal_error"
             message = (
                 "Database unavailable"
                 if isinstance(exc, SQLAlchemyError)
@@ -105,10 +106,10 @@ class RequestObservabilityMiddleware:
                 duration_ms=duration_ms,
             )
             self._log_request(
+                scope=scope,
                 level=logging.ERROR,
                 request_id=request_id,
                 method=method,
-                path=path,
                 route=route,
                 status_code=status_code,
                 duration_ms=duration_ms,
@@ -128,10 +129,10 @@ class RequestObservabilityMiddleware:
     def _log_request(
         self,
         *,
+        scope: Scope,
         level: int,
         request_id: str,
         method: str,
-        path: str,
         route: str,
         status_code: int,
         duration_ms: float,
@@ -140,16 +141,38 @@ class RequestObservabilityMiddleware:
         fields: dict[str, Any] = {
             "request_id": request_id,
             "method": method,
-            "path": path,
+            # ``route`` is the template for matched routes and a bounded,
+            # identifier-scrubbed fallback otherwise. Keep the legacy path
+            # field for dashboards without logging the raw request path.
+            "path": route,
             "route": route,
             "status_code": status_code,
             "duration_ms": duration_ms,
             "error_type": error_type,
         }
+        app_state = getattr(scope.get("app"), "state", None)
+        settings = getattr(app_state, "settings", None)
+        if settings is not None:
+            fields["release_id"] = settings.release_id
+            fields["service"] = settings.service_name
+        principal = _pseudonymous_principal(scope)
+        if principal is not None:
+            fields["principal_ref"] = principal
         try:
             self.logger.log(level, "request_completed", extra={"extra_fields": fields})
         except Exception:
             pass
+
+
+def _pseudonymous_principal(scope: Scope) -> str | None:
+    claims = scope.get("state", {}).get("verified_oidc_claims")
+    if not isinstance(claims, dict):
+        return None
+    issuer = claims.get("iss")
+    subject = claims.get("sub")
+    if not isinstance(issuer, str) or not isinstance(subject, str) or not issuer or not subject:
+        return None
+    return sha256(f"{issuer}|{subject}".encode()).hexdigest()[:20]
 
 
 def _duration_ms(start: float) -> float:

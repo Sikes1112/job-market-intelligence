@@ -1937,9 +1937,9 @@ describe("public demo routes", () => {
   test("in-app Region navigation prefers the published canonical slug", async () => {
     stubPublicFetch();
     renderAt("/markets");
-    await screen.findByText("Explore Markets");
+    await screen.findByRole("heading", { name: "Explore markets" });
 
-    fireEvent.click(screen.getByRole("link", { name: /Region Detail/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Open region detail" }));
 
     await waitFor(() => {
       expect(window.location.pathname).toBe("/markets/region/boston");

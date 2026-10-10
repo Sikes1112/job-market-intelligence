@@ -16,10 +16,21 @@ class _Vocabulary(StrEnum):
 
 
 class ProductEventType(_Vocabulary):
+    AUTHENTICATED_VISIT = "authenticated_visit"
     EXPLORE_CONTEXT_EVALUATED = "explore_context_evaluated"
     EXPLORE_FIT_GENERATED = "explore_fit_generated"
     EXPLORE_FIT_ABSTAINED = "explore_fit_abstained"
     EXPLORE_CONTEXT_UNSUPPORTED = "explore_context_unsupported"
+    MARKET_INSPECTED = "market_inspected"
+    COMPARISON_SELECTION_READY = "comparison_selection_ready"
+    MY_SEARCH_VIEWED = "my_search_viewed"
+    COMPARISON_GENERATED = "comparison_generated"
+    COMPARISON_SAVED = "comparison_saved"
+    PRIORITIZE_INITIATED = "prioritize_initiated"
+    PRIORITIZE_COMPLETED = "prioritize_completed"
+    COMPARISON_RECOMMENDATION_OVERRIDDEN = "comparison_recommendation_overridden"
+    COMPARISON_RECOMMENDATION_VIEWED = "comparison_recommendation_viewed"
+    COMPARISON_ABSTAINED_VIEWED = "comparison_abstained_viewed"
     RECOMMENDATION_GENERATED = "recommendation_generated"
     DECISION_CONSIDERED = "decision_considered"
     DECISION_SAVED = "decision_saved"

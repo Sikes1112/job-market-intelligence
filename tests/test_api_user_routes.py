@@ -402,6 +402,32 @@ def test_saved_market_artifacts_create_list_get_delete_for_current_user(
     )
 
 
+def test_saved_region_route_is_idempotent_after_canonical_resolution(
+    api_client,
+    session: Session,
+) -> None:
+    _seed_region_identity(session)
+    headers = _auth_headers()
+    _assign_paid_plan(api_client, session)
+
+    first = api_client.post(
+        "/me/saved-market-artifacts",
+        headers=headers,
+        json={"artifact_type": "region", "artifact_ref": "greater_boston"},
+    )
+    repeated = api_client.post(
+        "/me/saved-market-artifacts",
+        headers=headers,
+        json={"artifact_type": "region", "artifact_ref": "Boston Metro"},
+    )
+
+    assert first.status_code == 201
+    assert repeated.status_code == 201
+    assert repeated.json()["data"]["saved_artifact_id"] == first.json()["data"]["saved_artifact_id"]
+    listed = api_client.get("/me/saved-market-artifacts", headers=headers)
+    assert len(listed.json()["data"]["saved_market_artifacts"]) == 1
+
+
 def test_saved_market_artifact_rejects_unsafe_snapshot_payload(
     api_client,
     session: Session,

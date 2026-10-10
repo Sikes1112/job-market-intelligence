@@ -21,6 +21,11 @@ npm run dev
 
 Open the Vite URL printed by `npm run dev`.
 
+For a local-only signed-in walkthrough without Auth0, start Vite with
+`VITE_LOCAL_AUTH=true npm run dev`. This uses the repository's existing
+development identity header, which the backend accepts only in `local` and
+`test` environments. Never enable it in a hosted environment.
+
 ## API Base URL
 
 The frontend reads `VITE_API_BASE_URL` when provided:

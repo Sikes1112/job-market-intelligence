@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.api.dependencies import CurrentUser, get_current_user, get_session
+from backend.api.dependencies import CurrentUser, get_current_user, get_session, require_beta_access
 from backend.api.envelope import (
     NOT_FOUND,
     VALIDATION_ERROR,
@@ -37,7 +37,11 @@ from backend.product_measurement.service import ProductMeasurementService
 from backend.users.exceptions import CrossUserAccessBlocked
 from backend.users.repository import UserRepository
 
-router = APIRouter(prefix="/me/career-identity", tags=["career-identity"])
+router = APIRouter(
+    prefix="/me/career-identity",
+    tags=["career-identity"],
+    dependencies=[Depends(require_beta_access)],
+)
 
 
 class ConfirmFactRequest(BaseModel):

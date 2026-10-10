@@ -244,6 +244,27 @@ class OptionSelectInput(BaseModel):
         return _clean_optional(value)
 
 
+class ExploreComparisonDecisionSeed(BaseModel):
+    """Governed Explore evidence used to initialize a Layer 36 location Decision."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    comparison_id: str = Field(min_length=1, max_length=64)
+    context_fingerprint: str = Field(min_length=1, max_length=128)
+    comparison_identity: str = Field(min_length=1, max_length=80)
+    recommendation_state: str = Field(min_length=1, max_length=40)
+    recommendation_summary: str = Field(min_length=1, max_length=10000)
+    confidence: ConfidenceLevel
+    evidence_sufficiency: EvidenceSufficiency
+    system_recommended_region_ids: tuple[str, ...] = Field(default_factory=tuple, max_length=4)
+    selected_region_id: str = Field(min_length=1, max_length=64)
+    market_options: tuple[dict[str, Any], ...] = Field(min_length=2, max_length=4)
+    comparison_payload: dict[str, Any]
+    evidence_payload: dict[str, Any]
+    limitations: tuple[str, ...] = ()
+    generated_at: datetime
+
+
 class CareerActionInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -547,6 +568,7 @@ class DecisionView(BaseModel):
     context: DecisionContextView | None
     options: tuple[DecisionOptionView, ...]
     recommendation: DecisionRecommendationView | None
+    explore_comparison_provenance: dict[str, Any] | None = None
     action_plan: ActionPlanView | None = None
     applications: tuple[ApplicationView, ...] = ()
     outcomes: tuple[OutcomeView, ...] = ()

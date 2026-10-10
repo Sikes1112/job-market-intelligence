@@ -1,6 +1,7 @@
 import json
 import logging
 import sys
+from datetime import UTC, datetime
 from typing import Any
 
 from backend.shared.redaction import redact_sensitive
@@ -9,6 +10,7 @@ from backend.shared.redaction import redact_sensitive
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

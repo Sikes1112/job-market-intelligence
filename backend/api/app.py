@@ -23,6 +23,7 @@ from backend.api.institutions import router as institutions_router
 from backend.api.integrations import router as integrations_router
 from backend.api.market_intelligence import router as market_intelligence_router
 from backend.api.monetization import router as monetization_router
+from backend.api.my_search import router as my_search_router
 from backend.api.observability import RequestObservabilityMiddleware
 from backend.api.operations import router as operations_router
 from backend.api.opportunities import router as opportunities_router
@@ -53,7 +54,12 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
     configure_logging(settings.log_level, service_name=settings.service_name)
     owns_engine = engine is None
     if engine is None:
-        engine = make_engine(settings.database_url)
+        engine = make_engine(
+            settings.database_url,
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            pool_recycle=settings.database_pool_recycle_seconds,
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -67,6 +73,9 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
         title="Job Market Intelligence Backend",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url="/docs" if settings.api_docs_enabled else None,
+        redoc_url="/redoc" if settings.api_docs_enabled else None,
+        openapi_url="/openapi.json" if settings.api_docs_enabled else None,
     )
     app.add_middleware(APIProtectionMiddleware, settings=settings)
     allowed_origins = settings.cors_allowed_origin_list
@@ -77,6 +86,7 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
             allow_credentials=False,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID"],
+            expose_headers=["X-Request-ID", "X-Release-ID"],
         )
     app.add_middleware(Auth0JWTMiddleware, settings=settings)
     app.add_middleware(RequestObservabilityMiddleware)
@@ -108,6 +118,7 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
     app.include_router(recommendations_router)
     app.include_router(career_agent_router)
     app.include_router(career_decisions_router)
+    app.include_router(my_search_router)
     app.include_router(career_identity_router)
     app.include_router(explore_router)
     app.include_router(deep_decisions_router)

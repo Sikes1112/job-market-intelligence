@@ -33,7 +33,22 @@ def _settings(app_env: str, **overrides) -> Settings:
     return Settings(
         app_env=app_env,
         database_url=database_url,
-        cors_allowed_origins=("https://demo.example" if app_env == "public_demo" else ""),
+        cors_allowed_origins=(
+            "https://demo.example"
+            if app_env in {"public_demo", "staging", "production", "prod"}
+            else ""
+        ),
+        auth0_issuer=(
+            "https://tenant.example.test/" if app_env in {"staging", "production", "prod"} else ""
+        ),
+        auth0_audience=(
+            "https://api.example.test" if app_env in {"staging", "production", "prod"} else ""
+        ),
+        release_id=(
+            "public-demo-environment-test"
+            if app_env in {"staging", "production", "prod"}
+            else "unknown"
+        ),
         **overrides,
         _env_file=None,
     )

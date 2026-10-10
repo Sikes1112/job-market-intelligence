@@ -38,6 +38,20 @@ from backend.deep_decisions.models import (
     RecommendationEvolution,
     StrategicCareerReview,
 )
+from backend.explore.models import ExploreComparisonSnapshot, ExploreDecisionProvenance
+from backend.product_measurement.models import (
+    BetaCohortMembership,
+    CommercialExperimentSignal,
+    DecisionReflection,
+    ExperimentAssignment,
+    ProductAnalyticsEvent,
+    ProductEntitlementGrant,
+    ProductUserVisit,
+    RecommendationFeedback,
+    StrategyChange,
+    SupportCase,
+    SupportCaseEvent,
+)
 from backend.users.models import (
     ExternalAuthIdentity,
     PersonalizedRecommendationSnapshot,
@@ -108,6 +122,21 @@ class UserRepository:
 
     def get_saved_market_artifact(self, saved_artifact_id: str) -> SavedMarketArtifact | None:
         return self._session.get(SavedMarketArtifact, saved_artifact_id)
+
+    def get_saved_market_artifact_by_identity(
+        self,
+        *,
+        user_id: str,
+        artifact_type: str,
+        artifact_ref: str,
+    ) -> SavedMarketArtifact | None:
+        return self._session.scalar(
+            select(SavedMarketArtifact).where(
+                SavedMarketArtifact.user_id == user_id,
+                SavedMarketArtifact.artifact_type == artifact_type,
+                SavedMarketArtifact.artifact_ref == artifact_ref,
+            )
+        )
 
     def list_saved_market_artifacts(
         self,
@@ -510,6 +539,35 @@ class UserRepository:
             LongitudinalContextSnapshot,
         )
 
+    def delete_product_measurement_data_for_user(self, user_id: str) -> int:
+        """Delete current-user measurement overlays before their referenced objects."""
+        support_case_ids = select(SupportCase.support_case_id).where(SupportCase.user_id == user_id)
+        support_events = (
+            self._session.execute(
+                delete(SupportCaseEvent).where(
+                    SupportCaseEvent.support_case_id.in_(support_case_ids)
+                )
+            ).rowcount
+            or 0
+        )
+        return support_events + self._delete_user_rows(
+            user_id,
+            # Visits can reference the append-only analytics events deleted below.
+            ProductUserVisit,
+            # These records can reference the Decision graph deleted later.
+            RecommendationFeedback,
+            DecisionReflection,
+            StrategyChange,
+            SupportCase,
+            BetaCohortMembership,
+            ExperimentAssignment,
+            ProductEntitlementGrant,
+            CommercialExperimentSignal,
+            # Privacy deletion is the explicit lifecycle exception to append-only
+            # analytics retention. A bulk delete intentionally bypasses ORM guards.
+            ProductAnalyticsEvent,
+        )
+
     def delete_career_decision_data_for_user(self, user_id: str) -> int:
         for decision in self.list_career_decisions_for_user(user_id):
             decision.current_context_snapshot_id = None
@@ -528,6 +586,39 @@ class UserRepository:
             DecisionOption,
             DecisionContextSnapshot,
             CareerDecision,
+        )
+
+    def list_explore_comparisons_for_user(self, user_id: str) -> list[ExploreComparisonSnapshot]:
+        return list(
+            self._session.execute(
+                select(ExploreComparisonSnapshot)
+                .where(ExploreComparisonSnapshot.user_id == user_id)
+                .order_by(
+                    ExploreComparisonSnapshot.generated_at,
+                    ExploreComparisonSnapshot.comparison_id,
+                )
+            ).scalars()
+        )
+
+    def list_explore_decision_provenance_for_user(
+        self, user_id: str
+    ) -> list[ExploreDecisionProvenance]:
+        return list(
+            self._session.execute(
+                select(ExploreDecisionProvenance)
+                .where(ExploreDecisionProvenance.user_id == user_id)
+                .order_by(
+                    ExploreDecisionProvenance.created_at,
+                    ExploreDecisionProvenance.provenance_id,
+                )
+            ).scalars()
+        )
+
+    def delete_explore_comparison_data_for_user(self, user_id: str) -> int:
+        return self._delete_user_rows(
+            user_id,
+            ExploreDecisionProvenance,
+            ExploreComparisonSnapshot,
         )
 
     def delete_preference_profile(self, profile: UserPreferenceProfile) -> None:

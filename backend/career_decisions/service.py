@@ -28,6 +28,7 @@ from backend.career_decisions.models import (
 from backend.career_decisions.repository import CareerDecisionRepository
 from backend.career_decisions.schemas import (
     ActionPlanCreateInput,
+    ActionPlanStatus,
     ActionPlanView,
     ApplicationCreateInput,
     ApplicationStatus,
@@ -54,6 +55,7 @@ from backend.career_decisions.schemas import (
     DecisionView,
     EvidenceKind,
     EvidenceSufficiency,
+    ExploreComparisonDecisionSeed,
     FitAssessment,
     OptionSelectInput,
     OutcomeCreateInput,
@@ -195,6 +197,135 @@ class CareerDecisionService:
             ),
         )
         return self.decision_view(user_id, decision.decision_id)
+
+    def create_from_explore_comparison(
+        self,
+        user_id: str,
+        seed: ExploreComparisonDecisionSeed,
+    ) -> DecisionView:
+        """Create and explicitly select a location Decision from governed Explore evidence.
+
+        Explore supplies the immutable evidence snapshot; this method owns the
+        durable Layer 36 option, recommendation, selection, and journal state.
+        """
+
+        option_inputs = tuple(
+            DecisionOptionInput(
+                title=str(item["display_name"]),
+                description="Market considered in an Explore comparison.",
+                scenario={
+                    "region_id": item["region_id"],
+                    "public_slug": item.get("public_slug"),
+                    "explore_comparison_id": seed.comparison_id,
+                    "fit_state": item.get("fit_state"),
+                    "fit_score": item.get("fit_score"),
+                    "fit_band": item.get("fit_band"),
+                },
+                position=index,
+            )
+            for index, item in enumerate(seed.market_options)
+        )
+        selected_market = next(
+            (item for item in seed.market_options if item["region_id"] == seed.selected_region_id),
+            None,
+        )
+        if selected_market is None:
+            raise CareerDecisionValidationError(
+                "selected Explore market is not a comparison option",
+                code="EXPLORE_SELECTION_NOT_IN_COMPARISON",
+            )
+        view = self.create_decision(
+            user_id,
+            DecisionCreateInput(
+                decision_type="location_choice",
+                title=f"Prioritize {selected_market['display_name']}",
+                description=(
+                    "Market-prioritization Decision created from Explore comparison "
+                    f"{seed.comparison_id}."
+                ),
+                priorities=(
+                    {
+                        "key": "explore_fit",
+                        "label": "Governed Explore Fit",
+                        "weight": 5,
+                        "hard": False,
+                    },
+                ),
+                options=option_inputs,
+            ),
+        )
+        decision = self._owned_decision(user_id, view.decision_id)
+        options = self._repo.list_options(decision.decision_id)
+        option_by_region = {str(option.scenario.get("region_id")): option for option in options}
+        recommended_option_id = None
+        if len(seed.system_recommended_region_ids) == 1:
+            recommended = option_by_region.get(seed.system_recommended_region_ids[0])
+            recommended_option_id = recommended.option_id if recommended else None
+        recommendation_status = (
+            DecisionRecommendationStatus.ABSTAINED.value
+            if seed.evidence_sufficiency
+            in {EvidenceSufficiency.INSUFFICIENT_EVIDENCE, EvidenceSufficiency.NOT_SUPPORTED}
+            else DecisionRecommendationStatus.READY.value
+        )
+        context_snapshot_id = decision.current_context_snapshot_id
+        if context_snapshot_id is None:
+            raise CareerDecisionValidationError("Layer 36 context snapshot is unavailable")
+        recommendation = DecisionRecommendation(
+            recommendation_id=_new_id("decision_rec"),
+            user_id=user_id,
+            decision_id=decision.decision_id,
+            context_snapshot_id=context_snapshot_id,
+            recommended_option_id=recommended_option_id,
+            recommendation_status=recommendation_status,
+            evidence_sufficiency=seed.evidence_sufficiency.value,
+            confidence=seed.confidence.value,
+            summary=seed.recommendation_summary,
+            fit_payload={
+                "authority": "explore_fit",
+                "comparison_id": seed.comparison_id,
+                "markets": [dict(item) for item in seed.market_options],
+            },
+            comparison_payload=deepcopy(seed.comparison_payload),
+            evidence_payload=deepcopy(seed.evidence_payload),
+            challenge_payload=[],
+            limitations=list(seed.limitations),
+            generated_at=seed.generated_at,
+        )
+        self._repo.add(recommendation)
+        self._repo.flush()
+        decision.current_recommendation_id = recommendation.recommendation_id
+        decision.status = DecisionStatus.EVALUATING.value
+        decision.current_version += 1
+        self._repo.flush()
+        self._append_version(decision, "explore_comparison_seeded")
+        self._repo.flush()
+        self._record_event(
+            user_id,
+            ProductEventCreate(
+                event_type=ProductEventType.RECOMMENDATION_GENERATED,
+                event_source=ProductEventSource.BACKEND,
+                decision_id=decision.decision_id,
+                recommendation_id=recommendation.recommendation_id,
+                confidence_bucket=recommendation.confidence,
+                coverage_status=recommendation.evidence_sufficiency,
+                recommendation_state=seed.recommendation_state,
+                product_surface="explore_comparison",
+                payload={
+                    "comparison_id": seed.comparison_id,
+                    "recommended_option_present": recommended_option_id is not None,
+                    "option_count": len(options),
+                },
+            ),
+        )
+        selected_option = option_by_region[seed.selected_region_id]
+        return self.select_option(
+            user_id,
+            decision.decision_id,
+            OptionSelectInput(
+                option_id=selected_option.option_id,
+                user_note="Selected through Explore Prioritize.",
+            ),
+        )
 
     def list_decisions(self, user_id: str, *, limit: int = 100) -> tuple[DecisionView, ...]:
         self._ensure_user(user_id)
@@ -362,7 +493,15 @@ class CareerDecisionService:
         decision_id: str,
         request: ActionPlanCreateInput,
     ) -> ActionPlanView:
+        self._repo.serialize_action_plan_generation()
         decision = self._owned_decision(user_id, decision_id)
+        locked_decision = self._repo.get_decision_for_update(decision_id)
+        if locked_decision is None or locked_decision.user_id != user_id:
+            raise CareerDecisionNotFound(decision_id)
+        decision = locked_decision
+        existing = self._repo.get_active_action_plan_for_decision(decision_id)
+        if existing is not None:
+            return self._action_plan_view(existing)
         if decision.selected_option_id is not None:
             self._ensure_option_belongs_to_decision(
                 user_id, decision.selected_option_id, decision.decision_id
@@ -423,6 +562,59 @@ class CareerDecisionService:
             for row in self._repo.list_actions(user_id, decision_id=decision_id, limit=limit)
         )
 
+    def create_action(
+        self,
+        user_id: str,
+        decision_id: str,
+        request: CareerActionInput,
+    ) -> CareerActionView:
+        """Add one user-authored action to the existing Layer 36 action domain."""
+
+        decision = self._owned_decision(user_id, decision_id)
+        if request.option_id is not None:
+            self._ensure_option_belongs_to_decision(user_id, request.option_id, decision_id)
+        plan = self._repo.get_active_action_plan_for_decision(decision_id)
+        if plan is None:
+            plan = CareerActionPlan(
+                action_plan_id=_new_id("action_plan"),
+                user_id=user_id,
+                decision_id=decision_id,
+                selected_option_id=decision.selected_option_id,
+                title=f"{decision.title} action plan",
+                status=ActionPlanStatus.ACTIVE.value,
+                plan_payload={
+                    "basis": "user_authored_action",
+                    "decision_version": decision.current_version,
+                    "recommendation_id": decision.current_recommendation_id,
+                },
+            )
+            self._repo.add(plan)
+            self._repo.flush()
+        position = len(self._repo.list_actions_for_plan(plan.action_plan_id))
+        action = self._add_action_row(
+            user_id,
+            decision,
+            plan,
+            request,
+            default_position=position,
+        )
+        self._repo.flush()
+        self._append_version(decision, "action_added")
+        self._repo.flush()
+        self._record_event(
+            user_id,
+            ProductEventCreate(
+                event_type=ProductEventType.ACTION_CREATED,
+                event_source=ProductEventSource.BACKEND,
+                decision_id=decision_id,
+                recommendation_id=decision.current_recommendation_id,
+                action_id=action.action_id,
+                product_surface="my_search",
+                payload={"action_type": action.action_type, "origin": "user"},
+            ),
+        )
+        return self._action_view(action)
+
     def update_action(
         self,
         user_id: str,
@@ -432,9 +624,7 @@ class CareerDecisionService:
         action = self._owned_action(user_id, action_id)
         if request.status is not None:
             action.status = request.status.value
-            action.completed_at = (
-                _now() if request.status is CareerActionStatus.COMPLETED else action.completed_at
-            )
+            action.completed_at = _now() if request.status is CareerActionStatus.COMPLETED else None
         for field in ("title", "description", "due_at", "priority"):
             value = getattr(request, field)
             if value is not None:
@@ -465,6 +655,8 @@ class CareerDecisionService:
         self,
         user_id: str,
         request: ApplicationCreateInput,
+        *,
+        current_opportunity_id: str | None = None,
     ) -> ApplicationView:
         self._ensure_user(user_id)
         self._validate_lifecycle_links(
@@ -490,6 +682,7 @@ class CareerDecisionService:
             option_id=request.option_id,
             company_id=request.company_id,
             region_id=canonical_region_id,
+            current_opportunity_id=current_opportunity_id,
             role_title=request.role_title,
             status=request.status.value,
             status_started_at=_now(),
@@ -563,7 +756,9 @@ class CareerDecisionService:
         application_id: str,
         request: ApplicationTransitionInput,
     ) -> ApplicationView:
-        application = self._owned_application(user_id, application_id)
+        application = self._repo.get_application_for_update(application_id)
+        if application is None or application.user_id != user_id:
+            raise CareerDecisionNotFound(application_id)
         to_status = request.to_status.value
         if application.status == to_status:
             return self._application_view(application)
@@ -942,8 +1137,7 @@ class CareerDecisionService:
                     ChallengeCode.INCOMPLETE_IDENTITY,
                     severity="warning",
                     message=(
-                        "Career Identity is incomplete for a strong personalized "
-                        "recommendation."
+                        "Career Identity is incomplete for a strong personalized recommendation."
                     ),
                     scope_type="decision",
                     scope_id=decision.decision_id,
@@ -1464,6 +1658,7 @@ class CareerDecisionService:
             if decision.current_recommendation_id
             else None
         )
+        provenance = self._repo.get_explore_provenance(decision.decision_id)
         plan = (
             self._repo.get_action_plan_for_decision(decision.decision_id) if include_graph else None
         )
@@ -1499,6 +1694,20 @@ class CareerDecisionService:
                 self._option_view(row) for row in self._repo.list_options(decision.decision_id)
             ),
             recommendation=self._recommendation_view(recommendation) if recommendation else None,
+            explore_comparison_provenance=(
+                {
+                    "comparison_id": provenance.comparison_id,
+                    "context_fingerprint": provenance.context_fingerprint,
+                    "system_recommendation_state": provenance.system_recommendation_state,
+                    "system_recommended_region_ids": list(
+                        provenance.system_recommended_region_ids or []
+                    ),
+                    "user_selected_region_id": provenance.user_selected_region_id,
+                    "choice_matches_recommendation": provenance.choice_matches_recommendation,
+                }
+                if provenance is not None
+                else None
+            ),
             action_plan=self._action_plan_view(plan) if plan else None,
             applications=tuple(self._application_view(row) for row in applications),
             outcomes=tuple(self._outcome_view(row) for row in outcomes),

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -67,6 +69,17 @@ def _seed_curated_regions(session) -> RegionRepository:  # noqa: ANN001
     for region_id in load_curated_geographies():
         assert apply_curated_geography(repository, region_id)
     return repository
+
+
+def test_versioned_map_geometry_covers_states_and_frontend_copy_matches() -> None:
+    source_path = Path("data/geography/us_states_simplified.geojson")
+    frontend_path = Path("frontend/public/data/us_states_simplified.geojson")
+    assert source_path.read_bytes() == frontend_path.read_bytes()
+    payload = json.loads(source_path.read_text())
+    codes = {feature["properties"]["state_code"] for feature in payload["features"]}
+    assert len(codes) == 51
+    assert {"AK", "HI", "DC", "MA", "CA"} <= codes
+    assert "U.S. Census Bureau 2024" in payload["source"]
 
 
 def test_canonical_resolver_accepts_all_curated_identity_forms(session) -> None:
@@ -263,11 +276,7 @@ def test_identity_claim_primary_key_is_database_enforced_and_postgresql_atomic(
         session.flush()
     session.rollback()
 
-    ddl = str(
-        CreateTable(RegionIdentityClaim.__table__).compile(
-            dialect=postgresql.dialect()
-        )
-    )
+    ddl = str(CreateTable(RegionIdentityClaim.__table__).compile(dialect=postgresql.dialect()))
     assert "PRIMARY KEY (normalized_token)" in ddl
 
 
@@ -330,7 +339,7 @@ def test_resolver_api_emits_canonical_identity_and_legacy_urls_work(api_client, 
     )
     assert sf["public_slug"] == "san-francisco-bay-area"
     assert sf["market_support_status"] == "supported"
-    assert sf["centroid"] is None
+    assert sf["centroid"] == {"latitude": 37.7272, "longitude": -123.0322}
 
     for token in ("sf_bay_area", "san-francisco-bay-area", "greater_sf"):
         assert api_client.get(f"/regions/{token}").status_code == 200

@@ -11,7 +11,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from backend.career_decisions.models import CareerDecision
+from backend.career_decisions.models import CareerDecision, DecisionOption
 from backend.career_identity.models import CareerIdentity, CareerIdentityFact
 from backend.companies.models import Company
 from backend.current_opportunities.adapters import OpportunityAcquisitionAdapter
@@ -33,6 +33,11 @@ from backend.current_opportunities.models import (
     OpportunitySourceObservation,
 )
 from backend.current_opportunities.normalization import normalize_opportunity_payload
+from backend.current_opportunities.pursuit_scope import (
+    PursuitOpportunityScope,
+    PursuitOpportunityScopeError,
+    pursuit_opportunity_scope,
+)
 from backend.current_opportunities.repository import CurrentOpportunityRepository
 from backend.current_opportunities.schemas import (
     AcquisitionRecordStatus,
@@ -628,17 +633,40 @@ class CurrentOpportunityService:
         now: datetime | None = None,
         include_ineligible: bool = True,
     ) -> tuple[OpportunityMatchPayload, ...]:
+        scope = (
+            self.pursuit_scope(user_id, decision_id, require_selected=False)
+            if decision_id is not None
+            else None
+        )
         identity_terms = _career_identity_terms(self._repo.session, user_id)
         decision_terms = _decision_terms(self._repo.session, user_id, decision_id)
         strategy_terms = _strategy_terms(self._repo.session, user_id, decision_id)
         desired = identity_terms | decision_terms | strategy_terms
         desired.update(_tokens(" ".join(request_terms)))
         rows = self._repo.list_opportunities(
+            market=scope.market_id if scope else None,
+            role_family=(
+                scope.role_families[0]
+                if scope is not None and len(scope.role_families) == 1
+                else None
+            ),
+            opportunity_type=(
+                scope.opportunity_types[0]
+                if scope is not None and len(scope.opportunity_types) == 1
+                else None
+            ),
+            work_arrangement=(
+                scope.work_arrangements[0]
+                if scope is not None and len(scope.work_arrangements) == 1
+                else None
+            ),
             ranking_eligible=None if include_ineligible else True,
             limit=500,
         )
         matches: list[OpportunityMatchPayload] = []
         for row in rows:
+            if scope is not None and not scope.allows(row):
+                continue
             if not _row_display_allowed(self._repo, row):
                 continue
             payload = self._opportunity_payload(row, now=now)
@@ -670,6 +698,30 @@ class CurrentOpportunityService:
             reverse=True,
         )
         return tuple(matches[:limit])
+
+    def pursuit_scope(
+        self,
+        user_id: str,
+        decision_id: str,
+        *,
+        require_selected: bool = True,
+    ) -> PursuitOpportunityScope:
+        """Resolve one owned Decision's frozen selected-option opportunity scope."""
+
+        decision = self._repo.session.get(CareerDecision, decision_id)
+        if decision is None or decision.user_id != user_id:
+            raise CurrentOpportunityNotFound(decision_id)
+        if decision.selected_option_id is None:
+            if not require_selected:
+                return PursuitOpportunityScope()
+            raise CurrentOpportunityError("pursuit does not have a selected option")
+        selected = self._repo.session.get(DecisionOption, decision.selected_option_id)
+        if selected is None:
+            raise CurrentOpportunityError("pursuit selected option is unavailable")
+        try:
+            return pursuit_opportunity_scope(decision, selected)
+        except PursuitOpportunityScopeError as exc:
+            raise CurrentOpportunityError(str(exc)) from exc
 
     def coverage(
         self,
@@ -1119,9 +1171,7 @@ class CurrentOpportunityService:
             source_id=source.source_id,
             provider_record_id=record.provider_record_id,
         )
-        previous_linked_opportunity_id = (
-            link.current_opportunity_id if link is not None else None
-        )
+        previous_linked_opportunity_id = link.current_opportunity_id if link is not None else None
         if link is None:
             self._repo.add(
                 CurrentOpportunitySourceLink(
@@ -1159,9 +1209,7 @@ class CurrentOpportunityService:
             previous_linked_opportunity_id is not None
             and previous_linked_opportunity_id != opportunity.current_opportunity_id
         ):
-            previous_opportunity = self._repo.get_opportunity(
-                previous_linked_opportunity_id
-            )
+            previous_opportunity = self._repo.get_opportunity(previous_linked_opportunity_id)
             if previous_opportunity is not None:
                 _retire_if_unsupported(
                     self._repo,
@@ -1242,9 +1290,9 @@ class CurrentOpportunityService:
         )
         market_resolution = None
         if prefetched_market is None and row.market_id is not None:
-            market_resolution = GeographicResolver(
-                RegionRepository(self._repo.session)
-            ).resolve(row.market_id)
+            market_resolution = GeographicResolver(RegionRepository(self._repo.session)).resolve(
+                row.market_id
+            )
         output_market_id = row.market_id
         output_market_label = row.market_label
         output_market_public_slug = None
@@ -1312,9 +1360,7 @@ class CurrentOpportunityService:
             seniority_level=row.seniority_level,
             market_id=output_market_id,
             market_public_slug=output_market_public_slug,
-            original_market_id=(
-                row.market_id if output_market_id != row.market_id else None
-            ),
+            original_market_id=(row.market_id if output_market_id != row.market_id else None),
             market_label=output_market_label,
             location_text=row.location_text,
             location_resolution_status=row.location_resolution_status,

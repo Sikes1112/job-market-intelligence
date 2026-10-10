@@ -6,6 +6,7 @@ import {
   type AppState,
   type User as Auth0User,
 } from "@auth0/auth0-react";
+import { runtimeConfig } from "./runtimeConfig";
 
 type FrontendAuthConfig = {
   domain: string;
@@ -31,13 +32,14 @@ export type FrontendAuthContextValue = {
 };
 
 const authConfig = readAuthConfig();
+const localAuthEnabled = import.meta.env.DEV && import.meta.env.VITE_LOCAL_AUTH === "true";
 
 const missingAuthValue: FrontendAuthContextValue = {
   isConfigured: false,
-  isAuthenticated: false,
+  isAuthenticated: localAuthEnabled,
   isLoading: false,
   error: null,
-  user: null,
+  user: localAuthEnabled ? { sub: "local|explorer", name: "Local explorer" } : null,
   login: async () => undefined,
   logout: () => undefined,
   getAccessTokenSilently: async () => null,
@@ -46,9 +48,9 @@ const missingAuthValue: FrontendAuthContextValue = {
 const FrontendAuthContext = createContext<FrontendAuthContextValue>(missingAuthValue);
 
 function readAuthConfig(): FrontendAuthConfig | null {
-  const domain = import.meta.env.VITE_AUTH0_DOMAIN?.trim();
-  const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID?.trim();
-  const audience = import.meta.env.VITE_AUTH0_AUDIENCE?.trim();
+  const domain = runtimeConfig.auth0Domain;
+  const clientId = runtimeConfig.auth0ClientId;
+  const audience = runtimeConfig.auth0Audience;
   if (!domain || !clientId) return null;
 
   const redirectUri =

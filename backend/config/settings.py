@@ -44,14 +44,10 @@ NON_LOCAL_ENVS = frozenset(
         AppEnv.PROD,
     }
 )
-STRICT_DEFAULT_ENABLED_ENVS = frozenset(
-    {AppEnv.STAGING, AppEnv.PRODUCTION, AppEnv.PROD}
-)
+STRICT_DEFAULT_ENABLED_ENVS = frozenset({AppEnv.STAGING, AppEnv.PRODUCTION, AppEnv.PROD})
 PUBLIC_DEMO_READ_ONLY_ENVS = frozenset({AppEnv.PUBLIC_DEMO})
 RATE_LIMIT_DEFAULT_ENABLED_ENVS = STRICT_DEFAULT_ENABLED_ENVS | PUBLIC_DEMO_READ_ONLY_ENVS
-SECURITY_HEADERS_DEFAULT_ENABLED_ENVS = (
-    STRICT_DEFAULT_ENABLED_ENVS | PUBLIC_DEMO_READ_ONLY_ENVS
-)
+SECURITY_HEADERS_DEFAULT_ENABLED_ENVS = STRICT_DEFAULT_ENABLED_ENVS | PUBLIC_DEMO_READ_ONLY_ENVS
 DEFAULT_MAX_REQUEST_BODY_BYTES = 1_048_576
 PUBLIC_DEMO_MAX_REQUEST_BODY_BYTES = 65_536
 DEFAULT_RATE_LIMIT_REQUESTS = 120
@@ -79,7 +75,12 @@ class Settings(BaseSettings):
     service_name: str = Field(default="jmi-backend")
     release_id: str = Field(default="unknown")
     database_url: str = Field(default="", repr=False)
+    database_pool_size: int = Field(default=5)
+    database_max_overflow: int = Field(default=10)
+    database_pool_recycle_seconds: int = Field(default=300)
     cors_allowed_origins: str = Field(default="")
+    api_docs_enabled: bool | None = Field(default=None)
+    beta_access_required: bool | None = Field(default=None)
     readiness_require_migration_current: bool | None = Field(default=None)
     job_stale_after_seconds: int | None = Field(default=None)
     error_monitoring_dsn: str = Field(default="", repr=False)
@@ -215,6 +216,8 @@ class Settings(BaseSettings):
         "rate_limit_enabled",
         "security_headers_enabled",
         "readiness_require_migration_current",
+        "api_docs_enabled",
+        "beta_access_required",
         mode="before",
     )
     @classmethod
@@ -246,6 +249,8 @@ class Settings(BaseSettings):
         "rate_limit_mutation_requests",
         "rate_limit_mutation_window_seconds",
         "job_stale_after_seconds",
+        "database_pool_size",
+        "database_pool_recycle_seconds",
         mode="before",
     )
     @classmethod
@@ -273,11 +278,25 @@ class Settings(BaseSettings):
             "rate_limit_expensive_window_seconds": RATE_LIMIT_WINDOW_SECONDS_LIMIT,
             "rate_limit_mutation_window_seconds": RATE_LIMIT_WINDOW_SECONDS_LIMIT,
             "job_stale_after_seconds": JOB_STALE_AFTER_SECONDS_LIMIT,
+            "database_pool_size": 100,
+            "database_max_overflow": 200,
+            "database_pool_recycle_seconds": 86_400,
             "auth0_jwks_cache_seconds": 86_400,
         }
         limit = limits.get(info.field_name)
         if limit is not None and normalized > limit:
             raise ValueError(f"value must be <= {limit}")
+        return normalized
+
+    @field_validator("database_max_overflow", mode="before")
+    @classmethod
+    def _validate_database_max_overflow(cls, value: int | str) -> int:
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("DATABASE_MAX_OVERFLOW must be an integer") from exc
+        if normalized < 0 or normalized > 200:
+            raise ValueError("DATABASE_MAX_OVERFLOW must be between 0 and 200")
         return normalized
 
     @model_validator(mode="after")
@@ -298,9 +317,11 @@ class Settings(BaseSettings):
         if self.security_headers_enabled is None:
             self.security_headers_enabled = self.app_env in SECURITY_HEADERS_DEFAULT_ENABLED_ENVS
         if self.readiness_require_migration_current is None:
-            self.readiness_require_migration_current = (
-                self.app_env in STRICT_DEFAULT_ENABLED_ENVS
-            )
+            self.readiness_require_migration_current = self.app_env in STRICT_DEFAULT_ENABLED_ENVS
+        if self.api_docs_enabled is None:
+            self.api_docs_enabled = self.app_env not in STRICT_DEFAULT_ENABLED_ENVS
+        if self.beta_access_required is None:
+            self.beta_access_required = self.app_env in STRICT_DEFAULT_ENABLED_ENVS
         if self.job_stale_after_seconds is None:
             self.job_stale_after_seconds = DEFAULT_JOB_STALE_AFTER_SECONDS
         if self.max_request_body_bytes is None:
@@ -347,9 +368,7 @@ class Settings(BaseSettings):
                     "origin when APP_ENV is public_demo"
                 )
             if self.rate_limit_enabled is not True:
-                raise ValueError(
-                    "RATE_LIMIT_ENABLED must be true when APP_ENV is public_demo"
-                )
+                raise ValueError("RATE_LIMIT_ENABLED must be true when APP_ENV is public_demo")
             if self.security_headers_enabled is not True:
                 raise ValueError(
                     "SECURITY_HEADERS_ENABLED must be true when APP_ENV is public_demo"
@@ -358,18 +377,39 @@ class Settings(BaseSettings):
         if self.app_env in STRICT_DEFAULT_ENABLED_ENVS:
             if is_sqlite_database_url(self.database_url):
                 raise ValueError(
-                    "DATABASE_URL must not use SQLite when APP_ENV is staging, "
-                    "production, or prod"
+                    "DATABASE_URL must not use SQLite when APP_ENV is staging, production, or prod"
                 )
             if self.rate_limit_enabled is not True:
                 raise ValueError(
-                    "RATE_LIMIT_ENABLED must be true when APP_ENV is staging, "
-                    "production, or prod"
+                    "RATE_LIMIT_ENABLED must be true when APP_ENV is staging, production, or prod"
                 )
             if self.security_headers_enabled is not True:
                 raise ValueError(
                     "SECURITY_HEADERS_ENABLED must be true when APP_ENV is staging, "
                     "production, or prod"
+                )
+            if not self.cors_allowed_origin_list:
+                raise ValueError(
+                    "CORS_ALLOWED_ORIGINS must list the exact frontend origin when "
+                    "APP_ENV is staging, production, or prod"
+                )
+            if any(not origin.startswith("https://") for origin in self.cors_allowed_origin_list):
+                raise ValueError(
+                    "CORS_ALLOWED_ORIGINS must use HTTPS when APP_ENV is staging, "
+                    "production, or prod"
+                )
+            if not self.auth0_issuer or not self.auth0_audience:
+                raise ValueError(
+                    "AUTH0_ISSUER and AUTH0_AUDIENCE are required when APP_ENV is "
+                    "staging, production, or prod"
+                )
+            if self.release_id == "unknown":
+                raise ValueError(
+                    "RELEASE_ID is required when APP_ENV is staging, production, or prod"
+                )
+            if self.api_docs_enabled:
+                raise ValueError(
+                    "API_DOCS_ENABLED must be false when APP_ENV is staging, production, or prod"
                 )
         return self
 
