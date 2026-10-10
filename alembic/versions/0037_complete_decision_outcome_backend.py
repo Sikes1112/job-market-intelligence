@@ -111,9 +111,6 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["current_context_snapshot_id"], ["decision_context_snapshots.context_snapshot_id"]
         ),
-        sa.ForeignKeyConstraint(
-            ["current_recommendation_id"], ["decision_recommendations.recommendation_id"]
-        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.user_id"]),
         sa.PrimaryKeyConstraint("decision_id"),
     )
@@ -215,6 +212,18 @@ def upgrade() -> None:
     op.create_index(
         "ix_decision_recommendations_user", "decision_recommendations", ["user_id"], unique=False
     )
+
+    # ``career_decisions`` and ``decision_recommendations`` reference each
+    # other. PostgreSQL requires the referenced table to exist when a foreign
+    # key is created, so add this side of the cycle only after both tables are
+    # present. SQLite's batch mode preserves the same final schema.
+    with op.batch_alter_table("career_decisions") as batch_op:
+        batch_op.create_foreign_key(
+            "fk_career_decisions_current_recommendation",
+            "decision_recommendations",
+            ["current_recommendation_id"],
+            ["recommendation_id"],
+        )
 
     op.create_table(
         "decision_versions",
@@ -477,6 +486,9 @@ def downgrade() -> None:
     op.drop_index("ix_decision_versions_user", table_name="decision_versions")
     op.drop_index("ix_decision_versions_decision_created", table_name="decision_versions")
     op.drop_table("decision_versions")
+
+    with op.batch_alter_table("career_decisions") as batch_op:
+        batch_op.drop_constraint("fk_career_decisions_current_recommendation", type_="foreignkey")
 
     op.drop_index("ix_decision_recommendations_user", table_name="decision_recommendations")
     op.drop_index("ix_decision_recommendations_decision", table_name="decision_recommendations")

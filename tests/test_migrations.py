@@ -18,6 +18,17 @@ def test_first_long_revision_widens_postgres_version_column() -> None:
     assert "type_=sa.String(length=255)" in source
 
 
+def test_cyclic_decision_recommendation_fk_is_deferred_until_both_tables_exist() -> None:
+    migration_path = Path("alembic/versions/0037_complete_decision_outcome_backend.py")
+    source = migration_path.read_text(encoding="utf-8")
+
+    recommendation_table = source.index('op.create_table(\n        "decision_recommendations"')
+    deferred_constraint = source.index(
+        'batch_op.create_foreign_key(\n            "fk_career_decisions_current_recommendation"'
+    )
+    assert deferred_constraint > recommendation_table
+
+
 def test_alembic_upgrade_head_creates_current_schema(tmp_path) -> None:
     db_path = tmp_path / "migration-validation.db"
     database_url = f"sqlite:///{db_path}"
