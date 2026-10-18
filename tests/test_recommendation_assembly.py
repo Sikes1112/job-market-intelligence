@@ -242,6 +242,32 @@ def test_company_assembly_missing_structured_inputs_are_visible() -> None:
     assert ManualVerificationCategory.SOURCE_CONFIRMATION in verification
 
 
+def test_company_assembly_deduplicates_and_bounds_coverage_warnings() -> None:
+    rows = [
+        {
+            "region_id": f"region_{index}",
+            "coverage": {
+                "coverage_limitations": [
+                    "shared coverage warning",
+                    *(f"warning_{index}_{item}" for item in range(5)),
+                ],
+                "should_rank_as_confident_recommendation": False,
+            },
+        }
+        for index in range(8)
+    ]
+    explanation = assemble_company_recommendation_explanation({
+        "company_id": "comp_many_warnings",
+        "company_name": "Many Warnings Co",
+        "regions_present": rows,
+        "regions_hiring": [],
+        "entry_level_regions": [],
+    })
+
+    assert len(explanation.coverage_warnings) == 30
+    assert explanation.coverage_warnings.count("shared coverage warning") == 1
+
+
 def test_proxy_goal_modes_are_explicitly_inferred() -> None:
     explanation = assemble_region_recommendation_explanation(
         _region_output(),

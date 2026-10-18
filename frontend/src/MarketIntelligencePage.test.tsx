@@ -75,9 +75,9 @@ describe("MarketIntelligencePage", () => {
     ]) {
       expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
     }
-    expect(screen.getByText("Direct and proxy evidence: The backend reports a mix of direct and proxy evidence.")).toBeInTheDocument();
-    expect(screen.getAllByText(/Backend score margin to nearest peer is 0.1200/).length).toBeGreaterThan(0);
-    expect(screen.getByText("The backend is not abstaining for this ranking.")).toBeInTheDocument();
+    expect(screen.getByText("Direct and proxy evidence: Available evidence shows a mix of direct and proxy evidence.")).toBeInTheDocument();
+    expect(screen.getAllByText(/Score margin to nearest peer is 0.1200/).length).toBeGreaterThan(0);
+    expect(screen.getByText("This ranking includes a supported result.")).toBeInTheDocument();
   });
 
   test("renders unstable stability scenario summaries from backend grounding", async () => {
@@ -327,11 +327,11 @@ describe("MarketIntelligencePage", () => {
     expect(await screen.findByRole("region", { name: "Decision guidance" })).toBeInTheDocument();
     expect(screen.getAllByText("Not supported").length).toBeGreaterThan(0);
     expect(screen.getByText("No decision market selected")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Why the backend abstains" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Diagnostic ordering constraints" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Why no recommendation" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ordering constraints" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Why this market" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Diagnostic market ordering")).toBeInTheDocument();
-    expect(screen.getByText("Diagnostic #1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Evidence-only market ordering")).toBeInTheDocument();
+    expect(screen.getByText("Evidence order #1")).toBeInTheDocument();
     expect(screen.queryByText("Rank #1")).not.toBeInTheDocument();
     expect(screen.queryByText(/Atlanta is rank #1/)).not.toBeInTheDocument();
     expect(screen.getAllByText(/diagnostic ordering/).length).toBeGreaterThan(0);
@@ -344,9 +344,9 @@ describe("MarketIntelligencePage", () => {
     renderPage({ goal: "data_science", compareA: "atlanta", compareB: "boston" });
 
     expect(await screen.findByText("No supported winner")).toBeInTheDocument();
-    expect(screen.getByText(/abstains from naming a normal winner/)).toBeInTheDocument();
+    expect(screen.getByText("There is not enough evidence to name a winner.")).toBeInTheDocument();
     expect(screen.queryByText("Market A ranks ahead")).not.toBeInTheDocument();
-    expect(screen.queryByText(/stronger fit based on current data/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/stronger fit within the demonstration dataset/)).not.toBeInTheDocument();
   });
 
   test("renders every supported career goal and requests the selected goal", async () => {
@@ -404,14 +404,14 @@ describe("MarketIntelligencePage", () => {
     expect(screen.getByText("Early-career environment")).toBeInTheDocument();
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Observed zero").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Unknown facts and observed-zero facts are displayed separately/)).toBeInTheDocument();
+    expect(screen.getByText(/Unknown and observed-zero facts remain distinct/)).toBeInTheDocument();
   });
 
   test("renders pairwise winner, strengths, weaknesses, metrics, confidence, and limitations", async () => {
     renderPage({ compareA: "atlanta", compareB: "boston" });
 
     expect(await screen.findByText("Market A ranks ahead")).toBeInTheDocument();
-    expect(screen.getByText(/Atlanta is the stronger fit based on current data/)).toBeInTheDocument();
+    expect(screen.getByText(/Atlanta is the stronger fit within the demonstration dataset/)).toBeInTheDocument();
     expect(screen.getAllByText("Atlanta strength").length).toBeGreaterThan(0);
     expect(screen.getByText("Boston weakness")).toBeInTheDocument();
     expect(screen.getAllByText("Moderate confidence").length).toBeGreaterThan(0);
@@ -424,7 +424,7 @@ describe("MarketIntelligencePage", () => {
     renderPage({ compareA: "atlanta", compareB: "boston" });
 
     expect(await screen.findByText("Currently tied")).toBeInTheDocument();
-    expect(screen.getByText(/currently tied for this goal/)).toBeInTheDocument();
+    expect(screen.getByText(/demonstration markets are tied for this goal/)).toBeInTheDocument();
   });
 
   test("renders backend no-winner language without computing a winner", async () => {

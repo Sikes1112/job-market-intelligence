@@ -9,6 +9,7 @@ import {
   mySearchApplicationUrl,
   mySearchPursuitUrl,
   parseRoute,
+  recommendationsUrl,
   roleExploreValueForQuery,
   savedExploreComparisonUrl,
   userIntelligenceDashboardUrl,
@@ -139,6 +140,15 @@ describe("Layer 42A product routes", () => {
     expect(url).toContain("work_arrangement=hybrid");
     const route = parseRoute("/markets/current-opportunities", url.slice(url.indexOf("?")));
     expect(route.currentOpportunities).toEqual({ market: "austin", roleFamily: "product_management", opportunityType: "internship", workArrangement: "hybrid", returnTo: "/markets?focus=austin" });
+  });
+
+  test("round-trips recommendation view and goal for browser history restoration", () => {
+    const forYou = recommendationsUrl("maximize_entry_level_access", "for-you");
+    const byGoal = recommendationsUrl("maximize_lower_competition", "by-goal");
+    expect(parseRoute("/markets/recommendations", forYou.slice(forYou.indexOf("?"))).recommendationView).toBe("for-you");
+    const restored = parseRoute("/markets/recommendations", byGoal.slice(byGoal.indexOf("?")));
+    expect(restored.recommendationView).toBe("by-goal");
+    expect(restored.recommendationGoalMode).toBe("maximize_lower_competition");
   });
 });
 

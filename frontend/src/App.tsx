@@ -1,6 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import {
-  ApiError,
   acceptPartnerImport,
   archivePartnerImport,
   createApiClient,
@@ -51,7 +50,6 @@ import {
   getMyMonetizationEntitlements,
   getMyMonetizationUsage,
   getPreferences,
-  getPlatformEmbed,
   getPredictiveReport,
   getPublicBenchmark,
   getPublicBenchmarks,
@@ -83,8 +81,8 @@ import {
   type ProtectedRequestOptions,
 } from "./api";
 import { useFrontendAuth, type FrontendAuthContextValue } from "./auth";
-import { BetaFeedback } from "./BetaFeedback";
-import { runtimeConfig } from "./runtimeConfig";
+import { ProductShell } from "./ProductShell";
+import { PublicFooter } from "./PublicNavigation";
 import {
   canonicalRegionIdForToken,
   geographicRouteToken,
@@ -201,34 +199,16 @@ import type {
   PersonalizedRecommendationSnapshot,
   PersonalizedRecommendationSnapshotInput,
   PersonalizedResult,
-  PlatformEmbedPayload,
-  PredictiveReportForecast,
   PredictiveReportPayload,
-  PredictiveReportSection,
   PreferenceLevel,
   PriorityMarket,
   PublicBenchmark,
   PublicBenchmarkListPayload,
-  PublicBenchmarkMarketResult,
-  PublicCitation,
-  PublicInstitutionalCta,
   PublicReport,
   PublicReportListPayload,
-  PublicReportMarketResult,
-  PublicShareSummary,
-  PublicSourceAuthority,
-  AppliedRankingPenalty,
-  MissingScoreComponent,
-  RecommendationEvidenceReference,
   RecommendationGoalMode,
-  RecommendationGoalModeProfilePayload,
   RecommendationGoalModesPayload,
-  RecommendationManualVerificationItem,
-  RecommendationRankingItem,
-  RecommendationReason,
   RecommendationStrategyPayload,
-  RecommendationTradeoff,
-  RecommendationWeakness,
   RegionDetail,
   RegionListItem,
   RegionSearchResult,
@@ -246,14 +226,6 @@ import type {
   UserPreferenceProfile,
   UserPreferenceProfileInput,
   WarningItem,
-  StrategyCompanyCategoryTarget,
-  StrategyCompanyTarget,
-  StrategyEvidenceWarning,
-  StrategyRegionTarget,
-  StrategyRoleFamilyTarget,
-  StrategyTimingGuidance,
-  StrategyWatchlistItem,
-  WeightedScoreComponent,
 } from "./types";
 import {
   DEFAULT_REGION_A,
@@ -262,14 +234,9 @@ import {
   INDUSTRY_OPTIONS,
   PREFERENCE_LEVELS,
   ROLE_TARGETS,
-  accountUrl,
-  careerAgentUrl,
   careerIdentityUrl,
   companyGeographyUrl,
   compareMarketsUrl,
-  currentOpportunityOperationsUrl,
-  currentOpportunitiesUrl,
-  decisionsUrl,
   exploreUrl,
   institutionAdvisorUrl,
   institutionDataRequestsUrl,
@@ -278,49 +245,17 @@ import {
   institutionImportsUrl,
   institutionReportsUrl,
   isProductPage,
-  landingUrl,
-  marketIntelligenceUrl,
-  mySearchUrl,
-  opportunityRoutesUrl,
-  policyLandingUrl,
   parseRoute,
   personalizedDiscoveryUrl,
-  profileUrl,
   roleExploreValueForQuery,
-  plansUrl,
-  publicBenchmarkUrl,
-  publicPageUrl,
-  publicReportUrl,
   recommendationsUrl,
   regionDetailUrl,
   savedExploreComparisonUrl,
-  userIntelligenceDashboardUrl,
   type DiscoveryFilters,
   type AppPage,
-  type ProductPage,
-  type PublicPage,
+  type RecommendationView,
   type RouteState,
 } from "./urlState";
-import {
-  DATA_LICENSING_COPY,
-  DEVELOPER_DOCS_COPY,
-  DEVELOPER_DOCS_NAV,
-  DEMO_DISCLOSURE_COPY,
-  LANDING_COPY,
-  LEGAL_PAGE_COPY,
-  PUBLIC_INFO_LINKS,
-  type DeveloperDocPageKey,
-  type LegalPublicPage,
-} from "./publicContent";
-import {
-  PUBLIC_SEO_PAGES,
-  getPublicSeoPageBySlug,
-  publicSeoPageUrl,
-  relatedSeoPages,
-  type PublicSeoConfidence,
-  type PublicSeoLink,
-  type PublicSeoPage,
-} from "./publicSeoContent";
 const PolicyIntelligencePage = lazy(() => import("./PolicyIntelligencePage"));
 const ExplorePage = lazy(() => import("./ExplorePage"));
 const ExploreComparisonPage = lazy(() => import("./ExploreComparisonPage"));
@@ -336,8 +271,11 @@ const DecisionWorkspacePage = lazy(() => import("./DecisionWorkspacePage"));
 const OpportunityRoutesPage = lazy(() => import("./OpportunityRoutesPage"));
 const CurrentOpportunitiesPage = lazy(() => import("./CurrentOpportunitiesPage"));
 const CareerAgentPage = lazy(() => import("./CareerAgentPage"));
-const DataStandardsPage = lazy(() => import("./DataStandardsPage"));
 const UserIntelligenceDashboardPage = lazy(() => import("./UserIntelligenceDashboardPage"));
+const RecommendationExperience = lazy(() => import("./RecommendationExperience"));
+const PublicRouteView = lazy(() =>
+  import("./PublicRoutes").then((module) => ({ default: module.PublicRouteView })),
+);
 
 const SCORE_FIELDS: Array<{ key: keyof RegionScores; label: string; short: string }> = [
   {
@@ -579,12 +517,6 @@ const INTEGRATION_EXPORT_OPTIONS: Array<{
   { id: "prepared_airtable", label: "Airtable", description: "Prepared manual payload" },
 ];
 
-const NAV_ITEMS: Array<{ id: ProductPage; label: string; kicker: string }> = [
-  { id: "explore", label: "Explore", kicker: "Market Fit" },
-  { id: "my-search", label: "My Search", kicker: "Saved progress" },
-  { id: "profile", label: "Profile", kicker: "Career Identity" },
-];
-
 const REMOTE_HYBRID_OPTIONS: RemoteHybridPreference[] = ["remote", "hybrid", "onsite", "flexible"];
 const ACCESS_PREVIEW_REQUESTS: Array<{
   plan_key?: MonetizationPlanKey;
@@ -670,38 +602,8 @@ function isKnownRegion(regionId: string, regions: RegionListItem[], loaded: bool
   return !loaded || Boolean(canonicalRegionIdForToken(regionId, regions));
 }
 
-function getNavigationUrl(
-  page: ProductPage,
-  selectedRegionId: string,
-  selectedCompanyId: string,
-  comparisonA: string,
-  comparisonB: string,
-  discoveryFilters: DiscoveryFilters,
-): string {
-  if (page === "dashboard") return userIntelligenceDashboardUrl();
-  if (page === "my-search") return mySearchUrl();
-  if (page === "profile") return profileUrl();
-  if (page === "intelligence") return marketIntelligenceUrl();
-  if (page === "region") return regionDetailUrl(selectedRegionId);
-  if (page === "company") return companyGeographyUrl(selectedCompanyId);
-  if (page === "compare") return compareMarketsUrl(comparisonA, comparisonB);
-  if (page === "discovery") return personalizedDiscoveryUrl(discoveryFilters);
-  if (page === "career-identity") return careerIdentityUrl();
-  if (page === "decisions") return decisionsUrl();
-  if (page === "recommendations") return recommendationsUrl();
-  if (page === "career-agent") return careerAgentUrl();
-  if (page === "opportunity-routes") return opportunityRoutesUrl();
-  if (page === "current-opportunities") return currentOpportunitiesUrl();
-  if (page === "current-opportunity-operations") return currentOpportunityOperationsUrl();
-  if (page === "policy") return policyLandingUrl();
-  if (page === "plans") return plansUrl();
-  if (page === "institution") return institutionDashboardUrl();
-  if (page === "account") return accountUrl();
-  return exploreUrl();
-}
-
 function prettyKey(value: string) {
-  return value.replaceAll("_", " ");
+  return value.replace(/[_-]+/g, " ");
 }
 
 function segmentLabel(value: string): string {
@@ -1036,13 +938,6 @@ function formatDateTime(value: string | null | undefined): string {
   }).format(date);
 }
 
-function formatDateOnly(value: string | null | undefined): string {
-  if (!value) return "n/a";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
-}
-
 function scorePercent(value: number | null | undefined) {
   if (typeof value !== "number") return 0;
   return Math.max(0, Math.min(100, value * 100));
@@ -1213,11 +1108,8 @@ function SectorCoveragePanel({ sectorCoverage }: { sectorCoverage?: SectorCovera
   if (!sectors.length) return null;
 
   return (
-    <div className="sector-coverage-panel">
-      <div className="coverage-section-heading">
-        <strong>Sector coverage</strong>
-        <small>Separate from overall region coverage</small>
-      </div>
+    <details className="sector-coverage-panel">
+      <summary>Sector coverage · {sectors.length} sectors</summary>
       <div className="sector-coverage-list">
         {sectors.map((sector) => (
           <div className="sector-coverage-row" key={sector.sector}>
@@ -1229,7 +1121,7 @@ function SectorCoveragePanel({ sectorCoverage }: { sectorCoverage?: SectorCovera
           </div>
         ))}
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -1474,7 +1366,7 @@ function regionExplanationEvidence(
     subject_refs: { region_id: region.region_id },
     display_label: region.display_name,
     canonical_scores: Object.fromEntries(
-      SCORE_FIELDS.map((score) => {
+      SCORE_FIELDS.filter((score) => score.key !== "raw_total_score").map((score) => {
         const value = region.scores?.[score.key];
         return [score.key, typeof value === "number" ? value : null];
       }),
@@ -1815,16 +1707,14 @@ function MetadataPanel({
           </div>
         </details>
       ) : null}
-      {notices.length || warnings.length ? (
+      {notices.length ? (
+        <details className="source-details">
+          <summary>Data notes</summary>
+          <ul className="coverage-notes">{notices.map((notice) => <li key={notice}>{notice}</li>)}</ul>
+        </details>
+      ) : null}
+      {warnings.length ? (
         <div className="warning-list">
-          {notices.map((notice) => (
-            <div className="warning-item" key={notice}>
-              <div className="warning-header">
-                <span className="warning-code">Data quality note</span>
-              </div>
-              <p>{notice}</p>
-            </div>
-          ))}
           {warnings.map((warning, index) => (
             <div className="warning-item" key={index}>
               <div className="warning-header">
@@ -1844,9 +1734,9 @@ function MetadataPanel({
             </div>
           ))}
         </div>
-      ) : (
+      ) : !notices.length ? (
         <p className="meta-copy">No metadata warnings or source caveats were returned.</p>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -1957,1696 +1847,12 @@ function AuthStatusPanel({
   );
 }
 
-type LinkClickHandler = (event: MouseEvent<HTMLAnchorElement>, url: string) => void;
-
-function DemoDisclosure({ compact = false }: { compact?: boolean }) {
-  return (
-    <aside className={compact ? "demo-disclosure demo-disclosure-compact" : "demo-disclosure"}>
-      <div>
-        <strong>{DEMO_DISCLOSURE_COPY.title}</strong>
-        <p>{DEMO_DISCLOSURE_COPY.summary}</p>
-      </div>
-      {!compact ? (
-        <ul>
-          {DEMO_DISCLOSURE_COPY.bullets.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      ) : null}
-    </aside>
-  );
+function JsonBlock({ value }: { value: unknown }) {
+  return <pre className="json-block">{JSON.stringify(value, null, 2)}</pre>;
 }
 
-function PublicInfoLinks({
-  activePage,
-  onNavigate,
-  variant,
-  includeOverview = false,
-}: {
-  activePage: PublicPage | null;
-  onNavigate: LinkClickHandler;
-  variant: "sidebar" | "footer" | "top";
-  includeOverview?: boolean;
-}) {
-  return (
-    <nav className={`public-link-list public-link-list-${variant}`} aria-label="Public information">
-      {includeOverview ? (
-        <a
-          className={activePage === "landing" ? "public-link-active" : ""}
-          href={landingUrl()}
-          onClick={(event) => onNavigate(event, landingUrl())}
-        >
-          Overview
-        </a>
-      ) : null}
-      {PUBLIC_INFO_LINKS.map((item) => (
-        <a
-          className={activePage === item.page ? "public-link-active" : ""}
-          href={item.href}
-          key={item.page}
-          onClick={(event) => onNavigate(event, item.href)}
-        >
-          {item.label}
-        </a>
-      ))}
-    </nav>
-  );
-}
-
-function PublicFooter({
-  activePage,
-  onNavigate,
-}: {
-  activePage: PublicPage | null;
-  onNavigate: LinkClickHandler;
-}) {
-  return (
-    <footer className="public-footer">
-      <p>Public demo only. Verify important decisions independently.</p>
-      <PublicInfoLinks activePage={activePage} includeOverview onNavigate={onNavigate} variant="footer" />
-    </footer>
-  );
-}
-
-function PublicShell({
-  activePage,
-  children,
-  onNavigate,
-}: {
-  activePage: PublicPage;
-  children: ReactNode;
-  onNavigate: LinkClickHandler;
-}) {
-  return (
-    <main className="public-shell">
-      <header className="public-header">
-        <a className="public-brand" href={landingUrl()} onClick={(event) => onNavigate(event, landingUrl())}>
-          <span className="brand-mark">JM</span>
-          <span>
-            <strong>Job Market Intelligence</strong>
-            <small>Opportunity geography intelligence</small>
-          </span>
-        </a>
-        <div className="public-header-actions">
-          <PublicInfoLinks activePage={activePage} onNavigate={onNavigate} variant="top" />
-          <a className="primary-button" href={exploreUrl()} onClick={(event) => onNavigate(event, exploreUrl())}>
-            Enter demo
-          </a>
-        </div>
-      </header>
-      <section className="public-content">
-        {children}
-      </section>
-      <PublicFooter activePage={activePage} onNavigate={onNavigate} />
-    </main>
-  );
-}
-
-function LandingPage({
-  onNavigate,
-  unknownPath,
-}: {
-  onNavigate: LinkClickHandler;
-  unknownPath?: string;
-}) {
-  return (
-    <div className="public-page">
-      <section className="public-intro">
-        <p className="eyebrow">{LANDING_COPY.eyebrow}</p>
-        <h1>{LANDING_COPY.title}</h1>
-        <p className="public-lead">{LANDING_COPY.intro}</p>
-        {unknownPath ? (
-          <p className="meta-copy">Unknown public path opened the overview: {unknownPath}</p>
-        ) : null}
-        <div className="hero-actions">
-          <a className="primary-button" href={exploreUrl()} onClick={(event) => onNavigate(event, exploreUrl())}>
-            {LANDING_COPY.ctaLabel}
-          </a>
-          <a
-            className="secondary-button"
-            href={publicPageUrl("methodology")}
-            onClick={(event) => onNavigate(event, publicPageUrl("methodology"))}
-          >
-            {LANDING_COPY.secondaryCtaLabel}
-          </a>
-        </div>
-      </section>
-
-      <DemoDisclosure />
-
-      <section className="public-section-grid" aria-label="Demo overview">
-        {LANDING_COPY.sections.map((section) => (
-          <article className="public-section" key={section.title}>
-            <h2>{section.title}</h2>
-            <p>{section.body}</p>
-          </article>
-        ))}
-      </section>
-    </div>
-  );
-}
-
-function LegalPage({ page }: { page: LegalPublicPage }) {
-  const copy = LEGAL_PAGE_COPY[page];
-  return (
-    <div className="public-page public-document">
-      <section className="public-intro public-document-intro">
-        <p className="eyebrow">{copy.eyebrow}</p>
-        <h1>{copy.title}</h1>
-        <p className="public-lead">{copy.intro}</p>
-      </section>
-      <DemoDisclosure compact />
-      <section className="public-document-list" aria-label={copy.title}>
-        {copy.sections.map((section) => (
-          <article className="public-section" key={section.title}>
-            <h2>{section.title}</h2>
-            <p>{section.body}</p>
-            {section.bullets?.length ? (
-              <ul>
-                {section.bullets.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-          </article>
-        ))}
-      </section>
-    </div>
-  );
-}
-
-function DevelopersPage({ onNavigate }: { onNavigate: LinkClickHandler }) {
-  return (
-    <div className="public-page public-document">
-      <section className="public-intro public-document-intro">
-        <p className="eyebrow">Developer portal</p>
-        <h1>Platform API developer portal</h1>
-        <p className="public-lead">
-          Build against secured, versioned, public-safe market intelligence endpoints with documented authentication,
-          response metadata, limits, and product contracts.
-        </p>
-        <div className="hero-actions">
-          <a
-            className="primary-button"
-            href={publicPageUrl("developer-docs")}
-            onClick={(event) => onNavigate(event, publicPageUrl("developer-docs"))}
-          >
-            Read docs
-          </a>
-          <a
-            className="secondary-button"
-            href="/api/v1/platform/docs/openapi.json"
-          >
-            OpenAPI JSON
-          </a>
-          <a
-            className="secondary-button"
-            href="/api/v1/platform/docs/postman.json"
-          >
-            Postman JSON
-          </a>
-        </div>
-      </section>
-      <section className="public-section-grid" aria-label="Developer documentation areas">
-        {DEVELOPER_DOCS_NAV.slice(0, 5).map((item) => (
-          <article className="public-section" key={item.page}>
-            <h2>{item.label}</h2>
-            <p>{DEVELOPER_DOCS_COPY[item.page].summary}</p>
-            <a href={item.href} onClick={(event) => onNavigate(event, item.href)}>
-              Open {item.label.toLowerCase()}
-            </a>
-          </article>
-        ))}
-      </section>
-    </div>
-  );
-}
-
-function DeveloperDocsPage({
-  page,
-  onNavigate,
-}: {
-  page: DeveloperDocPageKey;
-  onNavigate: LinkClickHandler;
-}) {
-  const copy = DEVELOPER_DOCS_COPY[page];
-  return (
-    <div className="public-page public-document">
-      <section className="public-intro public-document-intro">
-        <p className="eyebrow">Platform API docs</p>
-        <h1>{copy.title}</h1>
-        <p className="public-lead">{copy.summary}</p>
-      </section>
-      <nav className="developer-doc-nav" aria-label="Developer docs">
-        {DEVELOPER_DOCS_NAV.map((item) => (
-          <a
-            className={item.page === page ? "public-link-active" : ""}
-            href={item.href}
-            key={item.page}
-            onClick={(event) => onNavigate(event, item.href)}
-          >
-            {item.label}
-          </a>
-        ))}
-      </nav>
-      <section className="public-document-list" aria-label={copy.title}>
-        {copy.sections.map((section) => (
-          <article className="public-section" key={section.title}>
-            <h2>{section.title}</h2>
-            <p>{section.body}</p>
-            {section.bullets?.length ? (
-              <ul>
-                {section.bullets.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-          </article>
-        ))}
-      </section>
-    </div>
-  );
-}
-
-function DataLicensingPage() {
-  return (
-    <div className="public-page public-document">
-      <section className="public-intro public-document-intro">
-        <p className="eyebrow">{DATA_LICENSING_COPY.eyebrow}</p>
-        <h1>{DATA_LICENSING_COPY.title}</h1>
-        <p className="public-lead">{DATA_LICENSING_COPY.intro}</p>
-        <div className="hero-actions">
-          <a className="primary-button" href="mailto:sales@example.com">
-            {DATA_LICENSING_COPY.cta}
-          </a>
-        </div>
-      </section>
-      <section className="public-section-grid" aria-label="Licensed datasets">
-        {DATA_LICENSING_COPY.datasets.map((dataset) => (
-          <article className="public-section" key={dataset.datasetId}>
-            <p className="eyebrow">{dataset.datasetId}</p>
-            <h2>{dataset.title}</h2>
-            <p>{dataset.description}</p>
-            <dl className="authority-detail-list">
-              <div>
-                <dt>Sample fields</dt>
-                <dd>{dataset.sampleFields.join(", ")}</dd>
-              </div>
-              <div>
-                <dt>Source safety</dt>
-                <dd>{dataset.sourceSafety}</dd>
-              </div>
-            </dl>
-            <ul>
-              {dataset.restrictions.map((restriction) => (
-                <li key={restriction}>{restriction}</li>
-              ))}
-            </ul>
-          </article>
-        ))}
-      </section>
-    </div>
-  );
-}
-
-type PlatformEmbedPage = "embed-region-comparison" | "embed-market-score-card";
-type PlatformEmbedViewState = {
-  loading: boolean;
-  payload: PlatformEmbedPayload | null;
-  denialCode: string | null;
-};
-type LocationWithAncestorOrigins = Location & {
-  ancestorOrigins?: {
-    length: number;
-    [index: number]: string | undefined;
-    item?: (index: number) => string | null;
-  };
-};
-
-const PLATFORM_EMBED_SLUG_BY_PAGE: Record<PlatformEmbedPage, string> = {
-  "embed-region-comparison": "region-comparison",
-  "embed-market-score-card": "market-score-card",
-};
-
-function PlatformEmbedView({ page }: { page: PlatformEmbedPage }) {
-  const productSlug = PLATFORM_EMBED_SLUG_BY_PAGE[page];
-  const [state, setState] = useState<PlatformEmbedViewState>({
-    loading: true,
-    payload: null,
-    denialCode: null,
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-    setState({ loading: true, payload: null, denialCode: null });
-    getPlatformEmbed(productSlug, readPlatformEmbedOrigin())
-      .then((envelope) => {
-        if (cancelled) return;
-        const payload = envelope.data?.payload ?? null;
-        setState({
-          loading: false,
-          payload,
-          denialCode: payload ? null : "EMBED_POLICY_DENIED",
-        });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        const denialCode = error instanceof ApiError
-          ? error.envelope?.error?.code ?? "EMBED_POLICY_DENIED"
-          : "EMBED_POLICY_DENIED";
-        setState({ loading: false, payload: null, denialCode });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [productSlug]);
-
-  if (state.loading) {
-    return (
-      <main className="embed-shell">
-        <section className="embed-card" aria-label="Embed loading">
-          <p className="eyebrow">Partner embed</p>
-          <h1>Checking embed access</h1>
-        </section>
-      </main>
-    );
-  }
-
-  if (!state.payload) {
-    return (
-      <main className="embed-shell">
-        <section className="embed-card embed-denial" aria-label="Embed denied">
-          <p className="eyebrow">Partner embed</p>
-          <h1>Embed unavailable</h1>
-          <p className="meta-copy">{state.denialCode ?? "EMBED_POLICY_DENIED"}</p>
-          <p>This embed is not approved for the requesting domain.</p>
-        </section>
-      </main>
-    );
-  }
-
-  const payload = state.payload;
-  return (
-    <main className="embed-shell">
-      <section className="embed-card" aria-label={`${payload.title} embed`}>
-        <div>
-          <p className="eyebrow">Partner embed</p>
-          <h1>{payload.title}</h1>
-          <p className="meta-copy">{payload.attribution}</p>
-        </div>
-        <div className="embed-metric-grid">
-          {payload.metrics.map((metric, index) => (
-            <article className="public-section" key={`${payload.embed_product_id}-${index}`}>
-              <h2>{String(metric.label ?? "Metric")}</h2>
-              {Object.entries(metric)
-                .filter(([key]) => key !== "label")
-                .map(([key, value]) => (
-                  <p key={key}>
-                    <strong>{formatEmbedMetricKey(key)}:</strong>{" "}
-                    {formatEmbedMetricValue(value)}
-                  </p>
-                ))}
-            </article>
-          ))}
-        </div>
-        <dl className="authority-detail-list">
-          <div>
-            <dt>Freshness</dt>
-            <dd>{formatEmbedFreshness(payload.freshness.status)}</dd>
-          </div>
-          <div>
-            <dt>Confidence</dt>
-            <dd>{payload.confidence.label}</dd>
-          </div>
-          <div>
-            <dt>Source summary</dt>
-            <dd>
-              {payload.source_summary.source_categories.join(", ")}
-              {payload.source_summary.notes.length
-                ? `; ${payload.source_summary.notes.join(" ")}`
-                : ""}
-            </dd>
-          </div>
-        </dl>
-        <div className="warning-list" aria-label="Embed warnings">
-          {payload.warnings.map((warning) => (
-            <div className="warning-item" key={warning}>
-              <div className="warning-header">
-                <span className="warning-code">Embed warning</span>
-              </div>
-              <p>{warning}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function readPlatformEmbedOrigin(): string | null {
-  const locationWithAncestors = window.location as LocationWithAncestorOrigins;
-  const ancestorOrigin = locationWithAncestors.ancestorOrigins?.[0]
-    ?? locationWithAncestors.ancestorOrigins?.item?.(0)
-    ?? null;
-  if (ancestorOrigin) return ancestorOrigin;
-  if (document.referrer) return document.referrer;
-  return null;
-}
-
-function formatEmbedMetricKey(value: string): string {
-  return value.replace(/_/g, " ");
-}
-
-function formatEmbedMetricValue(value: string | number | boolean | null): string {
-  if (typeof value === "number") return value.toFixed(2);
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  return value ?? "Unknown";
-}
-
-function formatEmbedFreshness(status: string): string {
-  if (status === "partial") return "Partial freshness metadata available";
-  if (status === "fresh") return "Fresh metadata available";
-  if (status === "stale") return "Freshness metadata is stale";
-  return "Freshness metadata unavailable";
-}
-
-function publicConfidenceClass(
-  confidence: PublicReport["confidence"] | PublicBenchmark["confidence"] | PublicSeoConfidence,
-): string {
-  if (confidence === "high") return "badge badge-success";
-  if (confidence === "medium") return "badge badge-real";
-  if (confidence === "low") return "badge badge-warning";
-  return "badge badge-unknown";
-}
-
-function PublicReportBadgeRow({
-  confidence,
-  freshnessDate,
-  freshnessStatus,
-  warningCount,
-}: {
-  confidence: PublicReport["confidence"];
-  freshnessDate: string;
-  freshnessStatus?: FreshnessStatus;
-  warningCount: number;
-}) {
-  return (
-    <div className="metadata-row">
-      <span className={publicConfidenceClass(confidence)}>
-        Confidence: {segmentLabel(confidence)}
-      </span>
-      <span className="badge badge-unknown">
-        Freshness: {freshnessStatus ? segmentLabel(freshnessStatus) : "Unknown"}
-      </span>
-      <span className="badge badge-unknown">Freshness date: {formatDateOnly(freshnessDate)}</span>
-      {warningCount ? <span className="badge badge-warning">{warningCount} warning(s)</span> : null}
-    </div>
-  );
-}
-
-function PublicBenchmarkBadgeRow({
-  confidence,
-  freshnessDate,
-  freshnessStatus,
-  warningCount,
-}: {
-  confidence: PublicBenchmark["confidence"];
-  freshnessDate: string;
-  freshnessStatus?: FreshnessStatus;
-  warningCount: number;
-}) {
-  return (
-    <div className="metadata-row">
-      <span className={publicConfidenceClass(confidence)}>
-        Confidence: {segmentLabel(confidence)}
-      </span>
-      <span className="badge badge-unknown">
-        Freshness: {freshnessStatus ? segmentLabel(freshnessStatus) : "Unknown"}
-      </span>
-      <span className="badge badge-unknown">Freshness date: {formatDateOnly(freshnessDate)}</span>
-      {warningCount ? <span className="badge badge-warning">{warningCount} warning(s)</span> : null}
-    </div>
-  );
-}
-
-type CitationView = {
-  sourceName: string;
-  title: string;
-  period: string;
-  productAttribution: string;
-  publicPath: string;
-  accessedOrFreshnessDate: string;
-};
-
-type ShareSummaryView = {
-  title: string;
-  categoryClaim: string;
-  confidenceLabel: string;
-  freshnessLabel: string;
-  takeaway: string;
-  publicPath: string;
-  warning: string;
-};
-
-type SourceAuthorityView = {
-  labels: string[];
-  summary: string;
-};
-
-type InstitutionalCtaView = {
-  label: string;
-  body: string;
-  href: string;
-};
-
-function publicCitationView(citation: PublicCitation): CitationView {
-  return {
-    sourceName: citation.source_name,
-    title: citation.title,
-    period: citation.period,
-    productAttribution: citation.product_attribution,
-    publicPath: citation.public_path,
-    accessedOrFreshnessDate: citation.accessed_or_freshness_date,
-  };
-}
-
-function publicShareSummaryView(summary: PublicShareSummary): ShareSummaryView {
-  return {
-    title: summary.title,
-    categoryClaim: summary.category_claim,
-    confidenceLabel: summary.confidence_label,
-    freshnessLabel: summary.freshness_label,
-    takeaway: summary.takeaway,
-    publicPath: summary.public_path,
-    warning: summary.warning,
-  };
-}
-
-function publicAuthorityView(authority: PublicSourceAuthority): SourceAuthorityView {
-  return {
-    labels: authority.labels,
-    summary: authority.summary,
-  };
-}
-
-function publicInstitutionalCtaView(cta: PublicInstitutionalCta): InstitutionalCtaView {
-  return {
-    label: cta.label,
-    body: cta.body,
-    href: cta.href,
-  };
-}
-
-function CitationBlock({ citation }: { citation: CitationView }) {
-  return (
-    <article className="public-section authority-section">
-      <h2>Suggested citation</h2>
-      <p className="citation-copy">
-        {citation.sourceName}. {citation.title}. {citation.period}.{" "}
-        {citation.productAttribution}. {citation.publicPath}. Freshness date{" "}
-        {formatDateOnly(citation.accessedOrFreshnessDate)}.
-      </p>
-      <dl className="authority-detail-list">
-        <div>
-          <dt>Source</dt>
-          <dd>{citation.sourceName}</dd>
-        </div>
-        <div>
-          <dt>Public path</dt>
-          <dd>{citation.publicPath}</dd>
-        </div>
-        <div>
-          <dt>Period</dt>
-          <dd>{citation.period}</dd>
-        </div>
-      </dl>
-    </article>
-  );
-}
-
-function ShareSummaryCard({ summary }: { summary: ShareSummaryView }) {
-  return (
-    <article className="public-section share-summary-card">
-      <h2>Share summary</h2>
-      <p className="eyebrow">{summary.categoryClaim}</p>
-      <strong className="share-summary-title">{summary.title}</strong>
-      <div className="metadata-row">
-        <span className="badge badge-warning">{summary.confidenceLabel}</span>
-        <span className="badge badge-unknown">{summary.freshnessLabel}</span>
-      </div>
-      <p>{summary.takeaway}</p>
-      <small>{summary.publicPath}</small>
-      <div className="warning-list" aria-label="Share summary warning">
-        <div className="warning-item">
-          <div className="warning-header">
-            <span className="warning-code">Share warning</span>
-          </div>
-          <p>{summary.warning}</p>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function SourceAuthorityLabel({ authority }: { authority: SourceAuthorityView }) {
-  return (
-    <article className="public-section authority-section">
-      <h2>Source authority</h2>
-      <div className="metadata-row">
-        {authority.labels.map((label) => (
-          <span className="badge badge-unknown" key={label}>{label}</span>
-        ))}
-      </div>
-      <p>{authority.summary}</p>
-    </article>
-  );
-}
-
-function InstitutionalCtaBlock({
-  cta,
-  onNavigate,
-}: {
-  cta: InstitutionalCtaView;
-  onNavigate: LinkClickHandler;
-}) {
-  return (
-    <article className="public-section institutional-cta-block">
-      <h2>Institutional use</h2>
-      <p>{cta.body}</p>
-      <a className="secondary-button" href={cta.href} onClick={(event) => onNavigate(event, cta.href)}>
-        {cta.label}
-      </a>
-    </article>
-  );
-}
-
-function PublicBenchmarksPage({
-  benchmarksState,
-  onNavigate,
-}: {
-  benchmarksState: LoadState<PublicBenchmarkListPayload>;
-  onNavigate: LinkClickHandler;
-}) {
-  const benchmarks = benchmarksState.envelope?.data?.benchmarks ?? [];
-  return (
-    <div className="public-page public-document">
-      <section className="public-intro public-document-intro">
-        <p className="eyebrow">Public benchmarks</p>
-        <h1>Career market indices</h1>
-        <p className="public-lead">
-          Category-defining benchmark templates for opportunity geography and career market
-          intelligence. Current Layer 19C indices are demo-safe, low-confidence display artifacts
-          with explicit methodology, limitations, freshness, warnings, and public provenance.
-        </p>
-      </section>
-      <DemoDisclosure compact />
-      {benchmarksState.loading ? <LoadingBlock label="Loading public benchmarks" /> : null}
-      {benchmarksState.error ? <ErrorState message={benchmarksState.error} /> : null}
-      {benchmarks.length ? (
-        <section className="public-section-grid" aria-label="Public benchmark list">
-          {benchmarks.map((benchmark) => (
-            <article className="public-section public-report-card" key={benchmark.slug}>
-              <div className="metadata-row">
-                <span className="badge badge-real">{segmentLabel(benchmark.category)}</span>
-                <span className="badge badge-unknown">{benchmark.period}</span>
-              </div>
-              <h2>{benchmark.name}</h2>
-              <p>{benchmark.summary}</p>
-              <PublicBenchmarkBadgeRow
-                confidence={benchmark.confidence}
-                freshnessDate={benchmark.freshness_date}
-                warningCount={benchmark.warnings.length}
-              />
-              <a
-                className="secondary-button"
-                href={publicBenchmarkUrl(benchmark.slug)}
-                onClick={(event) => onNavigate(event, publicBenchmarkUrl(benchmark.slug))}
-              >
-                View index
-              </a>
-            </article>
-          ))}
-        </section>
-      ) : !benchmarksState.loading && !benchmarksState.error ? (
-        <EmptyState
-          title="No public benchmarks"
-          body="The public benchmark registry did not return benchmark templates."
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function PublicBenchmarkResultCard({ result }: { result: PublicBenchmarkMarketResult }) {
-  return (
-    <article className="public-section public-report-result">
-      <div className="metadata-row">
-        <span className="badge badge-real">
-          {result.result_type === "ranked" ? `Rank ${result.rank}` : "Featured"}
-        </span>
-        <span className={publicConfidenceClass(result.confidence)}>
-          Confidence: {segmentLabel(result.confidence)}
-        </span>
-        <span className="badge badge-unknown">Freshness date: {formatDateOnly(result.freshness_date)}</span>
-      </div>
-      <h3>{result.market_label}</h3>
-      <div className="score-display-row">
-        <strong>{result.score_display.label}</strong>
-        <span>{result.score_display.display_value}</span>
-        <small>{result.score_display.caveat}</small>
-      </div>
-      <p>{result.explanation}</p>
-      <h4>Subscores</h4>
-      <table className="benchmark-table">
-        <thead>
-          <tr>
-            <th>Subscore</th>
-            <th>Display</th>
-            <th>Explanation</th>
-          </tr>
-        </thead>
-        <tbody>
-          {result.subscores.map((subscore) => (
-            <tr key={subscore.key}>
-              <td>{subscore.label}</td>
-              <td>{subscore.display_value}</td>
-              <td>{subscore.explanation}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {result.warnings.length ? (
-        <div className="warning-list" aria-label={`${result.market_label} benchmark warnings`}>
-          {result.warnings.map((warning) => (
-            <div className="warning-item" key={warning}>
-              <div className="warning-header">
-                <span className="warning-code">Benchmark warning</span>
-              </div>
-              <p>{warning}</p>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </article>
-  );
-}
-
-function PublicBenchmarkDetailPage({
-  detailState,
-  slug,
-  onNavigate,
-}: {
-  detailState: LoadState<PublicBenchmark>;
-  slug: string;
-  onNavigate: LinkClickHandler;
-}) {
-  const benchmark = detailState.envelope?.data ?? null;
-  if (detailState.loading) {
-    return <LoadingBlock label="Loading public benchmark" />;
-  }
-  if (detailState.error) {
-    return (
-      <div className="public-page public-document">
-        <section className="public-intro public-document-intro">
-          <p className="eyebrow">Public benchmark</p>
-          <h1>Benchmark not found</h1>
-          <p className="public-lead">
-            No public benchmark is registered for {slug}. Use the benchmark index to choose a
-            published template.
-          </p>
-          <a
-            className="secondary-button"
-            href={publicPageUrl("benchmarks")}
-            onClick={(event) => onNavigate(event, publicPageUrl("benchmarks"))}
-          >
-            Back to benchmarks
-          </a>
-        </section>
-        <ErrorState message={detailState.error} />
-      </div>
-    );
-  }
-  if (!benchmark) {
-    return <EmptyState title="No benchmark loaded" body="The public benchmark detail has not loaded yet." />;
-  }
-
-  return (
-    <div className="public-page public-document">
-      <section className="public-intro public-document-intro">
-        <p className="eyebrow">Public benchmark · {segmentLabel(benchmark.category)}</p>
-        <h1>{benchmark.name}</h1>
-        <p className="public-lead">{benchmark.summary}</p>
-        <PublicBenchmarkBadgeRow
-          confidence={benchmark.confidence}
-          freshnessDate={benchmark.freshness_date}
-          freshnessStatus={benchmark.freshness_status}
-          warningCount={benchmark.warnings.length}
-        />
-      </section>
-      <DemoDisclosure compact />
-      <section className="public-document-list" aria-label={`${benchmark.name} detail`}>
-        <SourceAuthorityLabel authority={publicAuthorityView(benchmark.source_authority)} />
-        <ShareSummaryCard summary={publicShareSummaryView(benchmark.share_summary)} />
-        <CitationBlock citation={publicCitationView(benchmark.suggested_citation)} />
-        <InstitutionalCtaBlock
-          cta={publicInstitutionalCtaView(benchmark.institutional_cta)}
-          onNavigate={onNavigate}
-        />
-        <article className="public-section">
-          <h2>Methodology</h2>
-          <p>{benchmark.methodology_summary}</p>
-        </article>
-        <article className="public-section">
-          <h2>Score display</h2>
-          <table className="benchmark-table">
-            <thead>
-              <tr>
-                <th>Market</th>
-                <th>Result</th>
-                <th>Score display</th>
-                <th>Caveat</th>
-              </tr>
-            </thead>
-            <tbody>
-              {benchmark.market_results.map((result) => (
-                <tr key={result.market_id}>
-                  <td>{result.market_label}</td>
-                  <td>{result.result_type === "ranked" ? `Rank ${result.rank}` : "Featured"}</td>
-                  <td>{result.score_display.display_value}</td>
-                  <td>{result.score_display.caveat}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </article>
-        <article className="public-section">
-          <h2>Featured market table</h2>
-          <div className="public-report-result-list">
-            {benchmark.market_results.map((result) => (
-              <PublicBenchmarkResultCard key={result.market_id} result={result} />
-            ))}
-          </div>
-        </article>
-        <article className="public-section">
-          <h2>Limitations</h2>
-          <ul>
-            {benchmark.limitations.map((limitation) => (
-              <li key={limitation}>{limitation}</li>
-            ))}
-          </ul>
-        </article>
-        <article className="public-section">
-          <h2>Warnings</h2>
-          <div className="warning-list" aria-label="Benchmark warnings">
-            {benchmark.warnings.map((warning) => (
-              <div className="warning-item" key={warning}>
-                <div className="warning-header">
-                  <span className="warning-code">Benchmark warning</span>
-                </div>
-                <p>{warning}</p>
-              </div>
-            ))}
-          </div>
-        </article>
-        <article className="public-section">
-          <h2>Source and provenance summary</h2>
-          <p>
-            {segmentLabel(benchmark.source_provenance_summary.data_basis)} ·{" "}
-            {benchmark.source_provenance_summary.source_count} public source category reference(s)
-          </p>
-          <ul>
-            {[
-              ...benchmark.source_provenance_summary.source_categories,
-              ...benchmark.source_provenance_summary.provenance_notes,
-            ].map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </article>
-        {benchmark.related_links.length ? (
-          <article className="public-section">
-            <h2>Related links</h2>
-            <div className="public-link-list">
-              {benchmark.related_links.map((link) => (
-                <a href={link.href} key={`${link.link_type}:${link.href}`} onClick={(event) => onNavigate(event, link.href)}>
-                  {link.label}
-                </a>
-              ))}
-            </div>
-          </article>
-        ) : null}
-      </section>
-    </div>
-  );
-}
-
-function usePublicSeoMetadata(page: PublicSeoPage | null) {
-  useEffect(() => {
-    if (!page || typeof document === "undefined") return;
-    const previousTitle = document.title;
-    const previousDescription = document
-      .querySelector('meta[name="description"]')
-      ?.getAttribute("content") ?? null;
-    const previousCanonical = document
-      .querySelector('link[rel="canonical"]')
-      ?.getAttribute("href") ?? null;
-    const description = ensureHeadElement("meta", "name", "description");
-    description.setAttribute("content", page.seo.description);
-    const canonical = ensureHeadElement("link", "rel", "canonical");
-    canonical.setAttribute("href", page.seo.canonicalPath);
-    document.title = page.seo.title;
-    return () => {
-      document.title = previousTitle;
-      if (previousDescription === null) {
-        description.remove();
-      } else {
-        description.setAttribute("content", previousDescription);
-      }
-      if (previousCanonical === null) {
-        canonical.remove();
-      } else {
-        canonical.setAttribute("href", previousCanonical);
-      }
-    };
-  }, [page]);
-}
-
-function ensureHeadElement<K extends keyof HTMLElementTagNameMap>(
-  tagName: K,
-  attr: string,
-  value: string,
-): HTMLElementTagNameMap[K] {
-  const existing = document.querySelector(`${tagName}[${attr}="${value}"]`);
-  if (existing) return existing as HTMLElementTagNameMap[K];
-  const element = document.createElement(tagName);
-  element.setAttribute(attr, value);
-  document.head.appendChild(element);
-  return element;
-}
-
-function PublicSeoBadgeRow({ page }: { page: PublicSeoPage }) {
-  return (
-    <div className="metadata-row">
-      <span className={publicConfidenceClass(page.confidence)}>
-        Confidence: {segmentLabel(page.confidence)}
-      </span>
-      <span className="badge badge-unknown">Content period: {page.contentPeriod}</span>
-      <span className="badge badge-unknown">Freshness date: {formatDateOnly(page.freshnessDate)}</span>
-      <span className="badge badge-warning">{page.warnings.length} warning(s)</span>
-    </div>
-  );
-}
-
-function PublicSeoLinkList({
-  links,
-  onNavigate,
-}: {
-  links: PublicSeoLink[];
-  onNavigate: LinkClickHandler;
-}) {
-  if (!links.length) return null;
-  return (
-    <div className="public-link-list">
-      {links.map((link) => (
-        <a href={link.href} key={`${link.linkType}:${link.href}`} onClick={(event) => onNavigate(event, link.href)}>
-          {link.label}
-        </a>
-      ))}
-    </div>
-  );
-}
-
-function PublicSeoMarketList({ page }: { page: PublicSeoPage }) {
-  if (!page.featuredMarkets.length) return null;
-  return (
-    <article className="public-section">
-      <h2>{page.pageFamily === "best_cities" ? "Featured cities" : "Market examples"}</h2>
-      <div className="seo-market-grid">
-        {page.featuredMarkets.map((market) => (
-          <section className="seo-market-card" key={`${page.slug}:${market.marketLabel}`}>
-            <div className="metadata-row">
-              <span className="badge badge-real">
-                {market.resultType === "ranked" ? `Rank ${market.rank}` : "Featured"}
-              </span>
-              {market.marketId ? <span className="badge badge-unknown">{market.marketId}</span> : null}
-            </div>
-            <h3>{market.marketLabel}</h3>
-            <strong>{market.headline}</strong>
-            <p>{market.explanation}</p>
-            <div className="metadata-row">
-              {market.signals.map((signal) => (
-                <span className="badge badge-unknown" key={signal}>{signal}</span>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-    </article>
-  );
-}
-
-function PublicSeoComparisonBlocks({ page }: { page: PublicSeoPage }) {
-  if (page.pageFamily !== "city_comparison") return null;
-  return (
-    <>
-      <article className="public-section">
-        <h2>Market-by-market sections</h2>
-        <div className="seo-market-grid">
-          {(page.comparisonMarkets ?? []).map((market) => (
-            <section className="seo-market-card" key={market.marketLabel}>
-              <h3>{market.marketLabel}</h3>
-              <p>{market.summary}</p>
-              <strong>Best for</strong>
-              <ul>
-                {market.bestFor.map((item) => <li key={item}>{item}</li>)}
-              </ul>
-              <strong>Tradeoffs</strong>
-              <ul>
-                {market.tradeoffs.map((item) => <li key={item}>{item}</li>)}
-              </ul>
-            </section>
-          ))}
-        </div>
-      </article>
-      <article className="public-section">
-        <h2>Best-for guidance</h2>
-        <ul>
-          {(page.bestFor ?? []).map((item) => <li key={item}>{item}</li>)}
-        </ul>
-      </article>
-      <article className="public-section">
-        <h2>Tradeoffs</h2>
-        <ul>
-          {(page.tradeoffs ?? []).map((item) => <li key={item}>{item}</li>)}
-        </ul>
-      </article>
-    </>
-  );
-}
-
-function PublicSeoListingPage({ onNavigate }: { onNavigate: LinkClickHandler }) {
-  return (
-    <div className="public-page public-document">
-      <section className="public-intro public-document-intro">
-        <p className="eyebrow">Career market guides</p>
-        <h1>Opportunity geography guides</h1>
-        <p className="public-lead">
-          Public SEO/content pages for career market intelligence. These guides use Layer 19
-          language, public report links, and public benchmark links without creating production
-          rankings or hidden scoring authority.
-        </p>
-      </section>
-      <DemoDisclosure compact />
-      <section className="public-section-grid" aria-label="Career market guide list">
-        {PUBLIC_SEO_PAGES.map((page) => (
-          <article className="public-section public-report-card" key={page.slug}>
-            <div className="metadata-row">
-              <span className="badge badge-real">{segmentLabel(page.pageFamily)}</span>
-              <span className="badge badge-warning">Confidence: {segmentLabel(page.confidence)}</span>
-            </div>
-            <h2>{page.title}</h2>
-            <p>{page.summary}</p>
-            <a
-              className="secondary-button"
-              href={publicSeoPageUrl(page)}
-              onClick={(event) => onNavigate(event, publicSeoPageUrl(page))}
-            >
-              Read guide
-            </a>
-          </article>
-        ))}
-      </section>
-    </div>
-  );
-}
-
-function PublicSeoDetailPage({
-  page,
-  slug,
-  onNavigate,
-}: {
-  page: PublicSeoPage | null;
-  slug: string;
-  onNavigate: LinkClickHandler;
-}) {
-  usePublicSeoMetadata(page);
-  if (!page) {
-    return (
-      <div className="public-page public-document">
-        <section className="public-intro public-document-intro">
-          <p className="eyebrow">Career market guide</p>
-          <h1>Guide not found</h1>
-          <p className="public-lead">
-            No public career market guide is registered for {slug}. Use the guide index to choose
-            a published public page.
-          </p>
-          <a
-            className="secondary-button"
-            href={publicPageUrl("guides")}
-            onClick={(event) => onNavigate(event, publicPageUrl("guides"))}
-          >
-            Back to guides
-          </a>
-        </section>
-      </div>
-    );
-  }
-
-  return (
-    <div className="public-page public-document">
-      <section className="public-intro public-document-intro">
-        <p className="eyebrow">Career market guide · {segmentLabel(page.pageFamily)}</p>
-        <h1>{page.title}</h1>
-        <p className="public-lead">{page.summary}</p>
-        <PublicSeoBadgeRow page={page} />
-      </section>
-      <DemoDisclosure compact />
-      <section className="public-document-list" aria-label={`${page.title} detail`}>
-        <SourceAuthorityLabel authority={page.sourceAuthority} />
-        <ShareSummaryCard summary={page.shareSummary} />
-        <CitationBlock citation={page.suggestedCitation} />
-        <InstitutionalCtaBlock cta={page.institutionalCta} onNavigate={onNavigate} />
-        <article className="public-section">
-          <h2>{page.pageFamily === "city_comparison" ? "Comparison summary" : page.primarySections[0]?.title ?? "Overview"}</h2>
-          <p>{page.primarySections[0]?.body ?? page.summary}</p>
-        </article>
-        {page.primarySections.slice(1).map((section) => (
-          <article className="public-section" key={section.title}>
-            <h2>{section.title}</h2>
-            <p>{section.body}</p>
-            {section.bullets?.length ? (
-              <ul>
-                {section.bullets.map((item) => <li key={item}>{item}</li>)}
-              </ul>
-            ) : null}
-          </article>
-        ))}
-        <PublicSeoMarketList page={page} />
-        <PublicSeoComparisonBlocks page={page} />
-        <article className="public-section">
-          <h2>Methodology</h2>
-          <p>{page.methodologySummary}</p>
-          <PublicSeoLinkList links={[page.methodologyLink]} onNavigate={onNavigate} />
-        </article>
-        <article className="public-section">
-          <h2>Limitations</h2>
-          <ul>
-            {page.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}
-          </ul>
-        </article>
-        <article className="public-section">
-          <h2>Warnings</h2>
-          <div className="warning-list" aria-label="SEO page warnings">
-            {page.warnings.map((warning) => (
-              <div className="warning-item" key={warning}>
-                <div className="warning-header">
-                  <span className="warning-code">Guide warning</span>
-                </div>
-                <p>{warning}</p>
-              </div>
-            ))}
-          </div>
-        </article>
-        <article className="public-section">
-          <h2>Category language</h2>
-          <div className="metadata-row">
-            {page.canonicalCategoryLanguage.map((term) => (
-              <span className="badge badge-unknown" key={term}>{term}</span>
-            ))}
-          </div>
-        </article>
-        <article className="public-section">
-          <h2>Related reports</h2>
-          <PublicSeoLinkList links={page.relatedReports} onNavigate={onNavigate} />
-        </article>
-        <article className="public-section">
-          <h2>Related benchmarks</h2>
-          <PublicSeoLinkList links={page.relatedBenchmarks} onNavigate={onNavigate} />
-        </article>
-        <article className="public-section">
-          <h2>Related methodology and glossary</h2>
-          <PublicSeoLinkList
-            links={[...page.relatedLinks, ...relatedSeoPages(page.slug)]}
-            onNavigate={onNavigate}
-          />
-        </article>
-      </section>
-    </div>
-  );
-}
-
-function PublicReportsPage({
-  reportsState,
-  onNavigate,
-}: {
-  reportsState: LoadState<PublicReportListPayload>;
-  onNavigate: LinkClickHandler;
-}) {
-  const reports = reportsState.envelope?.data?.reports ?? [];
-  return (
-    <div className="public-page public-document">
-      <section className="public-intro public-document-intro">
-        <p className="eyebrow">Public reports</p>
-        <h1>Market intelligence reports</h1>
-        <p className="public-lead">
-          Recurring public report templates for opportunity geography and career market intelligence.
-          Current Layer 19B reports are demo-safe artifacts with explicit methodology, limitations,
-          freshness, confidence, warnings, and public provenance summaries.
-        </p>
-      </section>
-      <DemoDisclosure compact />
-      {reportsState.loading ? <LoadingBlock label="Loading public reports" /> : null}
-      {reportsState.error ? <ErrorState message={reportsState.error} /> : null}
-      {reports.length ? (
-        <section className="public-section-grid" aria-label="Public report list">
-          {reports.map((report) => (
-            <article className="public-section public-report-card" key={report.slug}>
-              <div className="metadata-row">
-                <span className="badge badge-real">{segmentLabel(report.category)}</span>
-                <span className="badge badge-unknown">{report.report_period}</span>
-              </div>
-              <h2>{report.title}</h2>
-              <p>{report.summary}</p>
-              <PublicReportBadgeRow
-                confidence={report.confidence}
-                freshnessDate={report.freshness_date}
-                warningCount={report.warnings.length}
-              />
-              <a
-                className="secondary-button"
-                href={publicReportUrl(report.slug)}
-                onClick={(event) => onNavigate(event, publicReportUrl(report.slug))}
-              >
-                Read report
-              </a>
-            </article>
-          ))}
-        </section>
-      ) : !reportsState.loading && !reportsState.error ? (
-        <EmptyState
-          title="No public reports"
-          body="The public report registry did not return report templates."
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function PublicReportResultCard({ result }: { result: PublicReportMarketResult }) {
-  return (
-    <article className="public-section public-report-result">
-      <div className="metadata-row">
-        <span className="badge badge-real">{result.result_type === "ranked" ? `Rank ${result.rank}` : "Featured"}</span>
-        <span className={publicConfidenceClass(result.confidence)}>
-          Confidence: {segmentLabel(result.confidence)}
-        </span>
-        <span className="badge badge-unknown">Freshness date: {formatDateOnly(result.freshness_date)}</span>
-      </div>
-      <h2>{result.market_label}</h2>
-      <strong>{result.headline}</strong>
-      <p>{result.rationale}</p>
-      <div className="metadata-row">
-        {result.evidence_signals.map((signal) => (
-          <span className="badge badge-unknown" key={signal}>{signal}</span>
-        ))}
-      </div>
-      {result.warnings.length ? (
-        <div className="warning-list" aria-label={`${result.market_label} warnings`}>
-          {result.warnings.map((warning) => (
-            <div className="warning-item" key={warning}>
-              <div className="warning-header">
-                <span className="warning-code">Warning</span>
-              </div>
-              <p>{warning}</p>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </article>
-  );
-}
-
-function PublicReportDetailPage({
-  detailState,
-  slug,
-  onNavigate,
-}: {
-  detailState: LoadState<PublicReport>;
-  slug: string;
-  onNavigate: LinkClickHandler;
-}) {
-  const report = detailState.envelope?.data ?? null;
-  if (detailState.loading) {
-    return <LoadingBlock label="Loading public report" />;
-  }
-  if (detailState.error) {
-    return (
-      <div className="public-page public-document">
-        <section className="public-intro public-document-intro">
-          <p className="eyebrow">Public report</p>
-          <h1>Report not found</h1>
-          <p className="public-lead">
-            No public report is registered for {slug}. Use the report index to choose a published template.
-          </p>
-          <a className="secondary-button" href={publicPageUrl("reports")} onClick={(event) => onNavigate(event, publicPageUrl("reports"))}>
-            Back to reports
-          </a>
-        </section>
-        <ErrorState message={detailState.error} />
-      </div>
-    );
-  }
-  if (!report) {
-    return <EmptyState title="No report loaded" body="The public report detail has not loaded yet." />;
-  }
-
-  return (
-    <div className="public-page public-document">
-      <section className="public-intro public-document-intro">
-        <p className="eyebrow">Public report · {segmentLabel(report.category)}</p>
-        <h1>{report.title}</h1>
-        <p className="public-lead">{report.summary}</p>
-        <PublicReportBadgeRow
-          confidence={report.confidence}
-          freshnessDate={report.freshness_date}
-          freshnessStatus={report.freshness_status}
-          warningCount={report.warnings.length}
-        />
-      </section>
-      <DemoDisclosure compact />
-      <section className="public-document-list" aria-label={`${report.title} detail`}>
-        <SourceAuthorityLabel authority={publicAuthorityView(report.source_authority)} />
-        <ShareSummaryCard summary={publicShareSummaryView(report.share_summary)} />
-        <CitationBlock citation={publicCitationView(report.suggested_citation)} />
-        <InstitutionalCtaBlock
-          cta={publicInstitutionalCtaView(report.institutional_cta)}
-          onNavigate={onNavigate}
-        />
-        <article className="public-section">
-          <h2>Methodology</h2>
-          <p>{report.methodology_summary}</p>
-        </article>
-        <article className="public-section">
-          <h2>Markets covered</h2>
-          <ul>
-            {report.markets_covered.map((market) => (
-              <li key={market.market_id}>
-                <strong>{market.market_label}</strong>: {market.coverage_note}
-              </li>
-            ))}
-          </ul>
-        </article>
-        <article className="public-section">
-          <h2>Featured market results</h2>
-          <div className="public-report-result-list">
-            {report.market_results.map((result) => (
-              <PublicReportResultCard key={result.market_id} result={result} />
-            ))}
-          </div>
-        </article>
-        <article className="public-section">
-          <h2>Limitations</h2>
-          <ul>
-            {report.limitations.map((limitation) => (
-              <li key={limitation}>{limitation}</li>
-            ))}
-          </ul>
-        </article>
-        <article className="public-section">
-          <h2>Warnings</h2>
-          {report.warnings.length ? (
-            <div className="warning-list" aria-label="Report warnings">
-              {report.warnings.map((warning) => (
-                <div className="warning-item" key={warning}>
-                  <div className="warning-header">
-                    <span className="warning-code">Report warning</span>
-                  </div>
-                  <p>{warning}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p>No report warnings were returned.</p>
-          )}
-        </article>
-        <article className="public-section">
-          <h2>Source and provenance summary</h2>
-          <p>
-            {segmentLabel(report.source_provenance_summary.data_basis)} ·{" "}
-            {report.source_provenance_summary.source_count} public source category reference(s)
-          </p>
-          <ul>
-            {[
-              ...report.source_provenance_summary.source_categories,
-              ...report.source_provenance_summary.provenance_notes,
-            ].map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </article>
-        {report.related_links.length ? (
-          <article className="public-section">
-            <h2>Related links</h2>
-            <div className="public-link-list">
-              {report.related_links.map((link) => (
-                <a href={link.href} key={`${link.link_type}:${link.href}`} onClick={(event) => onNavigate(event, link.href)}>
-                  {link.label}
-                </a>
-              ))}
-            </div>
-          </article>
-        ) : null}
-      </section>
-    </div>
-  );
-}
-
-function PredictiveForecastCard({ forecast }: { forecast: PredictiveReportForecast }) {
-  return (
-    <article className="public-section public-report-result forecast-card">
-      <div className="metadata-row">
-        <span className="badge badge-real">Forecast</span>
-        <span className={publicConfidenceClass(forecast.confidence.level)}>
-          Confidence: {segmentLabel(forecast.confidence.level)} ({Math.round(forecast.confidence.score * 100)}%)
-        </span>
-        <span className="badge badge-unknown">
-          Time horizon: {segmentLabel(forecast.time_horizon)}
-        </span>
-      </div>
-      <h2>{forecast.forecast_title}</h2>
-      <strong>{forecast.forecast_label}</strong>
-      <p>{forecast.safe_display_summary}</p>
-      <p className="meta-copy">{forecast.why_this_forecast_exists}</p>
-      <div className="metadata-row">
-        <span className="badge badge-unknown">
-          Historical depth: {forecast.historical_depth.observation_count} observation(s)
-        </span>
-        <span className="badge badge-unknown">
-          Source basis: {forecast.source_basis.source_count} signal input(s)
-        </span>
-        <span className="badge badge-unknown">
-          Uncertainty: {segmentLabel(forecast.uncertainty.level)}
-        </span>
-      </div>
-      <div className="forecast-detail-grid">
-        <section className="forecast-detail-block">
-          <h3>Source basis</h3>
-          <p>
-            {segmentLabel(forecast.source_basis.data_basis)} -{" "}
-            {forecast.source_basis.source_categories.map(segmentLabel).join(", ") || "No source categories"}
-          </p>
-          <p className="meta-copy">
-            Window: {formatDateOnly(forecast.historical_depth.window_start)} to{" "}
-            {formatDateOnly(forecast.historical_depth.window_end)}
-          </p>
-        </section>
-        <section className="forecast-detail-block">
-          <h3>Uncertainty</h3>
-          <ul>
-            {forecast.uncertainty.known_uncertainties.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-        <section className="forecast-detail-block">
-          <h3>Reasoning trail</h3>
-          <ol>
-            {forecast.reasoning_trail.map((step) => (
-              <li key={step.code}>{step.summary}</li>
-            ))}
-          </ol>
-        </section>
-        <section className="forecast-detail-block">
-          <h3>Supporting signals</h3>
-          <ul>
-            {forecast.supporting_signals.map((signal) => (
-              <li key={signal.signal_key}>
-                <strong>{segmentLabel(signal.signal_kind)}</strong>:{" "}
-                {segmentLabel(signal.signal_type)} - {segmentLabel(signal.signal_status)}.{" "}
-                {signal.summary}
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
-    </article>
-  );
-}
-
-function PredictiveReportSectionBlock({ section }: { section: PredictiveReportSection }) {
-  return (
-    <article className="public-section">
-      <h2>{section.title}</h2>
-      <p>{section.summary}</p>
-      <p className="meta-copy">{section.why_this_section_exists}</p>
-      {section.forecasts.length ? (
-        <div className="public-report-result-list">
-          {section.forecasts.map((forecast) => (
-            <PredictiveForecastCard forecast={forecast} key={forecast.forecast_id} />
-          ))}
-        </div>
-      ) : (
-        <EmptyState
-          title="No forecast emitted"
-          body="The available historical evidence did not produce a forecast for this section."
-        />
-      )}
-    </article>
-  );
-}
-
-function PredictiveReportsPage({
-  reportState,
-}: {
-  reportState: LoadState<PredictiveReportPayload>;
-}) {
-  const report = reportState.envelope?.data ?? null;
-  return (
-    <div className="public-page public-document">
-      <section className="public-intro public-document-intro">
-        <p className="eyebrow">Predictive reports</p>
-        <h1>Labor-market forecasts</h1>
-        <p className="public-lead">
-          Forecast cards translate historical trend, emerging-market, and warning signals
-          into bounded directional intelligence with confidence, uncertainty, source basis,
-          historical depth, and reasoning trail.
-        </p>
-      </section>
-      <DemoDisclosure compact />
-      {reportState.loading ? <LoadingBlock label="Loading predictive forecasts" /> : null}
-      {reportState.error ? <ErrorState message={reportState.error} /> : null}
-      {report ? (
-        <section className="public-document-list" aria-label={`${report.title} detail`}>
-          <article className="public-section">
-            <div className="metadata-row">
-              <span className="badge badge-real">Forecast report</span>
-              <span className="badge badge-unknown">Generated: {formatDateTime(report.generated_at)}</span>
-              <span className="badge badge-unknown">Horizon: {segmentLabel(report.time_horizon)}</span>
-            </div>
-            <h2>{report.title}</h2>
-            <p>{report.forecast_disclaimer}</p>
-            <p>{report.methodology_summary}</p>
-          </article>
-          {report.sections.map((section) => (
-            <PredictiveReportSectionBlock section={section} key={section.section_key} />
-          ))}
-          <article className="public-section">
-            <h2>Limitations</h2>
-            <ul>
-              {report.limitations.map((limitation) => (
-                <li key={limitation}>{limitation}</li>
-              ))}
-            </ul>
-          </article>
-        </section>
-      ) : !reportState.loading && !reportState.error ? (
-        <EmptyState
-          title="No predictive report loaded"
-          body="The predictive report endpoint did not return a report payload."
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function PublicRouteView({
-  route,
-  onNavigate,
-  publicBenchmarkListState,
-  publicBenchmarkDetailState,
-  publicReportListState,
-  publicReportDetailState,
-  predictiveReportState,
-}: {
-  route: RouteState;
-  onNavigate: LinkClickHandler;
-  publicBenchmarkListState: LoadState<PublicBenchmarkListPayload>;
-  publicBenchmarkDetailState: LoadState<PublicBenchmark>;
-  publicReportListState: LoadState<PublicReportListPayload>;
-  publicReportDetailState: LoadState<PublicReport>;
-  predictiveReportState: LoadState<PredictiveReportPayload>;
-}) {
-  if (route.page === "embed-region-comparison" || route.page === "embed-market-score-card") {
-    return <PlatformEmbedView page={route.page} />;
-  }
-  const activePage = route.page as PublicPage;
-  return (
-    <PublicShell activePage={activePage} onNavigate={onNavigate}>
-      <LazyRoute>
-        {activePage === "landing" ? (
-          <LandingPage onNavigate={onNavigate} unknownPath={route.unknownPath} />
-        ) : activePage === "developers" ? (
-          <DevelopersPage onNavigate={onNavigate} />
-        ) : activePage === "data-licensing" ? (
-          <DataLicensingPage />
-        ) : activePage === "data-standards" ? (
-          <DataStandardsPage />
-        ) : isDeveloperDocPage(activePage) ? (
-          <DeveloperDocsPage page={activePage} onNavigate={onNavigate} />
-        ) : activePage === "guides" ? (
-          route.seoPageSlug ? (
-            <PublicSeoDetailPage
-              onNavigate={onNavigate}
-              page={getPublicSeoPageBySlug(route.seoPageSlug)}
-              slug={route.seoPageSlug}
-            />
-          ) : (
-            <PublicSeoListingPage onNavigate={onNavigate} />
-          )
-        ) : activePage === "benchmarks" ? (
-          route.benchmarkSlug ? (
-            <PublicBenchmarkDetailPage
-              detailState={publicBenchmarkDetailState}
-              onNavigate={onNavigate}
-              slug={route.benchmarkSlug}
-            />
-          ) : (
-            <PublicBenchmarksPage
-              benchmarksState={publicBenchmarkListState}
-              onNavigate={onNavigate}
-            />
-          )
-        ) : activePage === "reports" ? (
-          route.reportSlug ? (
-            <PublicReportDetailPage
-              detailState={publicReportDetailState}
-              onNavigate={onNavigate}
-              slug={route.reportSlug}
-            />
-          ) : (
-            <PublicReportsPage
-              onNavigate={onNavigate}
-              reportsState={publicReportListState}
-            />
-          )
-        ) : activePage === "forecasts" ? (
-          <PredictiveReportsPage reportState={predictiveReportState} />
-        ) : (
-          <LegalPage page={activePage as LegalPublicPage} />
-        )}
-      </LazyRoute>
-    </PublicShell>
-  );
+function alertEventLabel(alert: UserAlert): string {
+  return prettyKey(alert.event.event_type);
 }
 
 function RouteLoadingFallback() {
@@ -3659,18 +1865,6 @@ function RouteLoadingFallback() {
 
 function LazyRoute({ children }: { children: ReactNode }) {
   return <Suspense fallback={<RouteLoadingFallback />}>{children}</Suspense>;
-}
-
-function isDeveloperDocPage(page: PublicPage): page is DeveloperDocPageKey {
-  return page.startsWith("developer-doc");
-}
-
-function JsonBlock({ value }: { value: unknown }) {
-  return <pre className="json-block">{JSON.stringify(value, null, 2)}</pre>;
-}
-
-function alertEventLabel(alert: UserAlert): string {
-  return prettyKey(alert.event.event_type);
 }
 
 function alertFreshnessText(alert: UserAlert): string {
@@ -3757,7 +1951,7 @@ function ApiAccessAndCareerPlatformPanel({
     <div className="split-grid">
       <ShellCard
         title="Controlled API Access"
-        eyebrow="Layer 17C"
+        eyebrow="Developer access"
         action={<button className="secondary-button compact-button" type="button" onClick={onRefreshApiClients}>Refresh</button>}
       >
         <p className="meta-copy">
@@ -4125,7 +2319,7 @@ function AccountView({
 
         <ShellCard title="Privacy controls" eyebrow="App-owned data only">
           <p className="meta-copy">
-            Export and deactivation operate on Layer 7 account data. They do not delete or change
+            Export and deactivation operate on private account data. They do not delete or change
             canonical regions, companies, objective scores, source freshness, ingestion records, or
             output metadata.
           </p>
@@ -4959,11 +3153,6 @@ function ExploreMarkets({
             Compare markets
           </button>
         </div>
-        <UpgradePrompt
-          feature="full_market_coverage"
-          title="Broader market coverage is an added-value plan feature."
-          body="The demo still shows useful basic exploration; paid coverage expands the maintained market catalog without changing recommendation ranking."
-        />
       </ShellCard>
 
       <ShellCard title="Imported markets" eyebrow="Curated coverage">
@@ -5271,44 +3460,19 @@ function RegionExplorer({
         {!regionState.loading && !regionState.error && !region ? (
           <EmptyState title="No region selected" body="Choose a region from the dropdown." />
         ) : null}
-        <UpgradePrompt
-          feature="saved_watchlists"
-          title="Save this market to a watchlist with Individual."
-          body="Watchlists add persistence and follow-up workflow value while keeping the region facts and basic guidance available in the free experience."
-        />
       </ShellCard>
 
       {region ? (
-        <IntegrationActionPanel
-          canUseIntegrations={canUseIntegrations}
-          label={region.display_name}
-          objectId={region.region_id}
-          objectType="region"
-          onCreateExport={onCreateIntegrationExport}
-          onCreateReminder={onCreateIntegrationReminder}
-          reminderType="market_refresh_alert"
-        />
-      ) : null}
-
-      {region ? (
         <>
-          <ShellCard title={region.display_name} eyebrow="Factual regional output">
+          <ShellCard title={region.display_name} eyebrow="Market detail">
             <div className="detail-hero">
               <div>
-                <p className="meta-copy">
-                  {region.region_id} · {region.labor_market_group ?? "unknown labor market"}
-                </p>
                 {region.priority_market ? (
                   <div className="metadata-row">
                     <PriorityMarketBadge priorityMarket={region.priority_market} />
                   </div>
                 ) : null}
                 <ImportedMarketBadges metadata={region.import_metadata} />
-                <h3>What this output contains</h3>
-                <p className="meta-copy">
-                  Counts are returned facts from the prepared output. Missing fields are shown
-                  as unknown rather than converted to zero.
-                </p>
               </div>
               <div className="detail-side-panels">
                 <CoveragePanel coverage={region.coverage} sectorCoverage={region.sector_coverage} />
@@ -5318,43 +3482,27 @@ function RegionExplorer({
             <StatGrid values={region.summary ?? {}} />
           </ShellCard>
 
-          <ShellCard title="Derived market scores" eyebrow="Interpretation">
+          <ShellCard title="Market scores" eyebrow="Comparison signals">
             <p className="meta-copy">
-              These scores are derived from stored scoring fields. They are not a claim of
-              complete market coverage or real-time hiring certainty.
+              Scores reflect available evidence, not complete market coverage or real-time hiring certainty.
             </p>
             <ScoreBreakdownChart scores={region.scores} />
             <RegionScoreGrid scores={region.scores} />
           </ShellCard>
 
-          <ShellCard title="Structured guidance" eyebrow="Evidence packet explanation">
-            <p className="meta-copy">
-              Guidance is generated from returned structured fields only. It is not source
-              data and is not stored as market truth.
-            </p>
+          {explanationState?.envelope || explanationState?.loading || explanationState?.error ? (
+          <ShellCard title="Guidance" eyebrow="Supporting explanation">
             <ExplanationResultPanel
-              emptyCopy="Use Explain guidance to render a constrained explanation from this region output."
+              emptyCopy="No guidance is available."
               state={explanationState}
             />
           </ShellCard>
-
-          <ShellCard title="Deferred visualizations" eyebrow="No unsupported precision">
-            <UnsupportedVisualizationPanel
-              items={[
-                "Historical trend view",
-                "Map",
-                "Opportunity heatmap",
-                "Company-region network graph",
-              ]}
-              reason="The current region response does not include historical snapshots, map geometry, heatmap cells, or network layout coordinates."
-            />
-          </ShellCard>
+          ) : null}
 
           <div className="split-grid">
-            <ShellCard title="Companies present" eyebrow="Presence facts">
+            <ShellCard title="Companies present" eyebrow="Employer signals">
               <p className="meta-copy">
-                Presence means the backend has a company-region presence record. It does not
-                imply current hiring.
+                Presence does not imply current hiring.
               </p>
               <CompanyList
                 companies={region.top_companies_present ?? []}
@@ -5384,10 +3532,9 @@ function RegionExplorer({
               <EntryLevelSummaryGrid summary={entrySummary} />
             </ShellCard>
 
-            <ShellCard title="Role-family concentration" eyebrow="Derived from company search rows">
+            <ShellCard title="Role-family concentration" eyebrow="Employer signals">
               <p className="meta-copy">
-                This summarizes role families visible in company search rows for this region.
-                Absence here does not prove there are no jobs in a family.
+                Based on observed employer signals; missing roles may still exist.
               </p>
               {roleFamilyState.loading ? <LoadingBlock label="Loading role-family signals" /> : null}
               {roleFamilyState.error ? <ErrorState message={roleFamilyState.error} /> : null}
@@ -5438,6 +3585,16 @@ function RegionExplorer({
               }}
             />
           </ShellCard>
+
+          <IntegrationActionPanel
+            canUseIntegrations={canUseIntegrations}
+            label={region.display_name}
+            objectId={region.region_id}
+            objectType="region"
+            onCreateExport={onCreateIntegrationExport}
+            onCreateReminder={onCreateIntegrationReminder}
+            reminderType="market_refresh_alert"
+          />
         </>
       ) : null}
     </div>
@@ -5541,44 +3698,25 @@ function CompanyExplorer({
         </div>
         {!companyOptions.length ? (
           <EmptyState
-            title="No company list endpoint"
-            body="Company choices are derived from loaded region outputs. Deep links still load by company ID."
+            title="No employers available"
+            body="Open an employer from a market or use a direct link."
           />
         ) : null}
         {companyState.loading ? <LoadingBlock label="Loading company output" /> : null}
         {companyState.error ? <ErrorState message={companyState.error} /> : null}
         {sourceState.error ? <ErrorState message={`Source explanation unavailable: ${sourceState.error}`} /> : null}
         {geographyState.error ? <ErrorState message={`Company geography summary unavailable: ${geographyState.error}`} /> : null}
-        <UpgradePrompt
-          feature="deeper_company_geography"
-          title="Use deeper company geography with Individual."
-          body="Paid company geography adds maintained depth around company-region coverage; it does not bias market recommendations."
-        />
       </ShellCard>
 
       {company ? (
-        <IntegrationActionPanel
-          canUseIntegrations={canUseIntegrations}
-          label={company.company_name}
-          objectId={company.company_id}
-          objectType="company"
-          onCreateCareerPlatformExport={onCreateCareerPlatformExport}
-          onCreateExport={onCreateIntegrationExport}
-          onCreateReminder={onCreateIntegrationReminder}
-          reminderType="follow_up"
-        />
-      ) : null}
-
-      {company ? (
         <>
-          <ShellCard title={company.company_name} eyebrow="Company facts and source quality">
+          <ShellCard title={company.company_name} eyebrow="Employer detail">
             <div className="classification-layout">
               <StatGrid
                 values={{
-                  eligibility_status: company.eligibility_status,
-                  classification_confidence: company.classification_confidence,
-                  sector_primary: company.sector_primary,
-                  sector_secondary: company.sector_secondary,
+                  eligibility_status: company.eligibility_status ? prettyKey(company.eligibility_status) : null,
+                  sector_primary: company.sector_primary ? prettyKey(company.sector_primary) : null,
+                  sector_secondary: company.sector_secondary ? prettyKey(company.sector_secondary) : null,
                   eligibility_override: company.eligibility_override_flag,
                   prestige_score: company.prestige_score,
                 }}
@@ -5587,7 +3725,7 @@ function CompanyExplorer({
                 <span className={company.is_major_tech ? "badge badge-fresh" : "badge"}>Major tech: {formatValue(company.is_major_tech)}</span>
                 <span className={company.is_mag7 ? "badge badge-fresh" : "badge"}>Mag 7: {formatValue(company.is_mag7)}</span>
                 <span className={qualityBadgeClass(confidenceTone(company.classification_confidence))}>
-                  Classification confidence: {formatValue(company.classification_confidence)}
+                  Classification confidence: {company.classification_confidence ? prettyKey(company.classification_confidence) : "Not available"}
                 </span>
               </div>
             </div>
@@ -5595,11 +3733,9 @@ function CompanyExplorer({
             <MetadataPanel envelope={companyState.envelope} source={source} />
           </ShellCard>
 
-          <ShellCard title="Observed region signals" eyebrow="Derived from visible geography rows">
+          <ShellCard title="Strongest market signals" eyebrow="Observed geography">
             <p className="meta-copy">
-              This section counts distinct observed signals: presence, hiring activity, and
-              entry-level access. It is not a comprehensive ranking of all possible markets.
-              Coverage labels describe each region's readiness separately from source freshness.
+              Presence, hiring activity, and entry-level access across observed markets.
             </p>
             {geographyState.loading ? <LoadingBlock label="Loading geography source summaries" /> : null}
             {strongestRegions.length ? (
@@ -5639,16 +3775,14 @@ function CompanyExplorer({
             ) : null}
           </ShellCard>
 
-          <ShellCard title="Structured guidance" eyebrow="Evidence packet explanation">
-            <p className="meta-copy">
-              Guidance summarizes returned company fields and source labels only. It does
-              not infer unobserved presence or hiring.
-            </p>
+          {explanationState?.envelope || explanationState?.loading || explanationState?.error ? (
+          <ShellCard title="Guidance" eyebrow="Supporting explanation">
             <ExplanationResultPanel
-              emptyCopy="Use Explain guidance to render a constrained explanation from this company output."
+              emptyCopy="No guidance is available."
               state={explanationState}
             />
           </ShellCard>
+          ) : null}
 
           <div className="split-grid">
             <ShellCard title="Where the company is present" eyebrow="Presence only">
@@ -5665,11 +3799,9 @@ function CompanyExplorer({
                       <PriorityMarketBadge priorityMarket={region.priority_market} />
                       <CoverageInlineNote coverage={region.coverage} />
                       <ImportedMarketBadges metadata={region.import_metadata} />
-                      <span>
-                        {formatValue(region.presence_basis)} · {formatValue(region.presence_confidence)}
-                      </span>
+                      <span>Presence basis: {region.presence_basis ? prettyKey(region.presence_basis) : "Not available"}</span>
                       <span className={qualityBadgeClass(confidenceTone(region.presence_confidence))}>
-                        Confidence: {formatValue(region.presence_confidence)}
+                        Confidence: {region.presence_confidence ? prettyKey(region.presence_confidence) : "Not available"}
                       </span>
                       <SectorCoveragePanel sectorCoverage={region.sector_coverage} />
                     </div>
@@ -5780,6 +3912,17 @@ function CompanyExplorer({
               <EmptyState title="No entry-level rows" body="No early-career output was returned." />
             )}
           </ShellCard>
+
+          <IntegrationActionPanel
+            canUseIntegrations={canUseIntegrations}
+            label={company.company_name}
+            objectId={company.company_id}
+            objectType="company"
+            onCreateCareerPlatformExport={onCreateCareerPlatformExport}
+            onCreateExport={onCreateIntegrationExport}
+            onCreateReminder={onCreateIntegrationReminder}
+            reminderType="follow_up"
+          />
         </>
       ) : null}
     </div>
@@ -5914,11 +4057,6 @@ function ComparisonView({
           unavailable and are not treated as zero. Coverage warnings identify markets
           that should not be treated as confident recommendations.
         </p>
-        <UpgradePrompt
-          feature="saved_comparison_history"
-          title="Save comparison history with Individual."
-          body="Paid plans add durable comparison history so previous tradeoff analysis can be revisited; the current comparison result remains visible here."
-        />
         <CoverageWarningList warnings={pickEnvelopeWarnings(comparisonState.envelope)} />
       </ShellCard>
 
@@ -6009,23 +4147,14 @@ function ComparisonView({
             </div>
           </ShellCard>
 
-          <ShellCard title="Structured guidance" eyebrow="Evidence packet explanation">
-            <p className="meta-copy">
-              Guidance summarizes returned comparison fields only. Missing score values
-              remain missing.
-            </p>
+          {explanationState?.envelope || explanationState?.loading || explanationState?.error ? (
+          <ShellCard title="Guidance" eyebrow="Supporting explanation">
             <ExplanationResultPanel
-              emptyCopy="Use Explain guidance to render a constrained explanation from this comparison output."
+              emptyCopy="No guidance is available."
               state={explanationState}
             />
           </ShellCard>
-
-          <ShellCard title="Deferred visualizations" eyebrow="No unsupported precision">
-            <UnsupportedVisualizationPanel
-              items={["Trend view", "Map", "Heatmap"]}
-              reason="The comparison response has current score fields only; it does not include historical snapshots or geographic precision."
-            />
-          </ShellCard>
+          ) : null}
 
           <div className="split-grid">
             <ShellCard title="Category winners" eyebrow="Separate from objective winner">
@@ -6182,13 +4311,12 @@ function PersonalizedDiscovery({
   return (
     <div className="view-grid">
       <ShellCard
-        title="Personalized discovery"
-        eyebrow="Request-scoped exploration"
+        title="Explore alternatives"
+        eyebrow="Personalized discovery"
         action={<QualityBadgeRow envelope={discoveryState.envelope} />}
       >
         <p className="lead-copy">
-          Discovery scores are exploratory overlays on the returned market data. Filters are
-          shareable in the URL, but generated results are not saved or restored after reload.
+          Choose markets, roles, industries, and career stage.
         </p>
         <form className="discovery-form" onSubmit={onSubmit}>
           <fieldset>
@@ -6215,7 +4343,6 @@ function PersonalizedDiscovery({
 
           <fieldset>
             <legend>Role targets</legend>
-            <p className="fieldset-copy">Role fit only uses role-family summaries returned by the API.</p>
             {ROLE_TARGETS.map((role) => (
               <label className="checkbox-label" key={role}>
                 <input
@@ -6230,7 +4357,6 @@ function PersonalizedDiscovery({
 
           <fieldset>
             <legend>Industries</legend>
-            <p className="fieldset-copy">Industry fit comes from company sector fields, not inferred descriptions.</p>
             {INDUSTRY_OPTIONS.map((industry) => (
               <label className="checkbox-label" key={industry}>
                 <input
@@ -6363,7 +4489,7 @@ function PersonalizedDiscovery({
             ) : (
               <EmptyState
                 title="No ranked regions"
-                body="The personalization response returned no ranked region rows for this request."
+                body="No markets match these preferences."
               />
             )}
           </ShellCard>
@@ -6405,8 +4531,8 @@ function PersonalizedDiscovery({
               </div>
             ) : (
               <EmptyState
-                title="No ranked companies"
-                body="The personalization response returned no ranked company-region rows for this request."
+                title="No matching employers"
+                body="No employer-market matches support these preferences."
               />
             )}
           </ShellCard>
@@ -6414,633 +4540,10 @@ function PersonalizedDiscovery({
       ) : (
         <EmptyState
           title="No discovery run yet"
-          body="Choose URL-shareable filters and run the request-scoped personalization overlay."
+          body="Choose your preferences, then run discovery."
         />
       )}
     </div>
-  );
-}
-
-function recommendationTargetLabel(target?: { display_label?: string | null; target_id: string }) {
-  return target?.display_label ?? target?.target_id ?? "Unknown target";
-}
-
-function evidenceBasisText(values?: string[]): string {
-  return values?.length ? values.map(prettyKey).join(", ") : "No evidence basis returned";
-}
-
-function isHeuristicEvidence(values?: string[], support?: string): boolean {
-  return support === "inferred" || Boolean(values?.includes("heuristic_inference"));
-}
-
-function evidenceBadgeClass(strength?: string): string {
-  if (strength === "strong") return "badge badge-success";
-  if (strength === "moderate") return "badge badge-real";
-  if (strength === "weak" || strength === "missing" || strength === "inferred") return "badge badge-warning";
-  return "badge badge-unknown";
-}
-
-function evidenceRefLabel(ref: RecommendationEvidenceReference): string {
-  const anchor = ref.reference_id ?? ref.provenance?.source_ref_id ?? ref.provenance?.provenance_ref;
-  return [
-    prettyKey(ref.basis),
-    ref.label ?? null,
-    anchor ? `ref ${anchor}` : null,
-  ].filter(Boolean).join(" · ");
-}
-
-function RecommendationGoalModeSelector({
-  goalModes,
-  loading,
-  selectedGoalMode,
-  onSelectGoalMode,
-}: {
-  goalModes: RecommendationGoalModeProfilePayload[];
-  loading: boolean;
-  selectedGoalMode: RecommendationGoalMode;
-  onSelectGoalMode: (goalMode: RecommendationGoalMode) => void;
-}) {
-  const selected = goalModes.find((goal) => goal.goal_mode === selectedGoalMode);
-  return (
-    <div className="recommendation-control-grid">
-      <label>
-        Goal mode
-        <select
-          aria-label="Recommendation goal mode"
-          disabled={loading || !goalModes.length}
-          value={selectedGoalMode}
-          onChange={(event) => {
-            if (isRecommendationGoalMode(event.target.value)) {
-              onSelectGoalMode(event.target.value);
-            }
-          }}
-        >
-          {(goalModes.length ? goalModes : [{
-            goal_mode: DEFAULT_RECOMMENDATION_GOAL_MODE,
-            label: "Maximize entry-level access",
-            description: "Favor markets and employers with stronger early-career access signals.",
-            prioritization_summary: "",
-            weighted_components: [],
-            penalty_components: [],
-            missing_data_behavior: "",
-            warnings: [],
-          }]).map((goal) => (
-            <option key={goal.goal_mode} value={goal.goal_mode}>
-              {goal.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="recommendation-profile-card">
-        <div className="metadata-row">
-          <span className="badge">{selected?.label ?? prettyKey(selectedGoalMode)}</span>
-          {selected?.warnings?.map((warning) => (
-            <span className="badge badge-warning" key={warning}>{warning}</span>
-          ))}
-        </div>
-        <p className="meta-copy">{selected?.description ?? "Goal mode metadata is loading."}</p>
-        {selected?.prioritization_summary ? (
-          <p className="meta-copy">{selected.prioritization_summary}</p>
-        ) : null}
-        {selected?.weighted_components?.length ? (
-          <div className="component-chip-grid" aria-label="Goal mode weighted components">
-            {selected.weighted_components.slice(0, 6).map((component) => (
-              <span className={component.is_proxy ? "badge badge-warning" : "badge"} key={component.component}>
-                {prettyKey(component.component)} · {Math.round(component.weight * 100)}%
-                {component.is_proxy ? " · proxy" : ""}
-              </span>
-            ))}
-          </div>
-        ) : null}
-        {selected?.missing_data_behavior ? (
-          <p className="meta-copy">{selected.missing_data_behavior}</p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function WeightedComponentList({ components }: { components: WeightedScoreComponent[] }) {
-  if (!components.length) {
-    return <EmptyState title="No components" body="No score components were returned in this section." />;
-  }
-  return (
-    <div className="component-list">
-      {components.map((component) => (
-        <div className="component-row" key={`${component.component}-${component.weighted_value}-${component.is_proxy}`}>
-          <div>
-            <strong>{prettyKey(component.component)}</strong>
-            <small>
-              value {formatValue(component.value)} · weight {Math.round(component.weight * 100)}% · contribution{" "}
-              {formatValue(component.weighted_value)}
-            </small>
-          </div>
-          <div className="metadata-row">
-            {component.is_proxy ? <span className="badge badge-warning">Proxy</span> : null}
-            {component.inferred ? <span className="badge badge-warning">Inferred</span> : null}
-            <span className="badge badge-unknown">{evidenceBasisText(component.evidence_basis)}</span>
-          </div>
-          {component.warning ? <p className="meta-copy">{component.warning}</p> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function MissingComponentList({ components }: { components: MissingScoreComponent[] }) {
-  if (!components.length) return null;
-  return (
-    <div className="warning-list" aria-label="Missing recommendation score components">
-      {components.map((component) => (
-        <div className="warning-item" key={component.component}>
-          <div className="warning-header">
-            <span className="warning-code">Missing component</span>
-            <span className="badge badge-warning">{prettyKey(component.component)}</span>
-          </div>
-          <p>{component.unavailable_behavior}</p>
-          {component.warning ? <small>{component.warning}</small> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function PenaltyList({ penalties }: { penalties: AppliedRankingPenalty[] }) {
-  if (!penalties.length) return null;
-  return (
-    <div className="warning-list" aria-label="Recommendation ranking penalties">
-      {penalties.map((penalty) => (
-        <div className="warning-item" key={`${penalty.component}-${penalty.penalty_value}`}>
-          <div className="warning-header">
-            <span className="warning-code">Penalty</span>
-            <span className="badge badge-warning">{prettyKey(penalty.component)}</span>
-            <span className="badge badge-unknown">-{formatValue(penalty.penalty_value)}</span>
-          </div>
-          <p>{penalty.explanation}</p>
-          {penalty.is_proxy || penalty.inferred ? (
-            <small>{penalty.is_proxy ? "Proxy" : ""}{penalty.is_proxy && penalty.inferred ? " · " : ""}{penalty.inferred ? "Inferred" : ""}</small>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ClaimList({
-  title,
-  items,
-}: {
-  title: string;
-  items: Array<RecommendationReason | RecommendationWeakness>;
-}) {
-  if (!items.length) return null;
-  return (
-    <div className="claim-list">
-      <strong>{title}</strong>
-      {items.map((item) => (
-        <div className="claim-row" key={`${item.label}-${item.evidence_strength}`}>
-          <div className="metadata-row">
-            <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
-            <span className={isHeuristicEvidence(item.evidence_basis, item.support) ? "badge badge-warning" : "badge"}>
-              {item.support === "inferred" ? "Inferred" : "Direct"}
-            </span>
-            <span className="badge badge-unknown">{evidenceBasisText(item.evidence_basis)}</span>
-          </div>
-          <strong>{item.label}</strong>
-          {item.detail ? <p className="meta-copy">{item.detail}</p> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function TradeoffList({ tradeoffs }: { tradeoffs: RecommendationTradeoff[] }) {
-  if (!tradeoffs.length) {
-    return <EmptyState title="No tradeoffs returned" body="The ranking did not generate tradeoffs for this item." />;
-  }
-  return (
-    <div className="claim-list">
-      {tradeoffs.map((tradeoff) => (
-        <div className="claim-row" key={`${tradeoff.tradeoff_category}-${tradeoff.label}`}>
-          <div className="metadata-row">
-            <span className="badge badge-warning">{prettyKey(tradeoff.tradeoff_category)}</span>
-            <span className={evidenceBadgeClass(tradeoff.evidence_strength)}>{prettyKey(tradeoff.evidence_strength)}</span>
-            {isHeuristicEvidence(tradeoff.evidence_basis, tradeoff.support) ? (
-              <span className="badge badge-warning">Inferred</span>
-            ) : null}
-          </div>
-          <strong>{tradeoff.label}</strong>
-          <p className="meta-copy">Upside: {tradeoff.positive_side}</p>
-          <p className="meta-copy">Downside: {tradeoff.negative_side}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ManualVerificationList({ items }: { items: RecommendationManualVerificationItem[] }) {
-  if (!items.length) {
-    return <EmptyState title="No manual checks returned" body="No manual verification items were attached." />;
-  }
-  return (
-    <div className="claim-list">
-      {items.map((item) => (
-        <div className="claim-row" key={`${item.verification_category}-${item.label}`}>
-          <div className="metadata-row">
-            <span className="badge badge-warning">{prettyKey(item.verification_category)}</span>
-            <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
-          </div>
-          <strong>{item.label}</strong>
-          <p className="meta-copy">{item.question}</p>
-          {item.rationale ? <small>{item.rationale}</small> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function EvidenceReferencePanel({ refs }: { refs: RecommendationEvidenceReference[] }) {
-  if (!refs.length) {
-    return <EmptyState title="No evidence refs" body="No evidence references were attached to this section." />;
-  }
-  return (
-    <div className="component-list">
-      {refs.slice(0, 12).map((ref, index) => (
-        <div className="component-row" key={`${ref.basis}-${ref.reference_id ?? index}`}>
-          <div className="metadata-row">
-            <span className={evidenceBadgeClass(ref.strength)}>{prettyKey(ref.strength)}</span>
-            <span className="badge badge-unknown">{prettyKey(ref.basis)}</span>
-          </div>
-          <strong>{evidenceRefLabel(ref)}</strong>
-          {ref.confidence ? (
-            <small>
-              Confidence: {formatValue(ref.confidence.confidence_status ?? ref.confidence.confidence_level)}
-              {typeof ref.confidence.confidence_score === "number" ? ` · ${formatValue(ref.confidence.confidence_score)}` : ""}
-            </small>
-          ) : null}
-          {ref.freshness ? (
-            <small>
-              Freshness: {formatValue(ref.freshness.freshness_status)} · sources {formatValue(ref.freshness.source_count)}
-            </small>
-          ) : null}
-          {ref.provenance ? (
-            <small>
-              Provenance: {formatValue(ref.provenance.source_ref_id ?? ref.provenance.provenance_ref)}
-            </small>
-          ) : null}
-          {ref.note ? <p className="meta-copy">{ref.note}</p> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function RecommendationCard({ item }: { item: RecommendationRankingItem }) {
-  const explanation = item.explanation;
-  return (
-    <article className="recommendation-card">
-      <div className="recommendation-card-header">
-        <span className="rank-number">{item.rank}</span>
-        <div>
-          <div className="metadata-row">
-            <span className="badge">{prettyKey(item.target.target_type)}</span>
-            <span className="badge badge-unknown">{prettyKey(item.goal_mode)}</span>
-          </div>
-          <h3>{recommendationTargetLabel(item.target)}</h3>
-          <small>{item.target.target_id}</small>
-        </div>
-        <div className="recommendation-score-pair">
-          <ScoreCard compact label="Final score" value={item.final_score} />
-          <ScoreCard compact label="Normalized" value={item.normalized_score} />
-        </div>
-      </div>
-
-      <div className="metadata-row">
-        {typeof item.confidence_contribution === "number" ? (
-          <span className="badge">Confidence contribution {formatValue(item.confidence_contribution)}</span>
-        ) : null}
-        {typeof item.freshness_contribution === "number" ? (
-          <span className="badge">Freshness contribution {formatValue(item.freshness_contribution)}</span>
-        ) : null}
-        {typeof item.coverage_contribution === "number" ? (
-          <span className="badge">Coverage contribution {formatValue(item.coverage_contribution)}</span>
-        ) : null}
-      </div>
-
-      {item.warnings.length ? (
-        <div className="warning-list">
-          {item.warnings.map((warning) => (
-            <div className="warning-item" key={warning}>
-              <div className="warning-header">
-                <span className="warning-code">Recommendation warning</span>
-              </div>
-              <p>{warning}</p>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      <details className="recommendation-details" open>
-        <summary>Why this fits</summary>
-        <ClaimList title="Fit reasons" items={explanation.fit_reasons} />
-        <ClaimList title="Data strengths" items={explanation.data_strengths} />
-      </details>
-
-      <details className="recommendation-details" open>
-        <summary>Score components and penalties</summary>
-        <WeightedComponentList components={item.score_components_used.slice(0, 8)} />
-        {item.score_components_proxy.length ? (
-          <>
-            <h3>Proxy or inferred components</h3>
-            <WeightedComponentList components={item.score_components_proxy} />
-          </>
-        ) : null}
-        <MissingComponentList components={item.score_components_missing} />
-        <PenaltyList penalties={item.penalties_applied} />
-      </details>
-
-      <details className="recommendation-details" open>
-        <summary>Tradeoffs</summary>
-        <TradeoffList tradeoffs={explanation.tradeoffs} />
-      </details>
-
-      <details className="recommendation-details">
-        <summary>Weak evidence and manual verification</summary>
-        <ClaimList title="Weaknesses" items={explanation.weaknesses} />
-        <ManualVerificationList items={explanation.manual_verification} />
-      </details>
-
-      <details className="recommendation-details">
-        <summary>Evidence references</summary>
-        <div className="metadata-row">
-          {explanation.confidence_summary ? (
-            <span className="badge">Confidence: {formatValue(explanation.confidence_summary.confidence_status ?? explanation.confidence_summary.confidence_level)}</span>
-          ) : null}
-          {explanation.freshness_summary ? (
-            <span className="badge">Freshness: {formatValue(explanation.freshness_summary.freshness_status)}</span>
-          ) : null}
-          {explanation.provenance_refs.length ? (
-            <span className="badge">Provenance refs: {explanation.provenance_refs.length}</span>
-          ) : null}
-          {explanation.coverage_warnings.length ? (
-            <span className="badge badge-warning">Coverage warnings: {explanation.coverage_warnings.length}</span>
-          ) : null}
-        </div>
-        <EvidenceReferencePanel refs={explanation.evidence_refs} />
-      </details>
-    </article>
-  );
-}
-
-function RecommendationRankingSection({
-  title,
-  items,
-  emptyTitle,
-  emptyBody,
-}: {
-  title: string;
-  items: RecommendationRankingItem[];
-  emptyTitle: string;
-  emptyBody: string;
-}) {
-  return (
-    <ShellCard title={title} eyebrow="Deterministic ranking">
-      {items.length ? (
-        <div className="recommendation-card-list">
-          {items.map((item) => (
-            <RecommendationCard item={item} key={`${item.target.target_type}:${item.target.target_id}`} />
-          ))}
-        </div>
-      ) : (
-        <EmptyState title={emptyTitle} body={emptyBody} />
-      )}
-    </ShellCard>
-  );
-}
-
-function StrategyRegionTargetList({
-  title,
-  items,
-}: {
-  title: string;
-  items: StrategyRegionTarget[];
-}) {
-  return (
-    <div className="strategy-section">
-      <h3>{title}</h3>
-      {items.length ? (
-        <div className="stack-list">
-          {items.map((item) => (
-            <div className="stack-row" key={`${item.target_role}-${item.target.target_id}`}>
-              <div className="metadata-row">
-                <span className="badge">{prettyKey(item.target_role)}</span>
-                <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
-                {isHeuristicEvidence(item.evidence_basis, item.support) ? (
-                  <span className="badge badge-warning">Heuristic / inferred</span>
-                ) : null}
-              </div>
-              <strong>{recommendationTargetLabel(item.target)}</strong>
-              <small>Source rank {item.source_rank} · score {formatValue(item.final_score)}</small>
-              <p className="meta-copy">{item.rationale}</p>
-              {item.tradeoff_categories.length ? (
-                <div className="chip-row">
-                  {item.tradeoff_categories.map((category) => (
-                    <span className="badge badge-warning" key={category}>{prettyKey(category)}</span>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <EmptyState title={`No ${title.toLocaleLowerCase()}`} body="The strategy plan did not include items for this section." />
-      )}
-    </div>
-  );
-}
-
-function StrategyTargetList({
-  title,
-  items,
-}: {
-  title: string;
-  items: Array<StrategyCompanyTarget | StrategyCompanyCategoryTarget | StrategyRoleFamilyTarget>;
-}) {
-  return (
-    <div className="strategy-section">
-      <h3>{title}</h3>
-      {items.length ? (
-        <div className="stack-list">
-          {items.map((item) => (
-            <div className="stack-row" key={`${item.target.target_type}:${item.target.target_id}`}>
-              <div className="metadata-row">
-                <span className="badge">{prettyKey(item.target.target_type)}</span>
-                <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
-                {isHeuristicEvidence(item.evidence_basis, item.support) ? (
-                  <span className="badge badge-warning">Heuristic / inferred</span>
-                ) : null}
-              </div>
-              <strong>{recommendationTargetLabel(item.target)}</strong>
-              {"final_score" in item ? <small>Score {formatValue(item.final_score)}</small> : null}
-              <p className="meta-copy">{item.rationale}</p>
-              {item.target.related_target_ids?.length ? (
-                <small>Related targets: {item.target.related_target_ids.join(", ")}</small>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <EmptyState title={`No ${title.toLocaleLowerCase()}`} body="No grounded items were returned for this section." />
-      )}
-    </div>
-  );
-}
-
-function TimingGuidanceList({ items }: { items: StrategyTimingGuidance[] }) {
-  if (!items.length) {
-    return <EmptyState title="No timing guidance" body="No conservative timing guidance was returned." />;
-  }
-  return (
-    <div className="stack-list">
-      {items.map((item) => (
-        <div className="stack-row" key={`${item.timing_category}-${item.label}`}>
-          <div className="metadata-row">
-            <span className="badge">{prettyKey(item.timing_category)}</span>
-            <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
-            {isHeuristicEvidence(item.evidence_basis, item.support) ? (
-              <span className="badge badge-warning">Heuristic / inferred</span>
-            ) : null}
-          </div>
-          <strong>{item.label}</strong>
-          <p className="meta-copy">{item.guidance}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StrategyWatchlist({ items }: { items: StrategyWatchlistItem[] }) {
-  if (!items.length) {
-    return <EmptyState title="No watchlist items" body="No watchlist targets were returned for this strategy." />;
-  }
-  return (
-    <div className="stack-list">
-      {items.map((item) => (
-        <div className="stack-row" key={`${item.watchlist_category}-${item.target.target_id}`}>
-          <div className="metadata-row">
-            <span className="badge badge-warning">{prettyKey(item.watchlist_category)}</span>
-            <span className={evidenceBadgeClass(item.evidence_strength)}>{prettyKey(item.evidence_strength)}</span>
-            {item.revisit_after_refresh ? <span className="badge badge-warning">Revisit after refresh</span> : null}
-          </div>
-          <strong>{recommendationTargetLabel(item.target)}</strong>
-          <p className="meta-copy">{item.reason}</p>
-          <p className="meta-copy">Upside: {item.upside}</p>
-          <p className="meta-copy">Verify: {item.what_to_verify}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StrategyWarnings({ warnings }: { warnings: StrategyEvidenceWarning[] }) {
-  if (!warnings.length) {
-    return <EmptyState title="No strategy evidence warnings" body="The strategy plan did not return evidence warnings." />;
-  }
-  return (
-    <div className="warning-list">
-      {warnings.map((warning) => (
-        <div className="warning-item" key={`${warning.warning_category}-${warning.label}`}>
-          <div className="warning-header">
-            <span className="warning-code">{prettyKey(warning.warning_category)}</span>
-            <span className={evidenceBadgeClass(warning.evidence_strength)}>{prettyKey(warning.evidence_strength)}</span>
-            {isHeuristicEvidence(warning.evidence_basis, warning.support) ? (
-              <span className="badge badge-warning">Heuristic / inferred</span>
-            ) : null}
-          </div>
-          <p>{warning.label}</p>
-          {warning.detail ? <small>{warning.detail}</small> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function MarketStrategyView({ strategy }: { strategy: RecommendationStrategyPayload["market_strategy_plan"] }) {
-  return (
-    <ShellCard title="Market strategy plan" eyebrow="Structured plan from ranked outputs">
-      <div className="metadata-row">
-        <span className="badge">{prettyKey(strategy.goal_mode)}</span>
-        <span className="badge badge-unknown">{strategy.strategy_version}</span>
-        <span className="badge">Sources: {strategy.source_recommendations.length}</span>
-      </div>
-      <div className="strategy-grid">
-        <StrategyRegionTargetList title="Primary regions" items={strategy.primary_region_targets} />
-        <StrategyRegionTargetList title="Secondary regions" items={strategy.secondary_region_targets} />
-        <StrategyRegionTargetList title="Fallback regions" items={strategy.fallback_region_targets} />
-        <div className="strategy-section">
-          <h3>Watchlist</h3>
-          <StrategyWatchlist items={strategy.watchlist_items} />
-        </div>
-        <StrategyTargetList title="Company targets" items={strategy.company_targets} />
-        <StrategyTargetList title="Company categories" items={strategy.company_category_targets} />
-        <StrategyTargetList title="Role-family guidance" items={strategy.role_family_targets} />
-        <div className="strategy-section">
-          <h3>Timing guidance</h3>
-          <TimingGuidanceList items={strategy.timing_guidance} />
-        </div>
-      </div>
-      <div className="split-grid">
-        <div className="strategy-section">
-          <h3>Manual verification checklist</h3>
-          <div className="stack-list">
-            {strategy.manual_verification_checklist.items.map((entry) => (
-              <div className="stack-row" key={`${entry.item.verification_category}-${entry.item.label}`}>
-                <ManualVerificationList items={[entry.item]} />
-                <small>Source recommendations: {entry.source_recommendation_ids.join(", ")}</small>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="strategy-section">
-          <h3>Evidence warnings</h3>
-          <StrategyWarnings warnings={strategy.evidence_warnings} />
-        </div>
-      </div>
-    </ShellCard>
-  );
-}
-
-function UpgradePrompt({
-  title,
-  body,
-  feature,
-  decision,
-  plans,
-}: {
-  title: string;
-  body: string;
-  feature: MonetizationFeatureKey;
-  decision?: MonetizationAccessPreviewPayload["decision"] | null;
-  plans?: Map<MonetizationPlanKey, MonetizationPlan>;
-}) {
-  const availableWith = decision && !decision.allowed && decision.upgrade_plan_keys.length
-    ? decision.upgrade_plan_keys.map((planKey) => plans?.get(planKey)?.display_name ?? prettyKey(planKey)).join(", ")
-    : null;
-  return (
-    <aside className="upgrade-prompt" data-feature={feature}>
-      <div>
-        <span className={decision?.allowed ? "badge badge-success" : "badge badge-real"}>
-          {decision?.allowed ? "Available in your plan" : "Added workflow value"}
-        </span>
-        <strong>{title}</strong>
-        <p>{body}</p>
-        {decision ? <p className="meta-copy">{decision.reason}</p> : null}
-        {availableWith ? <p className="meta-copy">View plans for {availableWith}.</p> : null}
-      </div>
-      <a className="secondary-button" href={plansUrl()}>
-        Upgrade options
-      </a>
-    </aside>
   );
 }
 
@@ -7075,10 +4578,10 @@ function IntegrationActionPanel({
   const showCareerPlatforms = objectType === "company" && Boolean(onCreateCareerPlatformExport);
 
   return (
-    <ShellCard title="Export and reminder actions" eyebrow="Layer 17A integrations">
-      <p className="meta-copy">
-        Exports are local files or prepared manual payloads. Calendar support creates an ICS file only.
-      </p>
+    <details className="integration-actions-disclosure">
+      <summary>Exports and reminders</summary>
+      <div className="integration-action-content">
+      <p className="meta-copy">Download files, prepare a manual lookup, or create a calendar reminder.</p>
       <div className="integration-action-grid">
         {showExports ? INTEGRATION_EXPORT_OPTIONS.map((option) => (
           <button
@@ -7121,12 +4624,6 @@ function IntegrationActionPanel({
           ICS reminder
         </button>
       </div>
-      <div className="metadata-row">
-        <span className="badge badge-success">No OAuth</span>
-        <span className="badge badge-success">No live sync</span>
-        <span className="badge badge-success">No external writes</span>
-        <span className="badge badge-unknown">Product authority retained</span>
-      </div>
       {showCareerPlatforms ? (
         <>
           <div className="integration-action-grid">
@@ -7163,29 +4660,14 @@ function IntegrationActionPanel({
               Handshake manual lookup
             </button>
           </div>
-          <div className="metadata-row">
-            <span className="badge badge-real">Deep link only</span>
-            <span className="badge badge-real">Export only</span>
-            <span className="badge badge-success">No scraping</span>
-            <span className="badge badge-success">No ATS state</span>
-          </div>
         </>
       ) : null}
-      <div className="warning-list" aria-label="Deferred integration states">
-        <div className="warning-item">
-          <div className="warning-header">
-            <span className="warning-code">Deferred direct integrations</span>
-          </div>
-          <p>
-            Google Sheets, Notion, and Airtable receive prepared payloads only.
-            Google Calendar and Outlook direct writes remain deferred behind the ICS file export.
-          </p>
-        </div>
-      </div>
       {!canUseIntegrations ? (
-        <p className="meta-copy">Sign in to create user-owned export and reminder records.</p>
+        <p className="meta-copy">Sign in to create exports and reminders.</p>
       ) : null}
-    </ShellCard>
+      <small className="meta-copy">Files and previews only; no external accounts are changed.</small>
+      </div>
+    </details>
   );
 }
 
@@ -7941,7 +5423,7 @@ function InstitutionDecisionInfrastructureView({
               sections={decisionDashboard.industry_demand}
             />
           </div>
-          <ShellCard title="Forecast Notes" eyebrow="Layer 21 bounded signals">
+          <ShellCard title="Forecast Notes" eyebrow="Bounded signals">
             {decisionDashboard.forecast_notes.length ? (
               <div className="warning-list">
                 {decisionDashboard.forecast_notes.map((note) => (
@@ -7967,7 +5449,7 @@ function InstitutionDecisionInfrastructureView({
             ) : (
               <EmptyState
                 title="No forecast notes available"
-                body="Forecast notes appear only when producer-owned historical exports provide enough Layer 21 evidence."
+                body="Forecast notes appear only when producer-owned historical exports provide enough governed evidence."
               />
             )}
           </ShellCard>
@@ -8883,6 +6365,19 @@ function InstitutionReportsView({
   const report = reportState.envelope?.data?.report ?? null;
   const reportList = reportListState.envelope?.data?.reports ?? [];
 
+  if (!organizationsState.loading && !organizationsState.error && !selectedRow) {
+    return (
+      <div className="view-grid">
+        <ShellCard title="Institutional Reports" eyebrow="Organization context">
+          <EmptyState
+            title="No institutional organization"
+            body="Your account does not have an active institutional membership."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onGenerate(reportRequestFromForm(formState));
@@ -9118,6 +6613,19 @@ function InstitutionPartnerImportsView({
   const imports = listState.envelope?.data?.imports ?? [];
   const activeImport = actionImport ?? createdImport ?? imports[0] ?? null;
   const receipt = receiptState.envelope?.data?.receipt ?? activeImport?.receipt ?? null;
+
+  if (!organizationsState.loading && !organizationsState.error && !selectedRow) {
+    return (
+      <div className="view-grid">
+        <ShellCard title="Partner Import Center" eyebrow="Organization context">
+          <EmptyState
+            title="No institutional organization"
+            body="Your account does not have an active institutional membership."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -9745,6 +7253,19 @@ function InstitutionDataRequestsView({
   const createdRequest = createState.envelope?.data?.data_request ?? null;
   const dataRequests = listState.envelope?.data?.data_requests ?? [];
 
+  if (!organizationsState.loading && !organizationsState.error && !selectedRow) {
+    return (
+      <div className="view-grid">
+        <ShellCard title="Institutional Data Requests" eyebrow="Organization context">
+          <EmptyState
+            title="No institutional organization"
+            body="Your account does not have an active institutional membership."
+          />
+        </ShellCard>
+      </div>
+    );
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onSubmit(dataRequestFromForm(formState));
@@ -10030,7 +7551,7 @@ function MonetizationView({
     <div className="view-grid">
       <ShellCard
         title="Plans and access model"
-        eyebrow="Layer 15 monetization surface"
+        eyebrow="Optional account infrastructure"
         action={<StateBadge envelope={plansState.envelope} loading={plansState.loading} error={plansState.error} />}
       >
         <p className="lead-copy">
@@ -10130,116 +7651,6 @@ function MonetizationView({
   );
 }
 
-function RecommendationsView({
-  goalModesState,
-  strategyState,
-  selectedGoalMode,
-  onSelectGoalMode,
-  accessPreviewStates,
-  monetizationPlansState,
-  canUseIntegrations,
-  onCreateIntegrationExport,
-  onCreateIntegrationReminder,
-}: {
-  goalModesState: LoadState<RecommendationGoalModesPayload>;
-  strategyState: LoadState<RecommendationStrategyPayload>;
-  selectedGoalMode: RecommendationGoalMode;
-  onSelectGoalMode: (goalMode: RecommendationGoalMode) => void;
-  accessPreviewStates: Record<string, LoadState<MonetizationAccessPreviewPayload>>;
-  monetizationPlansState: LoadState<MonetizationPlansPayload>;
-  canUseIntegrations: boolean;
-  onCreateIntegrationExport: (request: IntegrationExportCreateRequest) => void;
-  onCreateIntegrationReminder: (request: IntegrationReminderCreateRequest) => void;
-}) {
-  const strategy = strategyState.envelope?.data;
-  const goalModes = goalModesState.envelope?.data?.goal_modes ?? strategy?.available_goal_modes ?? [];
-  const companyWarnings = strategy?.warnings.filter((warning) => warning.toLocaleLowerCase().includes("company")) ?? [];
-  const plansByKey = new Map((monetizationPlansState.envelope?.data?.plans ?? []).map((plan) => [plan.plan_key, plan]));
-  const reportDecision = accessPreviewStates[accessPreviewKey({ feature_key: "full_report_generation" })]?.envelope?.data?.decision;
-
-  return (
-    <div className="view-grid">
-      <ShellCard
-        title="Recommendation decision support"
-        eyebrow="Layer 14 structured recommendations"
-        action={<StateBadge envelope={strategyState.envelope} loading={strategyState.loading} error={strategyState.error} />}
-      >
-        <p className="lead-copy">
-          Select a goal mode to load ranked recommendations and a structured market strategy
-          from backend-owned evidence, confidence, freshness, provenance, coverage, and
-          explicitly labeled heuristic inference.
-        </p>
-        {goalModesState.loading ? <LoadingBlock label="Loading goal modes" /> : null}
-        {goalModesState.error ? <ErrorState message={goalModesState.error} /> : null}
-        <RecommendationGoalModeSelector
-          goalModes={goalModes}
-          loading={goalModesState.loading}
-          selectedGoalMode={selectedGoalMode}
-          onSelectGoalMode={onSelectGoalMode}
-        />
-        {strategyState.loading ? <LoadingBlock label="Loading recommendation strategy" /> : null}
-        {strategyState.error ? <ErrorState message={strategyState.error} /> : null}
-        {strategy?.warnings.length ? (
-          <div className="warning-list">
-            {strategy.warnings.map((warning) => (
-              <div className="warning-item" key={warning}>
-                <div className="warning-header">
-                  <span className="warning-code">API warning</span>
-                </div>
-                <p>{warning}</p>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <MetadataPanel envelope={strategyState.envelope} />
-        <UpgradePrompt
-          decision={reportDecision}
-          feature="full_report_generation"
-          plans={plansByKey}
-          title="Generate a full strategy report with Individual."
-          body="The ranked recommendation stays visible here. Paid reports package sections, exports, and verification steps for sharing or advising."
-        />
-      </ShellCard>
-
-      {strategy ? (
-        <IntegrationActionPanel
-          canUseIntegrations={canUseIntegrations}
-          label={`${segmentLabel(selectedGoalMode)} strategy`}
-          objectId={selectedGoalMode}
-          objectType="recommendation_strategy"
-          onCreateExport={onCreateIntegrationExport}
-          onCreateReminder={onCreateIntegrationReminder}
-          reminderType="follow_up"
-          sourceContext={{ goal_mode: selectedGoalMode }}
-        />
-      ) : null}
-
-      {strategy ? (
-        <>
-          <RecommendationRankingSection
-            title="Ranked region recommendations"
-            items={strategy.ranked_region_recommendations}
-            emptyTitle="No region recommendations"
-            emptyBody="The backend returned no ranked region recommendations."
-          />
-          <RecommendationRankingSection
-            title="Ranked company recommendations"
-            items={strategy.ranked_company_recommendations}
-            emptyTitle="No company recommendations"
-            emptyBody={companyWarnings[0] ?? "The backend returned no company recommendations and did not invent company targets."}
-          />
-          <MarketStrategyView strategy={strategy.market_strategy_plan} />
-        </>
-      ) : !strategyState.loading ? (
-        <EmptyState
-          title="No recommendation strategy loaded"
-          body="Goal modes may still be loading or the backend recommendation endpoint returned an error."
-        />
-      ) : null}
-    </div>
-  );
-}
-
 function App() {
   const auth = useFrontendAuth();
   const [route, setRoute] = useState<RouteState>(() => readCurrentRoute());
@@ -10257,8 +7668,6 @@ function App() {
   );
   const needsGlobalAccountData = !isExploreComparison
     && (["account", "region", "company", "compare", "discovery", "recommendations", "plans"] as AppPage[]).includes(route.page);
-  const visibleNavItems = NAV_ITEMS;
-  const [shellSearch, setShellSearch] = useState("");
   const [health, setHealth] = useState<LoadState<{ service: string }>>(emptyLoadState);
   const [regions, setRegions] = useState<LoadState<{ regions: RegionListItem[] }>>(emptyLoadState);
   const [marketCoverageState, setMarketCoverageState] =
@@ -10280,6 +7689,8 @@ function App() {
     useState<LoadState<RecommendationGoalModesPayload>>(emptyLoadState);
   const [recommendationStrategyState, setRecommendationStrategyState] =
     useState<LoadState<RecommendationStrategyPayload>>(emptyLoadState);
+  const [personalizedRecommendationState, setPersonalizedRecommendationState] =
+    useState<LoadState<PersonalizedResult>>(emptyLoadState);
   const [publicBenchmarkListState, setPublicBenchmarkListState] =
     useState<LoadState<PublicBenchmarkListPayload>>(emptyLoadState);
   const [publicBenchmarkDetailStates, setPublicBenchmarkDetailStates] =
@@ -10369,6 +7780,9 @@ function App() {
   const [accountDeactivated, setAccountDeactivated] = useState(false);
   const discoveryRequestKey = useRef(0);
   const recommendationRequestKey = useRef(0);
+  const recommendationRegionsInFlight = useRef(false);
+  const personalizedRecommendationRequestKey = useRef(0);
+  const [personalizedRecommendationRetry, setPersonalizedRecommendationRetry] = useState(0);
 
   const regionList = useMemo(() => regions.envelope?.data?.regions ?? [], [regions.envelope]);
   const hasLoadedRegionList = Boolean(regions.envelope?.data?.regions);
@@ -10496,8 +7910,8 @@ function App() {
     setRoute(readCurrentRoute());
   }, []);
 
-  const submitShellSearch = useCallback(async () => {
-    const query = shellSearch.trim();
+  const submitShellSearch = useCallback(async (search: string) => {
+    const query = search.trim();
     if (!query) {
       navigateTo(exploreUrl());
       return;
@@ -10518,7 +7932,7 @@ function App() {
       // The Explore authority will render an honest unsupported-role state.
     }
     navigateTo(exploreUrl({ goal: query }));
-  }, [navigateTo, shellSearch]);
+  }, [navigateTo]);
 
   useEffect(() => {
     if (auth.isAuthenticated && route.page === "landing" && window.location.pathname === "/") {
@@ -11378,7 +8792,7 @@ function App() {
   }, [needsLegacyProductData]);
 
   useEffect(() => {
-    if (route.page !== "recommendations") return;
+    if (route.page !== "recommendations" || route.recommendationView !== "by-goal") return;
     if (recommendationGoalModesState.loading || recommendationGoalModesState.envelope) return;
 
     async function loadRecommendationGoalModes() {
@@ -11396,10 +8810,10 @@ function App() {
     }
 
     void loadRecommendationGoalModes();
-  }, [recommendationGoalModesState.envelope, recommendationGoalModesState.loading, route.page]);
+  }, [recommendationGoalModesState.envelope, recommendationGoalModesState.loading, route.page, route.recommendationView]);
 
   useEffect(() => {
-    if (route.page !== "recommendations") {
+    if (route.page !== "recommendations" || route.recommendationView !== "by-goal") {
       recommendationRequestKey.current += 1;
       setRecommendationStrategyState(emptyLoadState());
       return;
@@ -11407,7 +8821,7 @@ function App() {
 
     const requestKey = ++recommendationRequestKey.current;
     async function loadRecommendationStrategy() {
-      setRecommendationStrategyState((current) => ({ ...current, loading: true, error: null }));
+      setRecommendationStrategyState({ loading: true, envelope: null, error: null });
       try {
         const envelope = await getRecommendationStrategy({
           goal_mode: selectedRecommendationGoalMode,
@@ -11430,7 +8844,93 @@ function App() {
     }
 
     void loadRecommendationStrategy();
-  }, [route.page, selectedRecommendationGoalMode]);
+  }, [route.page, route.recommendationView, selectedRecommendationGoalMode]);
+
+  useEffect(() => {
+    if (
+      route.page !== "recommendations"
+      || route.recommendationView !== "for-you"
+      || regions.loading
+      || regions.envelope
+      || regions.error
+      || recommendationRegionsInFlight.current
+    ) return;
+    recommendationRegionsInFlight.current = true;
+    setRegions((current) => ({ ...current, loading: true, error: null }));
+    getRegions()
+      .then((envelope) => {
+        setRegions({ loading: false, envelope, error: null });
+      })
+      .catch((error) => {
+        setRegions({
+          loading: false,
+          envelope: null,
+          error: error instanceof Error ? error.message : "Failed to load recommendation markets",
+        });
+      })
+      .finally(() => {
+        recommendationRegionsInFlight.current = false;
+      });
+  }, [regions.envelope, regions.error, regions.loading, route.page, route.recommendationView]);
+
+  useEffect(() => {
+    if (
+      route.page !== "recommendations"
+      || route.recommendationView !== "for-you"
+      || auth.isLoading
+      || !auth.isAuthenticated
+      || accountDeactivated
+    ) {
+      personalizedRecommendationRequestKey.current += 1;
+      setPersonalizedRecommendationState(emptyLoadState());
+      return;
+    }
+    const regionIds = regionList.map((region) => region.region_id);
+    if (!regionIds.length) {
+      setPersonalizedRecommendationState({
+        loading: regions.loading || !regions.error,
+        envelope: null,
+        error: regions.error,
+      });
+      return;
+    }
+    const requestKey = ++personalizedRecommendationRequestKey.current;
+    setPersonalizedRecommendationState((current) => ({ ...current, loading: true, error: null }));
+    discoverPersonalizedFromCareerIdentity({
+      region_ids: regionIds,
+      role_targets: [],
+      industry_preferences: [],
+      career_stage: "entry_level",
+      prestige_preference: "medium",
+      brand_preference: "medium",
+      limit: 10,
+    }, protectedOptions)
+      .then((envelope) => {
+        if (requestKey === personalizedRecommendationRequestKey.current) {
+          setPersonalizedRecommendationState({ loading: false, envelope, error: null });
+        }
+      })
+      .catch((error) => {
+        if (requestKey === personalizedRecommendationRequestKey.current) {
+          setPersonalizedRecommendationState({
+            loading: false,
+            envelope: null,
+            error: error instanceof Error ? error.message : "Failed to load Career Identity recommendations",
+          });
+        }
+      });
+  }, [
+    accountDeactivated,
+    auth.isAuthenticated,
+    auth.isLoading,
+    protectedOptions,
+    regionList,
+    regions.error,
+    regions.loading,
+    route.page,
+    route.recommendationView,
+    personalizedRecommendationRetry,
+  ]);
 
   useEffect(() => {
     if (route.page !== "plans" && route.page !== "recommendations") return;
@@ -11833,7 +9333,20 @@ function App() {
   }
 
   function updateRecommendationGoalMode(goalMode: RecommendationGoalMode) {
-    navigateTo(recommendationsUrl(goalMode));
+    navigateTo(recommendationsUrl(goalMode, "by-goal"));
+  }
+
+  function updateRecommendationView(view: RecommendationView) {
+    navigateTo(recommendationsUrl(selectedRecommendationGoalMode, view));
+  }
+
+  function retryPersonalizedRecommendations() {
+    if (!regions.envelope) {
+      if (!regions.loading) setRegions(emptyLoadState());
+      return;
+    }
+    setPersonalizedRecommendationState({ loading: true, envelope: null, error: null });
+    setPersonalizedRecommendationRetry((current) => current + 1);
   }
 
   function handleInstitutionAdvisorSubmit(
@@ -12728,59 +10241,32 @@ function App() {
 
   if (!isProductRoute) {
     return (
-      <PublicRouteView
-        onNavigate={handleRouteLink}
-        publicBenchmarkDetailState={selectedPublicBenchmarkDetailState}
-        publicBenchmarkListState={publicBenchmarkListState}
-        publicReportDetailState={selectedPublicReportDetailState}
-        publicReportListState={publicReportListState}
-        predictiveReportState={predictiveReportState}
-        route={route}
-      />
+      <LazyRoute>
+        <PublicRouteView
+          onNavigate={handleRouteLink}
+          publicBenchmarkDetailState={selectedPublicBenchmarkDetailState}
+          publicBenchmarkListState={publicBenchmarkListState}
+          publicReportDetailState={selectedPublicReportDetailState}
+          publicReportListState={publicReportListState}
+          predictiveReportState={predictiveReportState}
+          route={route}
+        />
+      </LazyRoute>
     );
   }
 
   return (
-    <div className={`app-shell ${usesIndividualShell ? "redesigned-app-shell" : "secondary-context-shell"}`}>
-      <a className="skip-link" href="#main-content">Skip to main content</a>
-      {usesIndividualShell ? <header className="product-header">
-        <a className="product-brand" href={exploreUrl()} onClick={(event) => handleRouteLink(event, exploreUrl())}>
-          <span className="brand-mark">JM</span><strong>Job Market Intelligence</strong>{runtimeConfig.deploymentMode === "beta" ? <span className="release-mode-badge">Beta</span> : null}
-        </a>
-        <form className="global-search" onSubmit={(event) => { event.preventDefault(); void submitShellSearch(); }} role="search">
-          <label className="sr-only" htmlFor="global-search-input">Search markets or roles</label>
-          <input id="global-search-input" onChange={(event) => setShellSearch(event.target.value)} placeholder="Search markets or supported roles…" type="search" value={shellSearch} />
-        </form>
-        <nav className="primary-product-nav" aria-label="Main navigation">
-          {visibleNavItems.map((item) => {
-            const url = getNavigationUrl(
-              item.id,
-              selectedRegionRouteToken,
-              selectedCompanyId,
-              comparisonA,
-              comparisonB,
-              discoveryFilters,
-            );
-            return (
-              <a
-                aria-current={route.page === item.id ? "page" : undefined}
-                className={route.page === item.id ? "primary-nav-item primary-nav-item-active" : "primary-nav-item"}
-                href={url}
-                key={item.id}
-                onClick={(event) => handleRouteLink(event, url)}
-              >
-                {item.label}
-              </a>
-            );
-          })}
-        </nav>
-        <details className="account-menu">
-          <summary aria-label="Account menu">{auth.user?.picture ? <img alt="" src={auth.user.picture} /> : (auth.user?.name ?? auth.user?.email ?? "Account").slice(0, 2).toUpperCase()}</summary>
-          <div><strong>{auth.user?.name ?? auth.user?.email ?? (auth.isAuthenticated ? "Account" : "Signed out")}</strong>{auth.isAuthenticated ? <><button onClick={() => navigateTo(accountUrl())} type="button">Account settings</button><button onClick={auth.logout} type="button">Sign out</button></> : <button onClick={() => void auth.login()} type="button">Sign in</button>}</div>
-        </details>
-      </header> : <header className="secondary-context-header"><a className="product-brand" href="/" onClick={(event) => handleRouteLink(event, "/")}><span className="brand-mark">JM</span><strong>Job Market Intelligence</strong></a><strong>{route.page === "institution" ? "Institution workspace" : route.page === "policy" ? "Policy intelligence" : "Opportunity data operations"}</strong></header>}
-
-      <main className={usesIndividualShell ? "content-shell redesigned-content-shell" : "content-shell"} id="main-content" tabIndex={-1}>
+    <ProductShell
+      activePage={route.page}
+      auth={auth}
+      footer={!(["explore", "my-search", "profile"] as AppPage[]).includes(route.page) ? <PublicFooter activePage={null} onNavigate={handleRouteLink} /> : null}
+      navigation={{ comparisonA, comparisonB }}
+      onNavigate={navigateTo}
+      onSearch={submitShellSearch}
+      routeLabel={route.page === "institution" ? "Institution workspace" : route.page === "policy" ? "Policy intelligence" : "Opportunity data operations"}
+      routePath={`${window.location.pathname}${window.location.search}`}
+      usesIndividualShell={usesIndividualShell}
+    >
         {route.unknownPath ? <p className="meta-copy">Unknown path redirected to Explore.</p> : null}
 
         {route.page !== "account" && accountAction.message ? (
@@ -12972,14 +10458,15 @@ function App() {
         ) : null}
 
         {route.page === "recommendations" ? (
-          <RecommendationsView
-            accessPreviewStates={monetizationAccessPreviewStates}
-            canUseIntegrations={canUseIntegrations}
+          <RecommendationExperience
+            activeView={route.recommendationView}
+            authenticated={auth.isAuthenticated && !accountDeactivated}
             goalModesState={recommendationGoalModesState}
-            monetizationPlansState={monetizationPlansState}
-            onCreateIntegrationExport={handleCreateIntegrationExport}
-            onCreateIntegrationReminder={handleCreateIntegrationReminder}
+            onNavigate={navigateTo}
+            onRetryPersonalized={retryPersonalizedRecommendations}
             onSelectGoalMode={updateRecommendationGoalMode}
+            onSelectView={updateRecommendationView}
+            personalizedState={personalizedRecommendationState}
             selectedGoalMode={selectedRecommendationGoalMode}
             strategyState={recommendationStrategyState}
           />
@@ -13244,13 +10731,7 @@ function App() {
         ) : null}
         </LazyRoute>
 
-        {!(["explore", "my-search", "profile"] as AppPage[]).includes(route.page) ? <PublicFooter activePage={null} onNavigate={handleRouteLink} /> : null}
-      </main>
-      {usesIndividualShell && auth.isAuthenticated ? (
-        <BetaFeedback auth={auth} route={`${window.location.pathname}${window.location.search}`} />
-      ) : null}
-      {usesIndividualShell ? <nav className="mobile-product-nav" aria-label="Mobile navigation">{visibleNavItems.map((item) => { const url = getNavigationUrl(item.id, selectedRegionRouteToken, selectedCompanyId, comparisonA, comparisonB, discoveryFilters); return <a aria-current={route.page === item.id ? "page" : undefined} href={url} key={item.id} onClick={(event) => handleRouteLink(event, url)}>{item.label}</a>; })}</nav> : null}
-    </div>
+    </ProductShell>
   );
 }
 

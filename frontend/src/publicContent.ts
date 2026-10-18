@@ -255,45 +255,39 @@ export const DATA_LICENSING_COPY = {
 };
 
 export const DEMO_DISCLOSURE_COPY = {
-  title: "Public demo disclosure",
+  title: "Illustrative portfolio data",
   summary:
-    "This Opportunity Geography Intelligence demo may combine seeded demo data with real imported records. Coverage is partial; data can be incomplete, stale, or missing. Derived scores are directional career-market signals, not absolute truth or individualized career advice.",
+    "Markets and opportunities are synthetic, coverage is partial, and freshness may be simulated. Treat results as directional—not live listings or individualized career advice.",
   bullets: [
-    "Demo and real imported data may appear side by side.",
-    "Coverage is partial and source availability varies by market, company, and date.",
-    "Freshness and provenance metadata can be missing, stale, partial, or unknown.",
-    "Scores summarize returned fields only; they do not cover the full job market or guarantee outcomes.",
-    "Use this as informational context and independently verify important decisions.",
+    "Coverage varies by market, employer, role, and date.",
+    "Unknown, stale, and missing evidence remains visible.",
+    "Scores summarize available evidence and do not guarantee outcomes.",
+    "Verify important decisions independently.",
   ],
 };
 
 export const LANDING_COPY = {
-  eyebrow: "Public demo",
-  title: "Job Market Intelligence",
+  eyebrow: "Career market intelligence",
+  title: "Compare career markets. Choose your next move.",
   intro:
-    "An Opportunity Geography Intelligence and Career Market Intelligence platform for inspecting regional opportunity density, company-region presence, early-career access, source freshness, and market fit signals.",
-  ctaLabel: "Enter demo",
-  secondaryCtaLabel: "Review methodology",
+    "Explore markets, employers, current opportunities, and evidence-aware recommendations across eight U.S. career hubs.",
+  ctaLabel: "Explore markets",
+  secondaryCtaLabel: "Methodology",
   sections: [
     {
-      title: "What it does",
+      title: "Explore",
       body:
-        "The app organizes returned market outputs so visitors can explore regions, inspect company-region presence, compare regional score fields, and run a request-scoped discovery overlay.",
+        "See where employers and early-career pathways appear strongest, with confidence and coverage kept in view.",
     },
     {
-      title: "Category",
+      title: "Compare",
       body:
-        "The product category is career market intelligence: public, structured explanation of where opportunity is concentrated, how employer presence varies by region, and which evidence is strong enough to treat as directional.",
+        "Put markets side by side to understand meaningful differences, trade-offs, and evidence gaps.",
     },
     {
-      title: "What data it uses",
+      title: "Decide",
       body:
-        "Views can include imported source records, prepared canonical facts, derived scoring outputs, freshness and provenance metadata, and seeded demo records where a full import is not present.",
-    },
-    {
-      title: "Current limits",
-      body:
-        "The demo does not claim comprehensive job-market coverage, real-time completeness, public report rankings, benchmark scoring, or individualized career advice. Important decisions should be checked against independent sources.",
+        "Turn a comparison or recommendation into a saved decision, next actions, and an active search.",
     },
   ],
 };
@@ -344,9 +338,9 @@ export const LEGAL_PAGE_COPY: Record<LegalPublicPage, LegalPageCopy> = {
   },
   methodology: {
     eyebrow: "Public methodology",
-    title: "Methodology foundation",
+    title: "How market intelligence works",
     intro:
-      "This page explains how public opportunity geography and career market intelligence surfaces should be read. It defines explanation posture only; Batch 19A does not create report rankings or benchmark scoring.",
+      "How to interpret market comparisons, evidence, confidence, and limitations.",
     sections: [
       {
         title: "What the product explains",
@@ -356,22 +350,22 @@ export const LEGAL_PAGE_COPY: Record<LegalPublicPage, LegalPageCopy> = {
       {
         title: "Evidence posture",
         body:
-          "Visible intelligence should separate source records, prepared canonical facts, derived signals, freshness metadata, confidence context, and demo data. Missing evidence is treated as unknown, not as proof that opportunity is absent.",
+          "Results distinguish observed facts, derived signals, freshness, confidence, and illustrative data. Missing evidence is unknown—not proof that an opportunity is absent.",
       },
       {
         title: "Report methodology",
         body:
-          "Public report methodology should disclose report purpose, included geography, data windows, evidence categories, freshness posture, confidence posture, coverage limits, and caveats before any future report is published.",
+          "Reports disclose their purpose, geography, data window, evidence categories, freshness, confidence, coverage limits, and caveats.",
       },
       {
         title: "Benchmark methodology",
         body:
-          "Benchmark methodology should explain comparison boundaries, eligible inputs, coverage thresholds, confidence rules, limitations, and review expectations before any future benchmark score is exposed.",
+          "Benchmarks state their comparison boundaries, eligible inputs, coverage thresholds, confidence rules, and limitations.",
       },
       {
-        title: "Batch 19A boundary",
+        title: "Scope",
         body:
-          "This foundation does not rank regions, score benchmarks, change recommendations, expand market coverage, refresh data, alter billing, add institutional authority, or personalize outputs. It only defines public language and explanation surfaces.",
+          "Methodology explains the available results; it does not expand coverage, refresh sources, or replace independent career research.",
       },
     ],
   },

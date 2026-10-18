@@ -115,7 +115,7 @@ export default function UserIntelligenceDashboardPage() {
             title="Recommended Regions"
             count={dashboard.recommended_regions.length}
             emptyTitle="No recommended regions"
-            emptyBody="The backend did not return scored region recommendations, and the frontend did not fabricate any."
+            emptyBody="No scored market recommendations are available."
           >
             <div className="dashboard-module-grid">
               {dashboard.recommended_regions.map((region) => (
@@ -128,7 +128,7 @@ export default function UserIntelligenceDashboardPage() {
             title="Recommended Companies"
             count={dashboard.recommended_companies.length}
             emptyTitle="No recommended companies"
-            emptyBody="The backend did not return company recommendations with current hiring or entry-level signals."
+            emptyBody="No employer recommendations with current hiring or early-career signals are available."
           >
             <div className="dashboard-module-grid">
               {dashboard.recommended_companies.map((company) => (
@@ -171,7 +171,7 @@ export default function UserIntelligenceDashboardPage() {
             title="Forecast Changes or Market Movement"
             count={dashboard.forecast_changes.length}
             emptyTitle="No forecast changes"
-            emptyBody="The backend did not return predictive movement signals for the recommended subjects."
+            emptyBody="No movement signals are available for the recommended subjects."
           >
             <div className="dashboard-module-grid">
               {dashboard.forecast_changes.map((forecast) => (
@@ -184,7 +184,7 @@ export default function UserIntelligenceDashboardPage() {
             title="Saved or Relevant Items"
             count={dashboard.saved_items.length}
             emptyTitle="No saved items in this dashboard"
-            emptyBody="Saved-item wiring is intentionally empty here unless the backend returns saved items. No placeholder items were fabricated."
+            emptyBody="No saved items yet."
           >
             <div className="dashboard-module-grid">
               {dashboard.saved_items.map((item) => (
@@ -197,7 +197,7 @@ export default function UserIntelligenceDashboardPage() {
             title="Recommended Next Actions"
             count={dashboard.recommended_next_actions.length}
             emptyTitle="No next actions"
-            emptyBody="The backend did not return enough recommended items, warnings, or forecasts to compute next actions."
+            emptyBody="There is not enough information to suggest a next action."
           >
             <div className="dashboard-action-grid">
               {dashboard.recommended_next_actions.map((action) => (

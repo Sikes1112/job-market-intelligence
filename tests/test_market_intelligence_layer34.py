@@ -153,13 +153,34 @@ def test_layer34_platform_profiles_are_deterministic_and_semantic(
         assert profile["coverage_summary"]
         assert profile["opportunity_environment"]["overall"]
         metrics = profile["supporting_metrics"]
-        assert metrics["unknown_fact_count"] > 0
-        assert metrics["observed_zero_fact_count"] > 0
         assert metrics["ranking_eligible_fact_count"] == 13
         assert metrics["ranking_excluded_fact_count"] == 0
         assert "unknown_fact_count" in metrics
         assert "observed_zero_fact_count" in metrics
-        assert "not treated as zero" in " ".join(profile["limitations"])
+    assert any(
+        "not treated as zero" in " ".join(profile["limitations"])
+        for profile in first["profiles"]
+    )
+    assert any(
+        profile["supporting_metrics"]["unknown_fact_count"] > 0
+        for profile in first["profiles"]
+    )
+    assert any(
+        profile["supporting_metrics"]["observed_zero_fact_count"] > 0
+        for profile in first["profiles"]
+    )
+    assert len(
+        {
+            profile["supporting_metrics"]["unknown_fact_count"]
+            for profile in first["profiles"]
+        }
+    ) > 1
+    assert len(
+        {
+            profile["supporting_metrics"]["observed_zero_fact_count"]
+            for profile in first["profiles"]
+        }
+    ) > 1
 
 
 def test_layer34_market_profile_opportunity_environment_uses_canonical_metrics(

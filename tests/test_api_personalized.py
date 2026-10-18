@@ -334,6 +334,124 @@ def test_career_identity_personalization_respects_exclusions_and_consent(
     assert metadata["excluded_industries"] == ["finance"]
 
 
+def test_authenticated_personalization_is_identity_sensitive_deterministic_and_isolated(
+    api_client,
+    session,
+) -> None:
+    _seed_career_identity_personalization_world(session)
+    request = {
+        "region_ids": ["greater_boston"],
+        "role_targets": [],
+        "industry_preferences": [],
+        "career_stage": "entry_level",
+        "prestige_preference": "medium",
+        "brand_preference": "medium",
+        "limit": 10,
+    }
+
+    def configure_identity(
+        subject: str,
+        *,
+        role: str,
+        industry: str,
+    ) -> dict[str, str]:
+        headers = _auth_headers(subject)
+        identity = api_client.get(
+            "/me/career-identity", headers=headers
+        ).json()["data"]
+        privacy = api_client.put(
+            "/me/career-identity/privacy",
+            headers=headers,
+            json={
+                "downstream_personalization_consent_granted": True,
+                "expected_version": identity["current_version"],
+            },
+        )
+        assert privacy.status_code == 200
+        identity = privacy.json()["data"]
+        role_response = api_client.post(
+            "/me/career-identity/facts",
+            headers=headers,
+            json={
+                "fact_type": "role_preference",
+                "payload": {
+                    "function": role,
+                    "preference_kind": "preferred",
+                },
+                "expected_version": identity["current_version"],
+            },
+        )
+        assert role_response.status_code == 201
+        identity = role_response.json()["data"]["identity"]
+        industry_response = api_client.post(
+            "/me/career-identity/facts",
+            headers=headers,
+            json={
+                "fact_type": "industry_preference",
+                "payload": {
+                    "industry": industry,
+                    "preference_kind": "preferred",
+                },
+                "expected_version": identity["current_version"],
+            },
+        )
+        assert industry_response.status_code == 201
+        return headers
+
+    product_headers = configure_identity(
+        "auth0|identity_product_ai",
+        role="product",
+        industry="ai",
+    )
+    security_headers = configure_identity(
+        "auth0|identity_security_finance",
+        role="cybersecurity",
+        industry="finance",
+    )
+
+    product_first = api_client.post(
+        "/me/discover/personalized", headers=product_headers, json=request
+    )
+    product_repeat = api_client.post(
+        "/me/discover/personalized", headers=product_headers, json=request
+    )
+    security = api_client.post(
+        "/me/discover/personalized", headers=security_headers, json=request
+    )
+    assert product_first.status_code == product_repeat.status_code == 200
+    assert security.status_code == 200
+    assert product_first.json()["data"] == product_repeat.json()["data"]
+    assert (
+        product_first.json()["data"]["ranked_companies"][0]["company_id"]
+        == "comp_ai"
+    )
+    assert security.json()["data"]["ranked_companies"][0]["company_id"] == (
+        "comp_finance"
+    )
+    product_metadata = product_first.json()["metadata"][
+        "career_identity_personalization"
+    ]
+    security_metadata = security.json()["metadata"][
+        "career_identity_personalization"
+    ]
+    assert product_metadata["role_targets"] == ["product"]
+    assert product_metadata["industry_preferences"] == ["ai"]
+    assert security_metadata["role_targets"] == ["cybersecurity"]
+    assert security_metadata["industry_preferences"] == ["finance"]
+    assert "finance" not in product_metadata["industry_preferences"]
+    assert "ai" not in security_metadata["industry_preferences"]
+
+    empty_headers = _auth_headers("auth0|identity_empty")
+    empty = api_client.post(
+        "/me/discover/personalized", headers=empty_headers, json=request
+    )
+    assert empty.status_code == 200
+    assert empty.json()["metadata"]["career_identity_personalization"] == {
+        "source": "request",
+        "career_identity_applied": False,
+    }
+
+
 def test_discover_endpoint_warning_metadata_uses_standard_shape(
     api_client,
     session,

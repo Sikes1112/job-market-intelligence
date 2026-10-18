@@ -96,7 +96,8 @@ describe("CurrentOpportunitiesPage", () => {
   test("renders strategic matches without treating match score as probability", async () => {
     render(<CurrentOpportunitiesPage auth={auth} />);
 
-    expect(await screen.findByText("Strategic Current Opportunities")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Current opportunities" })).toBeInTheDocument();
+    expect(screen.getByText(/synthetic, simulated freshness, and not live listings/i)).toBeInTheDocument();
     expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
     expect(screen.getAllByText("Direct strategic fit").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Adjacent strategic route").length).toBeGreaterThan(0);
@@ -116,9 +117,26 @@ describe("CurrentOpportunitiesPage", () => {
     render(<CurrentOpportunitiesPage auth={auth} opportunityId="opp_adjacent" />);
 
     expect(await screen.findByText("Opportunity detail")).toBeInTheDocument();
-    expect(screen.getByText(/Observed from 1 governed source link/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 source link.*Last observed/i)).toBeInTheDocument();
     expect(screen.getAllByText("Application route unavailable").length).toBeGreaterThan(0);
     expect(document.body.innerHTML).not.toContain("data:text/html");
+  });
+
+  test("aligns direct-detail filters and coverage with the loaded opportunity", async () => {
+    vi.mocked(getCurrentOpportunity).mockResolvedValue(envelope(opportunity("opp_product", {
+      role_family: "product_management",
+      opportunity_type: "internship",
+    })));
+
+    render(<CurrentOpportunitiesPage auth={auth} opportunityId="opp_product" />);
+
+    await waitFor(() => expect(screen.getByLabelText("Role family")).toHaveValue("product_management"));
+    expect(screen.getByLabelText("Type")).toHaveValue("internship");
+    await waitFor(() => expect(getCurrentOpportunityCoverage).toHaveBeenCalledWith({
+      market_key: "greater_boston",
+      role_family: "product_management",
+      opportunity_type: "internship",
+    }, expect.anything()));
   });
 
   test("keeps backend and frontend application-route safety aligned for local hosts", async () => {
@@ -141,7 +159,7 @@ describe("CurrentOpportunitiesPage", () => {
     render(<CurrentOpportunitiesPage auth={auth} />);
 
     expect(await screen.findByText("Current coverage is not supported for this scope")).toBeInTheDocument();
-    expect(screen.getAllByText(/cannot make an exhaustive claim/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/No complete current-opportunity view is available/i).length).toBeGreaterThan(0);
     expect(document.body.textContent).not.toMatch(/no jobs exist/i);
   });
 

@@ -117,10 +117,13 @@ export type RouteState = {
   discovery: DiscoveryFilters;
   intelligence: MarketIntelligenceUrlState;
   recommendationGoalMode: string;
+  recommendationView: RecommendationView;
   explore: ExploreUrlState;
   currentOpportunities: CurrentOpportunityUrlState;
   unknownPath?: string;
 };
+
+export type RecommendationView = "for-you" | "by-goal";
 
 export type ExploreUrlState = {
   query?: string;
@@ -408,6 +411,7 @@ function baseRoute(
     discovery: parseDiscovery(params),
     intelligence: parseMarketIntelligence(params),
     recommendationGoalMode: cleanToken(params.get("goal")) ?? DEFAULT_RECOMMENDATION_GOAL_MODE,
+    recommendationView: params.get("mode") === "for-you" ? "for-you" : "by-goal",
     explore: parseExploreState(params),
     currentOpportunities: parseCurrentOpportunityState(params),
     ...extra,
@@ -747,8 +751,11 @@ export function decisionsUrl(decisionId?: string): string {
   return `${PRODUCT_ROOT}/decisions?decision=${encodeURIComponent(decisionId)}`;
 }
 
-export function recommendationsUrl(goalMode = DEFAULT_RECOMMENDATION_GOAL_MODE): string {
-  const params = new URLSearchParams({ goal: goalMode });
+export function recommendationsUrl(
+  goalMode = DEFAULT_RECOMMENDATION_GOAL_MODE,
+  view: RecommendationView = "for-you",
+): string {
+  const params = new URLSearchParams({ goal: goalMode, mode: view });
   return `${PRODUCT_ROOT}/recommendations?${params.toString()}`;
 }
 

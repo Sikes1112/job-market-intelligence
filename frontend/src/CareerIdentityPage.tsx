@@ -647,10 +647,12 @@ export default function CareerIdentityPage({
         <>
           <section className="career-identity-hero">
             <div>
-              <p className="eyebrow">Private profile source of truth</p>
-              <h2>Career Identity</h2>
+              <p className="eyebrow">Personalization</p>
+              <h1>Career Identity</h1>
               <p>
-                Enter, import, review, and use your career information for personalization.
+                {evaluation?.sufficiency_state === "sufficient"
+                  ? "Ready to shape recommendations and career decisions."
+                  : "Add the details you want to use for personalized results."}
               </p>
             </div>
             <CompletenessMeter evaluation={evaluation} version={identity.current_version} />
@@ -661,8 +663,8 @@ export default function CareerIdentityPage({
 
           <section className="career-identity-layout">
             <div className="career-identity-sidebar">
-              <h3>Onboarding</h3>
-              <div className="career-step-list" role="tablist" aria-label="Career Identity onboarding steps">
+              <h3>Profile sections</h3>
+              <div className="career-step-list" role="tablist" aria-label="Career Identity profile sections">
                 {ONBOARDING_STEPS.map((step) => (
                   <button
                     type="button"
@@ -780,13 +782,7 @@ export default function CareerIdentityPage({
 
 function CareerShell({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="career-identity-page">
-      <header className="section-header">
-        <div>
-          <p className="eyebrow">Layer 35</p>
-          <h2>{title}</h2>
-        </div>
-      </header>
+    <div aria-label={title} className="career-identity-page">
       {children}
     </div>
   );
@@ -831,25 +827,28 @@ function CompletenessMeter({
       <div className="career-progress-track">
         <span style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
       </div>
-      <small>Identity version {evaluation?.identity_version ?? version}</small>
+      <small>{evaluation?.sufficiency_state === "sufficient" ? "Personalization ready" : `Profile ${evaluation?.identity_version ?? version}`}</small>
     </div>
   );
 }
 
 function CompletenessGuidance({ evaluation }: { evaluation: CareerIdentityCompleteness | null }) {
   if (!evaluation) return null;
-  const reasons = evaluation.actionable_reason_codes.slice(0, 4);
+  const reasons = (evaluation.actionable_reason_codes ?? []).slice(0, 4);
+  const sufficient = evaluation.sufficiency_state === "sufficient";
   return (
     <div className="career-guidance">
-      <strong>Next best inputs</strong>
-      {reasons.length ? (
+      <strong>{sufficient ? "Ready for personalization" : "Best next profile details"}</strong>
+      {!sufficient && reasons.length ? (
         <ul>
           {reasons.map((reason) => (
             <li key={reason}>{reasonToGuidance(reason)}</li>
           ))}
         </ul>
+      ) : !sufficient ? (
+        <p>Add a target role or location preference to begin shaping personalized results.</p>
       ) : (
-        <p>Your core Career Identity sections are ready.</p>
+        <p>Your confirmed profile can now inform recommendations. You can continue refining it at any time.</p>
       )}
     </div>
   );
@@ -992,13 +991,8 @@ function ImportPanel({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <section className="career-panel">
-      <div className="career-panel-header">
-        <div>
-          <p className="eyebrow">Import</p>
-          <h3>Resume or profile import</h3>
-        </div>
-      </div>
+    <details className="career-panel career-secondary-panel">
+      <summary>Import resume or profile</summary>
       <form className="career-fact-form" onSubmit={onSubmit}>
         <div className="career-form-grid">
           <label className="career-field" htmlFor="career-import-type">
@@ -1039,7 +1033,7 @@ function ImportPanel({
           <span>{result.created_fact_count} created, {result.updated_fact_count} updated, {result.protected_fact_count} protected, {result.duplicate_fact_count} duplicate.</span>
         </div>
       ) : null}
-    </section>
+    </details>
   );
 }
 
@@ -1056,21 +1050,22 @@ function FactInventory({
   onEdit: (fact: CareerIdentityFact) => void;
   saving: boolean;
 }) {
+  const populatedConfigs = FACT_CONFIGS.filter((config) => (identity.facts[config.type] ?? []).length);
   return (
     <section className="career-panel">
       <div className="career-panel-header">
         <div>
-          <p className="eyebrow">Profile editor</p>
-          <h3>Current Career Identity facts</h3>
+          <p className="eyebrow">Profile</p>
+          <h3>Saved details</h3>
         </div>
       </div>
       <div className="career-fact-groups">
-        {FACT_CONFIGS.map((config) => {
+        {populatedConfigs.map((config) => {
           const facts = identity.facts[config.type] ?? [];
           return (
             <section key={config.type} className="career-fact-group">
               <h4>{config.label}</h4>
-              {facts.length ? facts.map((fact) => (
+              {facts.map((fact) => (
                 <FactRow
                   key={fact.career_identity_fact_id}
                   fact={fact}
@@ -1079,10 +1074,11 @@ function FactInventory({
                   onEdit={onEdit}
                   saving={saving}
                 />
-              )) : <p className="muted-copy">No {config.label.toLowerCase()} facts yet.</p>}
+              ))}
             </section>
           );
         })}
+        {!populatedConfigs.length ? <div className="career-identity-empty"><strong>No profile details yet</strong><p>Add a detail above or import a resume.</p></div> : null}
       </div>
     </section>
   );
@@ -1140,43 +1136,38 @@ function PrivacyPanel({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <section className="career-panel">
-      <div className="career-panel-header">
-        <div>
-          <p className="eyebrow">Privacy</p>
-          <h3>Consent controls</h3>
-        </div>
-      </div>
+    <details className="career-panel career-secondary-panel">
+      <summary>Privacy and consent</summary>
       <form className="career-privacy-form" onSubmit={onSubmit}>
         <ConsentToggle
           checked={draft.ingestion_consent_granted}
           label="Allow resume/profile ingestion"
-          description="Required before imported resume or profile text can become Career Identity facts."
+          description="Required to add details from imported text."
           onChange={(checked) => setDraft({ ...draft, ingestion_consent_granted: checked })}
         />
         <ConsentToggle
           checked={draft.inference_consent_granted}
           label="Allow inferred suggestions"
-          description="Controls whether system-derived suggestions can be stored for your review."
+          description="Store suggestions for your review."
           onChange={(checked) => setDraft({ ...draft, inference_consent_granted: checked })}
         />
         <ConsentToggle
           checked={draft.downstream_personalization_consent_granted}
           label="Use Career Identity for recommendations"
-          description="Allows the recommendation layer to read your Career Identity as its career-preference source."
+          description="Use these details to personalize recommendations."
           onChange={(checked) => setDraft({ ...draft, downstream_personalization_consent_granted: checked })}
         />
         <ConsentToggle
           checked={draft.retain_import_metadata}
           label="Retain safe import metadata"
-          description="Keeps source labels and diagnostics, not raw imported text."
+          description="Keep source labels, not imported text."
           onChange={(checked) => setDraft({ ...draft, retain_import_metadata: checked })}
         />
         <button type="submit" className="primary-button" disabled={saving}>
           Save privacy controls
         </button>
       </form>
-    </section>
+    </details>
   );
 }
 
@@ -1222,16 +1213,11 @@ function RecommendationPreview({
 }) {
   const companies = state.data?.ranked_companies ?? [];
   return (
-    <section className="career-panel">
-      <div className="career-panel-header">
-        <div>
-          <p className="eyebrow">Recommendations</p>
-          <h3>Career Identity personalization preview</h3>
-        </div>
-      </div>
+    <details className="career-panel career-secondary-panel">
+      <summary>Recommendation preview</summary>
       <div className="career-recommendation-controls">
         <label className="career-field" htmlFor="career-recommendation-regions">
-          <span>Region ids</span>
+          <span>Market IDs</span>
           <input
             id="career-recommendation-regions"
             value={regionValue}
@@ -1245,9 +1231,7 @@ function RecommendationPreview({
       {state.loading ? <LoadingBlock label="Refreshing personalized recommendations" /> : null}
       {state.error ? <ErrorBlock message={state.error} /> : null}
       {metadata ? (
-        <p className="career-source-rule">
-          Source: {String(metadata.source)}; Career Identity applied: {String(metadata.career_identity_applied)}
-        </p>
+        <p className="career-source-rule">{metadata.career_identity_applied ? "Career Identity applied to this preview." : "Career Identity was not applied to this preview."}</p>
       ) : null}
       {companies.length ? (
         <div className="career-recommendation-list">
@@ -1266,7 +1250,7 @@ function RecommendationPreview({
           <p>Refresh after adding target roles, industries, locations, and recommendation consent.</p>
         </div>
       )}
-    </section>
+    </details>
   );
 }
 
@@ -1328,9 +1312,11 @@ function allFacts(identity: CareerIdentity | null): CareerIdentityFact[] {
 function summarizeFact(fact: CareerIdentityFact): string {
   const config = FACT_CONFIG_BY_TYPE.get(fact.fact_type);
   const values = (config?.summaryKeys ?? [])
-    .map((key) => fact.payload[key])
-    .filter((value) => value !== null && value !== undefined && String(value).trim())
-    .map(String);
+    .map((key) => ({ key, value: fact.payload[key] }))
+    .filter(({ value }) => value !== null && value !== undefined && String(value).trim())
+    .map(({ key, value }) => ["goal_type", "function", "seniority", "employment_type", "preference_kind", "constraint_kind", "arrangement", "willingness"].includes(key)
+      ? humanize(String(value))
+      : String(value));
   return values.length ? values.join(" / ") : humanize(fact.fact_type);
 }
 
@@ -1386,5 +1372,9 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 function humanize(value: string): string {
-  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return value
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .replace(/\bAi\b/g, "AI")
+    .replace(/\bNyc\b/g, "NYC");
 }

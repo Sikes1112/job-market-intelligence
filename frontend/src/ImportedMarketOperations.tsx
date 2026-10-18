@@ -45,6 +45,10 @@ export function ImportedMarketOperationsPanel({
           Health describes the current quality and coverage of the dataset. Refresh
           readiness describes whether the current curated files can be safely re-imported.
         </p>
+        <p>
+          The bundled eight-market repository files are synthetic demonstration fixtures,
+          not real or live market evidence. Freshness here describes fixture maintenance only.
+        </p>
         <p>Diagnostics are preview-only and do not change imported data.</p>
       </div>
       {loading ? (
@@ -217,7 +221,7 @@ function SourceAgingSection({ sources }: { sources?: ImportedSourceAgingReport }
               <span>{publicSafeText(source.source_label, source.source_id)}</span>
               <OperationStatusLabel kind="source" value={source.freshness_status} />
               <small>
-                {ageLabel(source.age_days)} · {source.fact_usage_count} affected fact(s) ·{" "}
+                {formatKeyLabel(source.data_origin ?? "origin not reported")} · {ageLabel(source.age_days)} · {source.fact_usage_count} affected fact(s) ·{" "}
                 {source.affects_ranking_eligibility ? "may affect ranking eligibility" : "does not affect ranking eligibility"}
               </small>
               <p>{publicSafeText(source.impact)}</p>

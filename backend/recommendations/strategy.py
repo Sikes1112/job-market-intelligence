@@ -681,7 +681,9 @@ def _company_category(
     *,
     inferred: bool,
 ) -> StrategyCompanyCategoryTarget:
-    refs = _dedupe_refs(tuple(ref for item in items for ref in _item_evidence_refs(item)))
+    refs = _dedupe_refs(
+        tuple(ref for item in items for ref in _item_evidence_refs(item))
+    )[:25]
     basis = _basis_from_refs(
         refs,
         extra=(
@@ -1431,7 +1433,7 @@ def _dedupe_warnings(
             (warning.warning_category, warning.label, warning.source_recommendation_ids),
             warning,
         )
-    return tuple(deduped.values())
+    return tuple(deduped.values())[:50]
 
 
 def _all_strategy_source_ids(plan: MarketStrategyPlan) -> Iterable[tuple[str, ...]]:

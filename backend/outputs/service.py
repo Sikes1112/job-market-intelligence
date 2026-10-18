@@ -72,6 +72,7 @@ from backend.provenance.models import FactSourceLink
 from backend.scoring.repository import RegionScoreRepository
 from backend.shared.freshness import FreshnessStatus
 from backend.shared.provenance import (
+    DEMO_DATA_ORIGINS,
     REAL_DATA_ORIGINS,
     DataOrigin,
     FactBindingType,
@@ -716,6 +717,7 @@ class OutputAssemblyService:
         decisions = self._latest_routing_decisions(refs)
         data_basis = _data_basis(links)
         imported_data = data_basis in {"real_imported", "mixed"}
+        demonstration_data = data_basis == "seeded_demo"
         source_backed = bool(links)
         freshness_status = _freshness_status(links, outcome=outcome)
         ranking_allowed = _ranking_allowed(decisions)
@@ -723,17 +725,43 @@ class OutputAssemblyService:
             data_basis=data_basis,
             imported_data=imported_data,
             imported_data_label=(
-                "Real imported data" if imported_data else "Unknown data basis"
+                "Demonstration data"
+                if demonstration_data
+                else "Real imported data"
+                if imported_data
+                else "Unknown data basis"
             ),
             source_backed=source_backed,
-            source_label="Source-backed" if source_backed else "Source evidence unknown",
-            coverage_label=_coverage_label(outcome, source_backed=source_backed),
+            source_label=(
+                "Synthetic fixture-backed"
+                if demonstration_data
+                else "Source-backed"
+                if source_backed
+                else "Source evidence unknown"
+            ),
+            coverage_label=(
+                "Demonstration coverage"
+                if demonstration_data
+                else _coverage_label(outcome, source_backed=source_backed)
+            ),
             freshness_status=freshness_status,
-            freshness_label=f"Freshness: {freshness_status}",
-            trust_label=_trust_label(decisions),
+            freshness_label=(
+                "Freshness: demonstration snapshot (stale)"
+                if demonstration_data and freshness_status == "stale"
+                else "Freshness: demonstration snapshot"
+                if demonstration_data
+                else f"Freshness: {freshness_status}"
+            ),
+            trust_label=(
+                "Demonstration only" if demonstration_data else _trust_label(decisions)
+            ),
             risk_label=_risk_label(decisions),
             ranking_influence_allowed=ranking_allowed,
-            ranking_label=_ranking_label(ranking_allowed),
+            ranking_label=(
+                "Demo ranking only"
+                if demonstration_data and ranking_allowed is True
+                else _ranking_label(ranking_allowed)
+            ),
         )
 
     def _fact_source_links(
@@ -1038,6 +1066,7 @@ def _data_basis(links: tuple[FactSourceLink, ...]) -> str:
     if not links:
         return "unknown"
     origins = [_data_origin(link.data_origin) for link in links]
+    has_demo = any(origin in DEMO_DATA_ORIGINS for origin in origins)
     has_real = any(origin in REAL_DATA_ORIGINS for origin in origins)
     has_unknown = any(
         origin is None or origin is DataOrigin.UNKNOWN_ORIGIN for origin in origins
@@ -1046,8 +1075,13 @@ def _data_basis(links: tuple[FactSourceLink, ...]) -> str:
         origin is not None
         and origin is not DataOrigin.UNKNOWN_ORIGIN
         and origin not in REAL_DATA_ORIGINS
+        and origin not in DEMO_DATA_ORIGINS
         for origin in origins
     )
+    if has_demo and not has_real and not has_unknown and not has_other:
+        return "seeded_demo"
+    if has_demo and has_real:
+        return "mixed"
     if has_real and not has_unknown and not has_other:
         return "real_imported"
     if has_real:

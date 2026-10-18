@@ -31,6 +31,9 @@ from sqlalchemy.orm import Session
 
 from backend.companies.repository import CompanyRepository
 from backend.companies.service import CompanyService
+from backend.current_opportunities.adapters import StaticOpportunityAdapter
+from backend.current_opportunities.repository import CurrentOpportunityRepository
+from backend.current_opportunities.service import CurrentOpportunityService
 from backend.entry_level.repository import EntryLevelRepository
 from backend.entry_level.service import EntryLevelService
 from backend.geography.catalog import apply_curated_geography, load_curated_geographies
@@ -68,6 +71,18 @@ from seeds.mvp_data import (
     PRESENCE,
     REGIONS,
 )
+from seeds.opportunity_data import (
+    CORE_MARKET_IDS,
+    CURRENT_OPPORTUNITY_SOURCE,
+    DEMO_CORE_RUN_ID,
+    DemoOpportunityScenario,
+    closed_opportunity_records,
+    core_scenarios,
+    current_opportunity_coverage,
+    current_opportunity_records,
+    demo_observed_at,
+    marketplace_opportunities,
+)
 
 _DEMO_SOURCE_ID = "mvp_demo_seed"
 _DEMO_OBSERVATION_ID = "mvp_demo_seed_observation"
@@ -86,8 +101,9 @@ def _empty_counter() -> Counter:
 class SeedResult:
     """Compact summary returned by :func:`run_seed`.
 
-    Each :class:`Counter` records the upsert outcomes for its layer
-    (``"created"`` / ``"updated"`` / ``"unchanged"``).
+    Each :class:`Counter` records processed upsert operations for its layer
+    (``"created"`` / ``"updated"`` / ``"unchanged"``), not final stored-row
+    totals. A logical scenario can be processed by more than one seed pass.
     """
 
     regions: Counter = field(default_factory=_empty_counter)
@@ -100,6 +116,10 @@ class SeedResult:
     company_outputs: Counter = field(default_factory=_empty_counter)
     comparison_outputs: Counter = field(default_factory=_empty_counter)
     contextual_outputs: Counter = field(default_factory=_empty_counter)
+    marketplace_opportunities: Counter = field(default_factory=_empty_counter)
+    current_opportunity_sources: Counter = field(default_factory=_empty_counter)
+    current_opportunity_coverage: Counter = field(default_factory=_empty_counter)
+    current_opportunities: Counter = field(default_factory=_empty_counter)
 
     def summary_lines(self) -> list[str]:
         def _line(label: str, counter: Counter) -> str:
@@ -123,10 +143,14 @@ class SeedResult:
             _line("company_outputs", self.company_outputs),
             _line("comparison_outputs", self.comparison_outputs),
             _line("contextual_outputs", self.contextual_outputs),
+            _line("marketplace_opp_upserts", self.marketplace_opportunities),
+            _line("current_opp_sources", self.current_opportunity_sources),
+            _line("current_opp_coverage", self.current_opportunity_coverage),
+            _line("current_opp_upserts", self.current_opportunities),
         ]
 
 
-def run_seed(session: Session) -> SeedResult:
+def run_seed(session: Session, *, demo_now: datetime | None = None) -> SeedResult:
     """Run the full MVP seed/demo pipeline against ``session``.
 
     The caller owns transaction lifecycle. ``run_seed`` flushes via the
@@ -259,7 +283,162 @@ def run_seed(session: Session) -> SeedResult:
         contextual_result = contextual_service.build(region_a, region_b)
         result.contextual_outputs[contextual_result.action] += 1
 
+    # 11) Representative opportunity inventory -------------------------
+    seed_opportunity_scenarios(
+        session,
+        result,
+        scenarios=core_scenarios(),
+        market_ids=CORE_MARKET_IDS,
+        run_id=DEMO_CORE_RUN_ID,
+        observed_at=demo_observed_at(demo_now),
+    )
+
     return result
+
+
+def seed_opportunity_scenarios(
+    session: Session,
+    result: SeedResult,
+    *,
+    scenarios: tuple[DemoOpportunityScenario, ...],
+    market_ids: set[str] | frozenset[str],
+    run_id: str,
+    observed_at: datetime,
+) -> None:
+    """Seed shared scenarios through both existing opportunity domain services."""
+
+    _seed_marketplace_opportunities(
+        session,
+        result,
+        definitions=marketplace_opportunities(scenarios, observed_at=observed_at),
+    )
+    _seed_current_opportunities(
+        session,
+        result,
+        scenarios=scenarios,
+        market_ids=market_ids,
+        run_id=run_id,
+        observed_at=observed_at,
+    )
+
+
+def _seed_marketplace_opportunities(
+    session: Session,
+    result: SeedResult,
+    *,
+    definitions: tuple,
+) -> None:
+    # Load the data-standards package before the marketplace service so its
+    # existing trust-adapter import cycle is initialized in the same order as
+    # the FastAPI application.
+    import backend.data_standards  # noqa: F401, PLC0415
+    from backend.opportunities.repository import OpportunityRepository  # noqa: PLC0415
+    from backend.opportunities.service import OpportunityService  # noqa: PLC0415
+
+    repository = OpportunityRepository(session)
+    service = OpportunityService(repository)
+    for definition in definitions:
+        assert definition.opportunity_id is not None
+        if repository.get_opportunity(definition.opportunity_id) is not None:
+            result.marketplace_opportunities["unchanged"] += 1
+            continue
+        service.create_opportunity(definition)
+        result.marketplace_opportunities["created"] += 1
+
+
+def _seed_current_opportunities(
+    session: Session,
+    result: SeedResult,
+    *,
+    scenarios: tuple[DemoOpportunityScenario, ...],
+    market_ids: set[str] | frozenset[str],
+    run_id: str,
+    observed_at: datetime,
+) -> None:
+    repository = CurrentOpportunityRepository(session)
+    service = CurrentOpportunityService(repository)
+
+    source_exists = repository.get_source(CURRENT_OPPORTUNITY_SOURCE.source_id) is not None
+    service.upsert_source(CURRENT_OPPORTUNITY_SOURCE)
+    result.current_opportunity_sources[
+        "unchanged" if source_exists else "created"
+    ] += 1
+
+    coverage_definitions = current_opportunity_coverage(
+        market_ids,
+        evaluated_at=observed_at,
+    )
+    for definition in coverage_definitions:
+        coverage_exists = repository.get_coverage(
+            market_key=definition.market_key,
+            role_family=definition.role_family,
+            opportunity_type=(
+                definition.opportunity_type.value
+                if hasattr(definition.opportunity_type, "value")
+                else str(definition.opportunity_type)
+            ),
+        ) is not None
+        service.upsert_coverage(definition)
+        result.current_opportunity_coverage[
+            "unchanged" if coverage_exists else "created"
+        ] += 1
+
+    records = current_opportunity_records(scenarios, observed_at=observed_at)
+    run_exists = repository.get_run_by_idempotency_key(run_id) is not None
+    run = service.refresh_source(
+        StaticOpportunityAdapter(
+            source_id=CURRENT_OPPORTUNITY_SOURCE.source_id,
+            records=records,
+            collected_at=observed_at,
+            warnings=(
+                "Synthetic demonstration records; not real or comprehensive openings.",
+            ),
+        ),
+        run_id=run_id,
+        idempotency_key=run_id,
+        trigger_type="demo_seed",
+        requested_by="scripts.seed_demo",
+        now=observed_at,
+    )
+    if run_exists:
+        result.current_opportunities["unchanged"] += len(records)
+    else:
+        result.current_opportunities["created"] += run.promoted_count
+
+
+def close_opportunity_scenarios(
+    session: Session,
+    result: SeedResult,
+    *,
+    scenarios: tuple[DemoOpportunityScenario, ...],
+    run_id: str,
+    observed_at: datetime,
+) -> None:
+    """Close designated scenarios through the governed removal-observation path."""
+
+    records = closed_opportunity_records(scenarios, observed_at=observed_at)
+    if not records:
+        return
+    repository = CurrentOpportunityRepository(session)
+    service = CurrentOpportunityService(repository)
+    run_exists = repository.get_run_by_idempotency_key(run_id) is not None
+    run = service.refresh_source(
+        StaticOpportunityAdapter(
+            source_id=CURRENT_OPPORTUNITY_SOURCE.source_id,
+            records=records,
+            collected_at=observed_at,
+            warnings=("Synthetic closed-opportunity lifecycle scenario.",),
+        ),
+        run_id=run_id,
+        idempotency_key=run_id,
+        trigger_type="demo_seed",
+        requested_by="scripts.seed_demo",
+        now=observed_at,
+    )
+    if run_exists:
+        result.current_opportunities["unchanged"] += len(records)
+    else:
+        result.current_opportunities["updated"] += run.promoted_count
 
 
 def _with_curated_geography(definition: RegionDefinition) -> RegionDefinition:

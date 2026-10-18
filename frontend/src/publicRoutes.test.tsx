@@ -965,7 +965,7 @@ function publicReport(slug: string) {
     ],
     source_provenance_summary: publicReportProvenance(),
     related_links: [
-      { label: "Methodology foundation", href: "/methodology", link_type: "public_page" },
+      { label: "Methodology", href: "/methodology", link_type: "public_page" },
       { label: "Category glossary", href: "/glossary", link_type: "public_page" },
     ],
     suggested_citation: {
@@ -1564,13 +1564,13 @@ describe("public demo routes", () => {
     window.history.pushState(null, "", "/");
   });
 
-  test("landing page route renders disclosure and public links", () => {
+  test("landing page route renders disclosure and public links", async () => {
     renderAt("/");
 
-    expect(screen.getByRole("heading", { name: "Job Market Intelligence" })).toBeTruthy();
-    expect(screen.getByText("Public demo disclosure")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Compare career markets. Choose your next move." })).toBeTruthy();
+    expect(screen.getByText("Illustrative portfolio data")).toBeTruthy();
     expect(screen.getAllByText(/Coverage is partial/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("link", { name: "Enter demo" }).some((link) =>
+    expect(screen.getAllByRole("link", { name: "Explore markets" }).some((link) =>
       link.getAttribute("href") === "/markets"
     )).toBe(true);
     expect(screen.getAllByRole("link", { name: "Guides" }).length).toBeGreaterThan(0);
@@ -1586,16 +1586,15 @@ describe("public demo routes", () => {
     stubPublicFetch();
     renderAt("/");
 
-    fireEvent.click(screen.getAllByRole("link", { name: "Enter demo" })[0]);
+    fireEvent.click((await screen.findAllByRole("link", { name: "Explore markets" }))[0]);
 
     expect(window.location.pathname).toBe("/markets");
-    expect(await screen.findByRole("heading", { name: "Explore markets" })).toBeTruthy();
   });
 
-  test("developer portal and docs routes render API packaging content", () => {
+  test("developer portal and docs routes render API packaging content", async () => {
     renderAt("/developers");
 
-    expect(screen.getByRole("heading", { name: "Platform API developer portal" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Platform API developer portal" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "OpenAPI JSON" }).getAttribute("href"))
       .toBe("/api/v1/platform/docs/openapi.json");
     expect(screen.getByRole("link", { name: "Postman JSON" }).getAttribute("href"))
@@ -1604,21 +1603,21 @@ describe("public demo routes", () => {
     cleanup();
     renderAt("/developers/docs/authentication");
 
-    expect(screen.getByRole("heading", { name: "Authentication" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Authentication" })).toBeTruthy();
     expect(screen.getAllByText(/X-API-Key/i).length).toBeGreaterThan(0);
 
     cleanup();
     renderAt("/developers/docs/errors");
 
-    expect(screen.getByRole("heading", { name: "Errors" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Errors" })).toBeTruthy();
     expect(screen.getByText(/UNSUPPORTED_QUERY/i)).toBeTruthy();
     expect(screen.getByText(/RATE_LIMIT_EXCEEDED/i)).toBeTruthy();
   });
 
-  test("data licensing route renders source-safe dataset cards", () => {
+  test("data licensing route renders source-safe dataset cards", async () => {
     renderAt("/data-licensing");
 
-    expect(screen.getByRole("heading", { name: "Derived market intelligence datasets" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Derived market intelligence datasets" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Regional market intelligence" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Early-career access scores" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Company-region presence" })).toBeTruthy();
@@ -1718,8 +1717,7 @@ describe("public demo routes", () => {
       expect(screen.getByRole("heading", { name: "Institutional use" })).toBeTruthy();
       expect(screen.getByRole("link", { name: "Explore institutional market intelligence" })).toBeTruthy();
       expect(screen.getAllByText(/demo-safe/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/not production ranking truth/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByRole("link", { name: "Methodology foundation" }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("link", { name: "Methodology" }).length).toBeGreaterThan(0);
       expect(document.title).toBe(PUBLIC_SEO_PAGES.find((page) => page.slug === slug)?.seo.title);
     },
   );
@@ -1816,8 +1814,7 @@ describe("public demo routes", () => {
     expect(screen.getAllByText(/Freshness/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Confidence: Low/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Featured-market example only/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/not production ranking truth/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/No benchmark\/index scoring is performed in Layer 19B/i)).toBeTruthy();
+    expect(screen.getByText("No benchmark or index score is presented here.")).toBeTruthy();
   });
 
   test.each(PUBLIC_BENCHMARK_SLUGS)("/benchmarks/%s renders benchmark detail", async (slug) => {
@@ -1843,8 +1840,8 @@ describe("public demo routes", () => {
     expect(screen.getAllByText(/Freshness/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Confidence: Low/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/demo-safe display/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/not production benchmark truth/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/No production benchmark\/index scoring is performed in Layer 19C/i)).toBeTruthy();
+    expect(screen.getAllByText(/not a supported benchmark/i).length).toBeGreaterThan(0);
+    expect(screen.getByText("No benchmark or index score is presented here.")).toBeTruthy();
   });
 
   test("unknown public report slug renders graceful not-found state", async () => {
@@ -1909,16 +1906,14 @@ describe("public demo routes", () => {
     expect(screen.getAllByText("Coverage: Tier 2 - partial but useful market").length).toBeGreaterThan(0);
     expect(screen.getByText("Heuristic coverage score: 62%")).toBeTruthy();
     expect(screen.getAllByText("Coverage is partial; compare this market with caution.").length).toBeGreaterThan(0);
-    expect(screen.getByText("Sector coverage")).toBeTruthy();
+    expect(screen.getByText(/Sector coverage ·/)).toBeTruthy();
     expect(screen.getAllByText("Sector level: Watchlist").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Coverage: Tier 3 - watchlist / emerging market").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Priority #10: Boston").length).toBeGreaterThan(0);
     expect((await screen.findAllByText("Real imported data")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Fresh").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Current snapshot").length).toBeGreaterThan(0);
-    expect(screen.getByText("Unsupported visualization state")).toBeTruthy();
-    expect(screen.getByText("Historical trend view")).toBeTruthy();
-    expect(screen.getByText("Opportunity heatmap")).toBeTruthy();
+    expect(screen.queryByText("Unsupported visualization state")).toBeNull();
   });
 
   test("canonical slug cold navigation loads the canonical Region", async () => {
@@ -2060,26 +2055,23 @@ describe("public demo routes", () => {
     stubPublicFetch();
     renderAt("/markets/recommendations");
 
-    expect(await screen.findByRole("heading", { name: "Recommendation decision support" })).toBeTruthy();
-    expect((screen.getByLabelText("Recommendation goal mode") as HTMLSelectElement).value).toBe(
+    expect(await screen.findByRole("heading", { name: /Greater Boston is the strongest actionable market/i })).toBeTruthy();
+    expect((screen.getByLabelText("What should the ranking optimize?") as HTMLSelectElement).value).toBe(
       "maximize_entry_level_access",
     );
     expect(screen.getAllByText("Maximize entry-level access").length).toBeGreaterThan(0);
-    expect(await screen.findByRole("heading", { name: "Ranked region recommendations" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Ranked markets" })).toBeTruthy();
     expect(screen.getAllByText("Greater Boston").length).toBeGreaterThan(0);
-    expect(screen.getByText("Final score")).toBeTruthy();
-    expect(screen.getByText("Ranked by Maximize entry-level access")).toBeTruthy();
+    expect(screen.getByText("relative fit")).toBeTruthy();
     expect(screen.getByText("High prestige but weaker entry-level accessibility")).toBeTruthy();
-    expect(screen.getAllByText("Verify current job postings").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Proxy").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Inferred").length).toBeGreaterThan(0);
+    expect(screen.getByText("Inspect scoring, trade-offs, and evidence")).toBeTruthy();
     expect(
       screen.getAllByText("Company rankings unavailable: no company outputs were available.").length,
     ).toBeGreaterThan(0);
     expect(screen.queryByRole("textbox", { name: /prompt/i })).toBeNull();
     expect(screen.queryByText(/AI summary/i)).toBeNull();
-    expect(screen.getByText("Generate a full strategy report with Individual.")).toBeTruthy();
-    expect(screen.getByText(/The ranked recommendation stays visible here/i)).toBeTruthy();
+    expect(screen.queryByText("Generate a full strategy report with Individual.")).toBeNull();
+    expect(screen.getByRole("link", { name: "Open Decision Workspace" })).toBeTruthy();
   });
 
   test("plans page renders plan catalog reports and trust-safe access previews", async () => {
@@ -2120,8 +2112,8 @@ describe("public demo routes", () => {
     const fetchMock = stubPublicFetch();
     renderAt("/markets/recommendations");
 
-    await screen.findByRole("heading", { name: "Recommendation decision support" });
-    fireEvent.change(screen.getByLabelText("Recommendation goal mode"), {
+    await screen.findByRole("heading", { name: /Greater Boston is the strongest actionable market/i });
+    fireEvent.change(screen.getByLabelText("What should the ranking optimize?"), {
       target: { value: "maximize_ai_cloud_concentration" },
     });
 
@@ -2140,26 +2132,23 @@ describe("public demo routes", () => {
     stubPublicFetch();
     renderAt("/markets/recommendations");
 
-    expect(await screen.findByRole("heading", { name: "Market strategy plan" })).toBeTruthy();
-    expect(screen.getByText("Primary regions")).toBeTruthy();
-    expect(screen.getByText("Fallback regions")).toBeTruthy();
-    expect(screen.getByText("Watchlist")).toBeTruthy();
-    expect(screen.getByText("Timing guidance")).toBeTruthy();
-    expect(screen.getByText("Role-family guidance")).toBeTruthy();
-    expect(screen.getAllByText("Heuristic / inferred").length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "Where the evidence supports action" })).toBeTruthy();
+    expect(screen.getAllByText(/Primary target|Fallback target/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/market.*to monitor/i)).toBeTruthy();
+    expect(screen.getByText("Method and supporting evidence")).toBeTruthy();
     expect(screen.getByText("Ranked target uses proxy-heavy evidence.")).toBeTruthy();
-    expect(screen.getByText("Check current company/career pages before treating ranked targets as actionable.")).toBeTruthy();
-    expect(screen.getByText("Lower competition is not directly measured.")).toBeTruthy();
+    expect(screen.getAllByText(/Lower competition is not directly measured/).length).toBeGreaterThan(0);
   });
 
   test("company geography keeps coverage separate from freshness and sector coverage", async () => {
     stubPublicFetch();
     renderAt("/markets/company/comp_a");
 
-    expect(await screen.findByRole("heading", { name: "Observed region signals" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Acme AI" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Strongest market signals" })).toBeTruthy();
     expect(screen.getAllByText("Coverage: Tier 2 - partial but useful market").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Coverage: Tier 4 - placeholder only").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Sector coverage").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Sector coverage ·/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Real imported data").length).toBeGreaterThan(0);
   });
 
@@ -2175,7 +2164,7 @@ describe("public demo routes", () => {
 
   test.each([
     ["/glossary", "Category glossary", /Opportunity geography/i],
-    ["/methodology", "Methodology foundation", /Batch 19A does not create report rankings/i],
+    ["/methodology", "How market intelligence works", /interpret market comparisons/i],
     ["/data-limitations", "Data limitations", /Scores are derived signals/i],
     ["/privacy", "Privacy notice", /Public browsing/i],
     ["/terms", "Terms and disclaimer", /No guarantee/i],

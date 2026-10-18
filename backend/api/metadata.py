@@ -42,6 +42,7 @@ class _Vocabulary(StrEnum):
 
 class ApiFreshnessStatus(_Vocabulary):
     FRESH = "fresh"
+    SIMULATED_CURRENT = "simulated_current"
     STALE = "stale"
     PARTIAL = "partial"
     UNKNOWN = "unknown"
@@ -144,14 +145,21 @@ def _freshness_status(
     partial: bool,
     now: datetime | None,
 ) -> ApiFreshnessStatus:
-    if data_basis is ApiDataBasis.SEEDED_DEMO:
-        return ApiFreshnessStatus.SEEDED_DEMO
     if source_count == 0:
         return ApiFreshnessStatus.UNKNOWN
     if partial:
         return ApiFreshnessStatus.PARTIAL
     if any(_observation_status(record) is ObservationStatus.STALE for record in records):
         return ApiFreshnessStatus.STALE
+    if data_basis is ApiDataBasis.SEEDED_DEMO:
+        declared_freshness = {
+            value
+            for record in records
+            if (value := _string_attr(record, "freshness_status")) is not None
+        }
+        if declared_freshness & {"fresh", "current"}:
+            return ApiFreshnessStatus.SIMULATED_CURRENT
+        return ApiFreshnessStatus.SEEDED_DEMO
     if freshness_expires_at is None:
         return ApiFreshnessStatus.UNKNOWN
 
@@ -200,6 +208,11 @@ def _low_confidence_warning(
     freshness_status: ApiFreshnessStatus,
 ) -> str | None:
     if data_basis is ApiDataBasis.SEEDED_DEMO:
+        if freshness_status is ApiFreshnessStatus.SIMULATED_CURRENT:
+            return (
+                "Freshness is current only within the synthetic demonstration "
+                "scenario; this is not real imported market evidence."
+            )
         return "Data is seeded demo data, not real imported market evidence."
     if data_basis is ApiDataBasis.MIXED:
         return "Data basis is mixed and should be reviewed before trust."

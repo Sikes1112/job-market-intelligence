@@ -285,7 +285,7 @@ describe("UserIntelligenceDashboardPage", () => {
     render(<UserIntelligenceDashboardPage />);
 
     expect(await screen.findByText("No recommended regions")).toBeTruthy();
-    expect(screen.getByText(/frontend did not fabricate any/i)).toBeTruthy();
+    expect(screen.getByText("No scored market recommendations are available.")).toBeTruthy();
     expect(screen.getByText("No recommended companies")).toBeTruthy();
     expect(screen.getByText("No recommended opportunities")).toBeTruthy();
     expect(screen.getByText("No market warnings")).toBeTruthy();

@@ -302,7 +302,7 @@ export default function MySearchPage({ auth, onNavigate, pursuitId, applicationI
   return (
     <div className="my-search-page my-search-workspace">
       <p aria-live="polite" className="sr-only">{announcement}</p>
-      <header className="my-search-hero"><p className="eyebrow">What you’re pursuing and what to do next</p><h1>My Search</h1><p>Active priorities and execution state from your Decisions, actions, and applications.</p></header>
+      <header className="my-search-hero"><p className="eyebrow">Active search</p><h1>My Search</h1><p>Priorities, next actions, and applications.</p></header>
       {error ? <p className="explore-error" role="alert">{error}</p> : null}
       {!workspace.active_pursuits.length && !workspace.saved_comparisons.length && !workspace.saved_items.length ? <section className="my-search-empty-state"><h2>Nothing active yet.</h2><p>Explore markets to find where you want to focus.</p><button onClick={() => onNavigate(exploreUrl())} type="button">Explore markets</button></section> : null}
 

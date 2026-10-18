@@ -425,7 +425,20 @@ def test_index_score_generation_does_not_mutate_canonical_authority(
     assert session.query(OutputMetadata).count() == 1
 
 
-def test_platform_intelligence_apis_return_safe_summaries(api_client, session: Session) -> None:
+def test_platform_intelligence_apis_return_safe_summaries(
+    api_client,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # noqa: ANN001
+            return NOW if tz is not None else NOW.replace(tzinfo=None)
+
+    monkeypatch.setattr(
+        "backend.platform_intelligence.predictive_signals.datetime",
+        FixedDatetime,
+    )
     _seed_region(session)
     _seed_market_series(session, count=3)
     _seed_company_and_sector_history(session)

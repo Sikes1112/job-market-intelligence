@@ -150,7 +150,7 @@ describe("Layer 42B Explore comparison", () => {
     expect(await screen.findByRole("heading", { name: /effectively tied/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Biggest differentiators" })).toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "Greater Boston" }).length).toBeGreaterThan(0);
-    expect(screen.getByRole("table")).toHaveAccessibleName(/Fit, evidence confidence/i);
+    expect(screen.getByRole("table")).toHaveAccessibleName(/Fit, confidence, tradeoffs/i);
     expect(screen.getByText(/presence evidence, not active hiring/i)).toBeInTheDocument();
     expect(screen.getAllByText(/supporting evidence only/i)).toHaveLength(4);
     await waitFor(() => expect(mocks.event).toHaveBeenCalledWith(expect.objectContaining({ event_type: "comparison_recommendation_viewed" }), expect.anything()));

@@ -128,8 +128,8 @@ describe("Career Identity App route", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Private profile source of truth")).toBeInTheDocument();
-    expect(screen.getByRole("tablist", { name: "Career Identity onboarding steps" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Career Identity" })).toBeInTheDocument();
+    expect(screen.getByRole("tablist", { name: "Career Identity profile sections" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Terms and disclaimer" })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(

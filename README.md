@@ -1,156 +1,99 @@
-# Job Market Intelligence Platform
+# Job Market Intelligence
 
-Local MVP demo for a job-market intelligence platform.
+Job Market Intelligence is a geographic career-decision application for exploring labor markets and employers, finding relevant opportunities, comparing markets, and turning evidence into a practical next step.
 
-The product maps companies, hiring activity, entry-level opportunity, and market strength across cities, metros, and labor regions.
+![Career Identity-based market recommendations in the running application](docs/assets/portfolio/recommendations.jpg)
 
-Comparison is a feature, not the product core.
+[What it does](#what-it-does) · [Engineering](#engineering-highlights) · [Run locally](#run-locally) · [Documentation](#documentation)
 
-## What Is Implemented
+## What it does
 
-- Backend API for health, region outputs, company outputs, Boston vs SF comparison, request-scoped personalized discovery, protected user-owned watchlists/scoring previews/alerts, and deterministic structured explanation endpoints.
-- Deterministic seeded demo data for Greater Boston and Greater San Francisco / Silicon Valley.
-- Vite + React + TypeScript frontend demo under `frontend/`, including Auth0 sign-in/sign-out and app-account UX for protected `/me` routes.
-- Local SQLite demo workflow via `scripts/seed_demo.py`.
+- Explores labor markets and employer presence from a role, industry, or geographic starting point.
+- Filters governed demonstration opportunities by market, role family, type, work arrangement, freshness, and strategic relevance.
+- Compares selected markets with evidence, confidence, coverage, and trade-offs kept visible.
+- Separates authenticated, consent-aware Career Identity discovery from public goal-based market ranking.
+- Carries alternatives and recommendations into versioned career decisions and next actions.
 
-Current status: controlled-beta production-hardening baseline. The intended Vercel + Render + Neon + Auth0 topology, strict production environment contract, release identity, readiness, beta cohort gate, deterministic reference bootstrap, and smoke/runbook workflow are documented in `docs/LAYER_44A_BETA_OPERATIONS.md`. A user-facing beta remains gated on fresh curated evidence and production-like acceptance; Current Opportunity coverage is not comprehensive.
+| Explore markets | Make a decision |
+|---|---|
+| ![Map-based market exploration and ranked results](docs/assets/portfolio/explore-markets.jpg) | ![Versioned decision workspace with alternatives and next actions](docs/assets/portfolio/decision-workspace.jpg) |
 
-## Run The Local Demo
+More views: [market comparison](docs/assets/portfolio/market-comparison.jpg), [current opportunities](docs/assets/portfolio/current-opportunities.jpg), [Career Identity](docs/assets/portfolio/career-identity.jpg), and [all portfolio screenshots](docs/assets/portfolio/).
 
-From the repo root, seed the demo database:
+## Engineering highlights
+
+- **Evidence-aware data:** conclusions retain provenance, coverage, confidence, freshness, and the distinction between unknown values and observed zeroes.
+- **Governed opportunities:** source policy, canonical identity, status, coverage, and eligibility determine whether an observation can be displayed or ranked.
+- **Explainable recommendations:** declared goal profiles produce deterministic rankings, reasons, trade-offs, watchlists, and abstentions without claiming trained machine learning.
+- **User-owned personalization and decisions:** Career Identity is authenticated, consent-aware, versioned, and separate from public goal rankings; decision mutations append history instead of overwriting it.
+- **Reproducible local application:** Alembic migrations and an idempotent portfolio seed create the SQLite demonstration without paid services or external data calls.
+
+See the [engineering guide](docs/ENGINEERING_GUIDE.md) for architecture, representative request paths, source entry points, and trade-offs.
+
+## Tech stack
+
+- **Frontend:** React 19, TypeScript, Vite 7
+- **Backend:** Python 3.11, FastAPI, Pydantic, SQLAlchemy 2, Alembic
+- **Data and verification:** SQLite locally, optional PostgreSQL support, pytest, Vitest, ESLint, Ruff
+
+## Run locally
+
+The verified baseline is Python 3.11, Node.js 22, and npm 10 or newer. The repository includes pinned runtime files and locked Python and npm dependencies.
+
+From the repository root:
 
 ```bash
-python -m scripts.seed_demo --database-url "sqlite:///./demo.db"
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt -c requirements.lock
+
+cd frontend
+npm ci
+cd ..
 ```
 
-Run the backend against the same database:
+Create the database and demonstration data:
 
 ```bash
-DATABASE_URL="sqlite:///./demo.db" uvicorn backend.api.app:app --reload
+APP_ENV=local DATABASE_URL="sqlite:///./demo.db" \
+  python -m alembic upgrade head
+
+APP_ENV=local python -m scripts.seed_demo \
+  --database-url "sqlite:///./demo.db" \
+  --portfolio --demo-as-of 2026-10-17
 ```
 
-In another shell, run the frontend:
+Start the API:
+
+```bash
+APP_ENV=local DATABASE_URL="sqlite:///./demo.db" \
+  .venv/bin/uvicorn backend.api.app:app --reload
+```
+
+In a second terminal, start the frontend with its local demonstration identity:
 
 ```bash
 cd frontend
-npm install
-npm run dev
+VITE_LOCAL_AUTH=true npm run dev
 ```
 
-Open the Vite URL printed by `npm run dev`, typically `http://localhost:5173`.
+Open <http://127.0.0.1:5173/markets>. No Auth0 tenant, external AI API, commercial database, or paid service is required. `VITE_LOCAL_AUTH` is effective only during development and connects the seeded Career Identity and decision scenario; configured beta and production deployments reject it.
 
-For the local demo, prefer the Vite dev proxy by leaving `VITE_API_BASE_URL` unset. The proxy forwards the implemented API paths to `http://127.0.0.1:8000` without requiring backend CORS changes.
+For setup explanations, verification commands, and troubleshooting, use the **[complete local setup guide](docs/LOCAL_SETUP.md)**.
 
-Useful backend endpoints:
+## Demonstration data and limitations
 
-- `GET http://127.0.0.1:8000/health`
-- `GET http://127.0.0.1:8000/ready`
-- `GET http://127.0.0.1:8000/regions`
-- `GET http://127.0.0.1:8000/regions/greater_boston`
-- `GET http://127.0.0.1:8000/regions/greater_sf`
-- `GET http://127.0.0.1:8000/compare?region_a=greater_boston&region_b=greater_sf`
-- `POST http://127.0.0.1:8000/discover/personalized`
-- `POST http://127.0.0.1:8000/me/scoring-preview` with Auth0 Bearer auth
+The bundled markets, employer observations, compensation figures, and opportunities are synthetic or illustrative demonstration data. They are not live employer listings, validated nationwide labor-market conditions, hiring probabilities, or evidence of career outcomes. Reserved `.example` links cannot be used to apply for jobs.
 
-## Controlled Beta Deployment Notes
+The application exercises real ingestion, persistence, governance, matching, ranking, personalization, and decision workflows. Its evaluation establishes deterministic behavior and internal contract consistency—not predictive accuracy. See [Decision Intelligence](docs/DECISION_INTELLIGENCE.md) for the scoring, evidence, personalization, and abstention boundaries.
 
-The production target is a small invite-only Vercel + Render + Neon deployment.
-Use curated beta reference data, never the synthetic demo seed, and follow the
-release gates in `docs/LAYER_44A_BETA_OPERATIONS.md`.
+## Documentation
 
-Vercel frontend settings:
+- [Local setup](docs/LOCAL_SETUP.md) — installation, database initialization, startup, checks, and troubleshooting.
+- [Engineering guide](docs/ENGINEERING_GUIDE.md) — current architecture, subsystem boundaries, implementation paths, and tests.
+- [Decision Intelligence](docs/DECISION_INTELLIGENCE.md) — public goal ranking, Career Identity discovery, evidence semantics, and evaluation limits.
+- [Documentation index](docs/README.md) — specialized references and clearly separated historical records.
 
-- Root directory: `frontend/`
-- Install command: `npm ci`
-- Build command: `npm run build`
-- Output directory: `dist`
-- Environment: `VITE_API_BASE_URL=https://<render-service>.onrender.com`, `VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID`, `VITE_AUTH0_AUDIENCE`, optional `VITE_AUTH0_REDIRECT_URI`
+## License and attribution
 
-Render backend settings:
-
-- Service type: Python Web Service from the repo root
-- Build command: `pip install -r requirements.txt`
-- Start command: `uvicorn backend.api.app:app --host 0.0.0.0 --port $PORT`
-- Environment: `APP_ENV=prod`, `DATABASE_URL`, `LOG_LEVEL=INFO`, `SERVICE_NAME=jmi-backend`, `CORS_ALLOWED_ORIGINS`, `RATE_LIMIT_ENABLED`, `SECURITY_HEADERS_ENABLED`, `MAX_REQUEST_BODY_BYTES`, `RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`, `AUTH0_ISSUER`, `AUTH0_AUDIENCE`, `AUTH0_JWKS_URL` if the issuer default is not sufficient, `AUTH0_JWKS_CACHE_SECONDS`, optional Stripe adapter settings (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, `STRIPE_BILLING_PORTAL_RETURN_URL`, `STRIPE_PRICE_*` mappings), `PYTHON_VERSION=3.11.11`
-- `APP_ENV=prod` rejects SQLite database URLs and requires rate limiting and security headers to remain enabled.
-- Final CORS lockdown: `CORS_ALLOWED_ORIGINS=https://<vercel-app>.vercel.app`
-- Do not use wildcard CORS. For local dev, leave `CORS_ALLOWED_ORIGINS` empty and use the Vite proxy, or set exact local origins explicitly.
-
-Neon database notes:
-
-- Use the Neon Postgres connection string for Render `DATABASE_URL`.
-- The app uses SQLAlchemy with `psycopg`; `postgres://` and `postgresql://` URLs are normalized to `postgresql+psycopg://`.
-- Initialize schema explicitly with `DATABASE_URL="<neon-url>" alembic upgrade head`.
-- `python -m scripts.init_db` remains a local/demo wrapper that runs Alembic `upgrade head`; it is blocked for `APP_ENV=staging` and `APP_ENV=prod`.
-- Seed demo data only for private demos. Non-SQLite seed targets require explicit confirmation, for example `APP_ENV=local JMI_ALLOW_NON_LOCAL_DEMO_DB=true DATABASE_URL="<neon-url>" python -m scripts.seed_demo`.
-- Do not use cloud seed data as production or factual market data.
-
-Layer 1 does not add auth, public launch readiness, or production data pipelines.
-
-## Public Demo Runtime Notes
-
-For externally viewable public demos, run the backend with `APP_ENV=public_demo`
-and an explicit `DATABASE_URL` plus exact frontend CORS origin:
-
-```bash
-APP_ENV=public_demo
-CORS_ALLOWED_ORIGINS=https://<public-demo-frontend-host>
-VITE_PUBLIC_DEMO=true
-```
-
-`public_demo` keeps the public API read-only, enables in-app rate limiting and
-security headers by default, uses a smaller default request body limit, and
-continues to deny admin/user/canonical mutation routes. `VITE_PUBLIC_DEMO=true`
-makes the frontend hide product routes that the public-demo backend
-intentionally blocks and render direct visits as unavailable states. See
-`docs/PUBLIC_DEMO_ENVIRONMENT.md`, `docs/PUBLIC_DEMO_MONITORING.md`, and
-`docs/PUBLIC_DEMO_ABUSE_PROTECTION.md`.
-
-## MVP Runtime Notes
-
-- `/health` is liveness-only. `/ready` checks configuration validity and database reachability with a minimal query; it does not require seeded demo data.
-- API errors use safe responses with `request_id`; `X-Request-ID` is returned on normal and error responses. Basic in-process rate limiting, request size limits, and security headers are infrastructure safeguards, not authentication. Current market exploration endpoints remain unauthenticated.
-- Full output GET endpoints assemble payloads on read without creating or updating `OutputMetadata`. Seed flows and output-build job handlers still write cache metadata.
-- Freshness metadata now reports `freshness_status` as `fresh`, `stale`, or `unknown`; `unknown` means the output had no tracked freshness window.
-- Event invalidation has a narrow DB-session-backed apply path that marks existing fresh `OutputMetadata` rows stale for scoped region/company/comparison outputs. Dispatch callers must use the session-backed path to apply stale marking; otherwise routing/enqueue still happens and the dispatch result reports stale marking as skipped. It does not delete rows, rebuild outputs, enqueue jobs beyond existing routing behavior, or run workers.
-- Opaque scheduler-generated `dependency_refs` remain structural, but the worker runtime now supports optional DB-backed refs such as `region:greater_boston@v1` when callers provide a database resolver.
-- Queue dedupe has an application-level check plus a partial unique index for active `dedupe_key` rows on SQLite/PostgreSQL. This provides DB-level protection for supported databases, but it is still not an external broker, distributed queue, or distributed lock.
-- SQLite seeding is the local demo path. Demo seed setup applies Alembic migrations before inserting data.
-- Contextual challenge and audit backend services/job handlers exist, but they are not public API endpoints and are not registered in the default runtime worker registry.
-- Layer 11A retention foundation reuses protected user-owned tables for watchlists and scoring controls. Watchlists store references only; scoring previews are personalized overlays and do not mutate canonical/default scores.
-- Layer 11B adds in-app alert metadata and region-expansion workflow contracts without notification delivery or a second ingestion system.
-- Layer 11C adds read-only visualization surfaces and deterministic evidence-packet guidance. External AI provider integration, maps/heatmaps without precise data, and generated market facts remain deferred.
-
-Remaining external-production work includes deployment hardening, provider-side account deletion/session revocation, broader security hardening, observability, distributed queue/broker integration, artifact storage/cache serving, and multi-worker stress testing.
-
-## CI Checks
-
-The GitHub Actions workflow runs the same core checks locally available from
-the repo root:
-
-```bash
-python -m pytest
-python -m ruff check alembic backend scripts tests/
-APP_ENV=local DATABASE_URL=sqlite:////private/tmp/jmi-ci-migrations.db python -m alembic upgrade head
-cd frontend && npm run lint
-cd frontend && npm run test
-cd frontend && npm run build
-```
-
-## Core Layers
-
-1. Canonical market truth
-2. Derived output objects
-3. User-specific personalization overlays
-
-## Important Docs
-
-- `CLAUDE.md`
-- `docs/MVP_SCOPE.md`
-- `docs/SLICE_PLAN.md`
-- `docs/AUTH_USER_FOUNDATION.md`
-- `docs/DATA_MODEL.md`
-- `docs/API_SURFACES.md`
-- `docs/LAYER_39B_OPERATIONS.md`
-- `docs/architecture/ENGINEERING_IMPLEMENTATION_BLUEPRINT.md`
-- `docs/runbooks/neon_backup_restore.md`
+The original project code is available under the [MIT License](LICENSE). Dependencies retain their own licenses. The map uses public-domain U.S. Census Bureau state geometry; [source and transformation details](data/geography/README.md) are included in the repository.

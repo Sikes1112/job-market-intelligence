@@ -988,8 +988,8 @@ describe("DecisionWorkspacePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reopen" }));
     await screen.findByText("Decision reopened for reconsideration.");
 
-    expect(screen.getByText(/This decision is using Career Identity v1/)).toBeInTheDocument();
-    expect(screen.getByText(/Downstream personalization consent is off/)).toBeInTheDocument();
+    expect(screen.getByText(/Created with sufficient Career Identity context/)).toBeInTheDocument();
+    expect(screen.getByText(/Personalization is off/i)).toBeInTheDocument();
     expect(screen.getAllByText("Selected option: Strategy A").length).toBeGreaterThan(0);
     expect(screen.queryByText("private_salary_expectation")).not.toBeInTheDocument();
   });
@@ -1022,7 +1022,7 @@ describe("DecisionWorkspacePage", () => {
     render(<DecisionWorkspacePage auth={auth} />);
 
     await screen.findByText("Quiet week");
-    expect(screen.getByText(/No activity was manufactured/)).toBeInTheDocument();
+    expect(screen.getByText(/No decision activity was recorded/i)).toBeInTheDocument();
   });
 
   test("renders shared factors for company compensation skills education relocation and timing", async () => {

@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
 import { isProductPage, parseRoute } from "./urlState";
-import type { ApiEnvelope, CareerIdentity, WeeklyCareerReview } from "./types";
+import type { ApiEnvelope, CareerDecision, CareerIdentity, WeeklyCareerReview } from "./types";
 
 const authState = vi.hoisted(() => ({
   value: {
@@ -93,7 +93,86 @@ function quietReview(): WeeklyCareerReview {
   };
 }
 
-function stubAppFetch() {
+function structuredEvidenceDecision(): CareerDecision {
+  const createdAt = "2026-09-01T12:00:00Z";
+  return {
+    decision_id: "decision-structured-evidence",
+    decision_type: "location_choice",
+    status: "evaluating",
+    title: "Choose a launch market",
+    description: "Synthetic decision fixture.",
+    decision_date: null,
+    target_date: null,
+    planned_review_at: null,
+    time_horizon: "graduation",
+    priorities: [],
+    constraints: [],
+    selected_option_id: null,
+    career_identity_id: "ci_route_decisions",
+    current_context_snapshot_id: "context-1",
+    current_recommendation_id: "recommendation-1",
+    current_version: 1,
+    context: null,
+    options: [{
+      option_id: "option-sf",
+      decision_id: "decision-structured-evidence",
+      title: "San Francisco Bay Area",
+      description: null,
+      scenario: { region_ids: ["sf_bay_area"] },
+      status: "active",
+      position: 0,
+      created_at: createdAt,
+      updated_at: createdAt,
+    }],
+    recommendation: {
+      recommendation_id: "recommendation-1",
+      decision_id: "decision-structured-evidence",
+      context_snapshot_id: "context-1",
+      recommended_option_id: "option-sf",
+      recommendation_status: "ready",
+      evidence_sufficiency: "limited_evidence",
+      confidence: "low",
+      summary: "A bounded comparison is available.",
+      fit: {
+        options: [{
+          option_id: "option-sf",
+          title: "San Francisco Bay Area",
+          assessment: "plausible",
+          advantages: [],
+          tradeoffs: [],
+          important_unknowns: [{
+            kind: "unavailable",
+            reference_type: "compensation",
+            reference_id: "option-sf",
+            note: "Illustrative compensation does not establish a city-wide outcome.",
+          }],
+        }],
+      },
+      comparison: {},
+      evidence: {
+        supporting: [],
+        contrary: [],
+        unavailable: [{
+          kind: "unavailable",
+          reference_type: "market",
+          reference_id: "option-sf",
+          note: "External competition evidence is unavailable.",
+        }],
+      },
+      challenges: [],
+      limitations: ["Synthetic evidence remains bounded."],
+      generated_at: createdAt,
+    },
+    explore_comparison_provenance: null,
+    action_plan: null,
+    applications: [],
+    outcomes: [],
+    created_at: createdAt,
+    updated_at: createdAt,
+  };
+}
+
+function stubAppFetch(decision?: CareerDecision) {
   const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input) => {
     const path = input.toString();
     const data =
@@ -104,7 +183,19 @@ function stubAppFetch() {
           : path === "/me/career-identity"
             ? identity()
             : path === "/me/decisions"
-              ? { decisions: [] }
+              ? { decisions: decision ? [decision] : [] }
+              : path === `/me/decisions/${decision?.decision_id}`
+                ? { decision }
+                : path === `/me/decisions/${decision?.decision_id}/journal`
+                  ? { journal: [] }
+                  : path === `/me/decisions/${decision?.decision_id}/deep-analysis`
+                    ? { analysis: null }
+                    : path.startsWith("/me/strategic-career-reviews")
+                      ? { strategic_reviews: [] }
+                      : path === "/me/beta-access"
+                        ? { cohorts: [], feature_gates: [] }
+                        : path === "/me/feature-access/decision_feedback"
+                          ? { decision: { feature_key: "decision_feedback", allowed: false, reason: "test", cohort_keys: [], access_mode: null, entitlement_source: null, configuration: {} } }
               : path === "/me/reviews/weekly"
                 ? { review: quietReview() }
                 : {};
@@ -135,7 +226,7 @@ describe("Decision Workspace App route", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Decision Workspace" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Compare a real career choice" })).toBeInTheDocument();
     expect(screen.getByText("No career decisions yet")).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -145,5 +236,18 @@ describe("Decision Workspace App route", () => {
         }),
       );
     });
+  });
+
+  test("renders structured decision unknowns and evidence notes without raw-object failures", async () => {
+    const decision = structuredEvidenceDecision();
+    stubAppFetch(decision);
+    window.history.pushState(null, "", "/markets/decisions");
+
+    render(<App />);
+
+    expect(await screen.findByText(
+      "Illustrative compensation does not establish a city-wide outcome.",
+    )).toBeInTheDocument();
+    expect(screen.getByText("External competition evidence is unavailable.")).toBeInTheDocument();
   });
 });

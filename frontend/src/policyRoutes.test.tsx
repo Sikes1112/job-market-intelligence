@@ -459,8 +459,8 @@ describe("Layer 24 policy routes", () => {
 
     expect(await screen.findByText("Opportunity concentration API interpretation")).toBeTruthy();
     expect(screen.getByText("API internship pathway finding")).toBeTruthy();
-    expect(screen.getByText("Public-safe metadata")).toBeTruthy();
-    expect(screen.getByText(/Partner submission internals exposed: false/)).toBeTruthy();
+    expect(screen.getByText("Confidence, freshness, and sources")).toBeTruthy();
+    expect(screen.getByText(/Aggregate data only; no student-level records/i)).toBeTruthy();
     expect(screen.getByText("Input freshness windows are currently fresh.")).toBeTruthy();
   });
 

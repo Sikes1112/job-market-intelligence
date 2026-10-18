@@ -11,6 +11,7 @@ export type ApiEnvelope<T> = {
     };
     source_versions?: Record<string, unknown>;
     warnings?: WarningItem[];
+    career_identity_personalization?: CareerIdentityPersonalizationMetadata;
   };
   error: { code?: string; type?: string; message: string; request_id?: string } | null;
 };
@@ -1401,6 +1402,7 @@ export type ImportedSourceDiagnostic = {
   source_id: string;
   source_label: string;
   source_type: string;
+  data_origin?: string;
   observed_date: string | null;
   collected_date: string | null;
   age_days: number | null;
@@ -2100,7 +2102,7 @@ export type CareerIdentityCompleteness = {
   sections: CareerIdentityCompletenessSection[];
   missing_categories: string[];
   weak_categories: string[];
-  actionable_reason_codes: string[];
+  actionable_reason_codes?: string[];
 };
 
 export type CareerIdentity = {
@@ -2326,7 +2328,7 @@ export type DecisionFitOption = {
   advantages?: string[];
   disadvantages?: string[];
   tradeoffs?: string[];
-  important_unknowns?: string[];
+  important_unknowns?: Array<string | Record<string, unknown>>;
   [key: string]: unknown;
 };
 
@@ -3261,6 +3263,11 @@ export type CurrentOpportunityPayload = {
       last_observed_at?: string | null;
       last_collected_at?: string | null;
       active?: boolean;
+      source_name?: string | null;
+      source_type?: string | null;
+      provider?: string | null;
+      data_origin?: string | null;
+      synthetic?: boolean;
       source_trust?: string;
       display_use_allowed?: boolean;
       ranking_use_allowed?: boolean;
@@ -3341,6 +3348,22 @@ export type PersonalizedResult = {
     brand_fit: number;
     match_notes: string[];
   }>;
+};
+
+export type CareerIdentityPersonalizationMetadata = {
+  source: "request" | "career_identity" | string;
+  career_identity_applied: boolean;
+  career_identity_version?: number;
+  reason?: string;
+  role_targets?: string[];
+  industry_preferences?: string[];
+  region_ids?: string[];
+  excluded_roles?: string[];
+  excluded_industries?: string[];
+  excluded_region_ids?: string[];
+  geographic_resolutions?: Array<Record<string, unknown>>;
+  skills_count?: number;
+  experience_count?: number;
 };
 
 export type UserAccount = {

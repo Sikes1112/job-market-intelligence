@@ -156,7 +156,7 @@ export function ProfileSummaryPage({ auth, onNavigate }: CommonProps) {
     ["Opportunity type & career stage", rolePreferences, "Add internship, full-time, and career-stage preferences."],
     ["Work arrangement", arrangements, "Add remote, hybrid, or on-site preferences."],
     ["Geographic scope", geographies, "Nationwide until you add a preferred or excluded market."],
-    ["Industries & preferences", industries, "Optional context; unapplied dimensions never silently change Fit."],
+    ["Industries & preferences", industries, "Optional context for more relevant matches."],
     ["Experience & skills", experience, "Add evidence that makes your search more specific."],
     ["Imported suggestions", imported, "Imported and inferred suggestions remain reviewable."],
   ];

@@ -17,7 +17,12 @@ from backend.imports.registry import load_market_registry, resolve_market_regist
 from backend.presence.models import CompanyRegionPresence
 from backend.provenance.models import FactSourceLink, SourceRef
 from backend.shared.freshness import FreshnessStatus
-from backend.shared.provenance import FactBindingType, ObservationStatus
+from backend.shared.provenance import (
+    DEMO_DATA_ORIGINS,
+    DataOrigin,
+    FactBindingType,
+    ObservationStatus,
+)
 from backend.trust.models import RiskRoutingDecision
 from backend.trust.schemas import TrustAssessmentSubjectType
 
@@ -156,6 +161,7 @@ def build_market_coverage_summary(
         and bool(entry_level_rows)
         and bool(source_rows)
     )
+    demonstration_data = imported and _is_demonstration_data(fact_links, source_rows)
 
     return MarketCoverageSummary(
         market_key=entry.market_key,
@@ -193,15 +199,40 @@ def build_market_coverage_summary(
         last_import_status="imported" if imported else "not_imported",
         last_refresh_status="refreshed" if decisions else "not_refreshed",
         imported_data_label=(
-            "Real imported data" if imported else "Imported data not loaded"
+            "Demonstration data"
+            if demonstration_data
+            else "Real imported data"
+            if imported
+            else "Imported data not loaded"
         ),
-        coverage_label=_coverage_label(entry.coverage_status),
-        freshness_label=_freshness_label(_freshness_status(fact_links, source_rows)),
-        source_label="Source-backed" if source_count else "Limited source coverage",
-        trust_label="Source-backed" if source_count else "Not assessed",
+        coverage_label=(
+            "Demonstration coverage"
+            if demonstration_data
+            else _coverage_label(entry.coverage_status)
+        ),
+        freshness_label=_freshness_label(
+            _freshness_status(fact_links, source_rows),
+            demonstration_data=demonstration_data,
+        ),
+        source_label=(
+            "Synthetic fixture-backed"
+            if demonstration_data
+            else "Source-backed"
+            if source_count
+            else "Limited source coverage"
+        ),
+        trust_label=(
+            "Demonstration only"
+            if demonstration_data
+            else "Source-backed"
+            if source_count
+            else "Not assessed"
+        ),
         risk_label=_risk_label(ranking_allowed, ranking_denied),
         ranking_label=(
-            "Some data ranking-excluded"
+            "Demo ranking only"
+            if demonstration_data and ranking_allowed
+            else "Some data ranking-excluded"
             if ranking_denied
             else "Ranking-safe"
             if ranking_allowed
@@ -212,6 +243,22 @@ def build_market_coverage_summary(
             "Comparison available" if imported and ranking_allowed > 0 else "Comparison limited"
         ),
     )
+
+
+def _is_demonstration_data(
+    fact_links: tuple[FactSourceLink, ...],
+    source_rows: tuple[SourceRef, ...],
+) -> bool:
+    records = fact_links or source_rows
+    if not records:
+        return False
+    origins: list[DataOrigin] = []
+    for record in records:
+        try:
+            origins.append(DataOrigin(record.data_origin))
+        except (TypeError, ValueError):
+            return False
+    return bool(origins) and all(origin in DEMO_DATA_ORIGINS for origin in origins)
 
 
 def build_all_market_coverage_summaries(
@@ -411,7 +458,15 @@ def _coverage_label(coverage_status: str) -> str:
     return "Coverage unknown"
 
 
-def _freshness_label(freshness_status: str) -> str:
+def _freshness_label(
+    freshness_status: str,
+    *,
+    demonstration_data: bool = False,
+) -> str:
+    if demonstration_data:
+        if freshness_status == FreshnessStatus.STALE.value:
+            return "Demonstration snapshot needs refresh"
+        return "Demonstration snapshot"
     if freshness_status == FreshnessStatus.FRESH.value:
         return "Current"
     if freshness_status == FreshnessStatus.STALE.value:

@@ -36,7 +36,7 @@ export function BetaFeedback({ auth, route }: { auth: FrontendAuthContextValue; 
   return (
     <aside className="beta-feedback">
       <button onClick={() => { setOpen((value) => !value); setStatus("idle"); }} type="button">
-        Beta feedback
+        Feedback
       </button>
       {open ? (
         <form onSubmit={submit}>

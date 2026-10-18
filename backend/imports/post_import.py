@@ -55,6 +55,7 @@ from backend.scoring.repository import RegionScoreRepository
 from backend.scoring.service import RegionScoringService
 from backend.shared.freshness import FreshnessStatus
 from backend.shared.provenance import (
+    DataOrigin,
     FactBindingType,
     LicenseTermsCategory,
     ObservationStatus,
@@ -115,6 +116,8 @@ class _TrustEvaluation:
     fact: _ImportedFact
     metadata: TrustSubjectMetadata
     source_backed: bool
+    data_origin: str
+    demonstration_data: bool
 
 
 def run_curated_market_post_import(
@@ -294,6 +297,15 @@ def _evaluate_trust_and_risk(
 
     for fact in facts:
         links = _fact_links(session, fact)
+        data_origins = {link.data_origin for link in links if link.data_origin}
+        demonstration_data = data_origins == {
+            DataOrigin.SYNTHETIC_OR_CURATED_DEMO.value
+        }
+        data_origin = (
+            next(iter(data_origins))
+            if len(data_origins) == 1
+            else "mixed" if data_origins else DataOrigin.UNKNOWN_ORIGIN.value
+        )
         metadata = _trust_subject_metadata(fact, links)
         assessment = trust_service.assess(metadata)
         trust_id = _trust_assessment_id(fact)
@@ -315,6 +327,8 @@ def _evaluate_trust_and_risk(
                 fact=fact,
                 metadata=metadata,
                 source_backed=bool(links),
+                data_origin=data_origin,
+                demonstration_data=demonstration_data,
             )
         )
     return tuple(evaluations)
@@ -445,15 +459,33 @@ def _trust_labels(
                 subject_type=fact.subject_type.value,
                 subject_id=fact.fact_id,
                 trust_tier=explanation.trust_tier.value,
-                trust_label=explanation.trust_label,
-                freshness_label=_freshness_label(
-                    evaluation.metadata.freshness_status
+                trust_label=(
+                    "Demonstration only"
+                    if evaluation.demonstration_data
+                    else explanation.trust_label
+                ),
+                freshness_label=(
+                    (
+                        "Demonstration snapshot (stale)"
+                        if evaluation.metadata.freshness_status
+                        == FreshnessStatus.STALE.value
+                        else "Demonstration snapshot"
+                    )
+                    if evaluation.demonstration_data
+                    else _freshness_label(evaluation.metadata.freshness_status)
                 ),
                 risk_label=explanation.risk_label,
-                ranking_influence_label=explanation.ranking_influence_label,
+                ranking_influence_label=(
+                    "Demo ranking only"
+                    if evaluation.demonstration_data
+                    and explanation.ranking_influence_allowed
+                    else explanation.ranking_influence_label
+                ),
                 ranking_influence_allowed=explanation.ranking_influence_allowed,
                 imported_data=True,
                 source_backed=evaluation.source_backed,
+                data_origin=evaluation.data_origin,
+                demonstration_data=evaluation.demonstration_data,
             )
         )
     return tuple(labels)

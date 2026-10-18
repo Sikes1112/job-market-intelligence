@@ -681,6 +681,7 @@ def _source_diagnostic(source: SourceSnapshot) -> SourceDiagnostic:
         source_id=source.source_id,
         source_label=source.source_label,
         source_type=source.source_type,
+        data_origin=source.data_origin,
         observed_date=source.observed_date.isoformat() if source.observed_date else None,
         collected_date=source.collected_date.isoformat() if source.collected_date else None,
         age_days=source.age_days,

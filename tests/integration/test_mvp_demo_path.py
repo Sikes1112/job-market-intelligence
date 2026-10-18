@@ -9,6 +9,7 @@ the seed code path.
 from __future__ import annotations
 
 import importlib
+import json
 import pathlib
 import sys
 from collections.abc import Iterator
@@ -21,15 +22,23 @@ from backend.api.app import create_app
 from backend.api.dependencies import get_session
 from backend.companies.models import Company
 from backend.companies.types import EligibilityStatus
+from backend.current_opportunities.models import (
+    CurrentOpportunity,
+    OpportunityCoverageContract,
+    OpportunityDataSource,
+    OpportunitySourceObservation,
+)
 from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.models import Region, RegionAlias, RegionStateMembership
 from backend.hiring.models import CompanyRegionHiring
+from backend.opportunities.models import Opportunity, OpportunitySource
 from backend.outputs.models import OutputMetadata
 from backend.outputs.types import OutputType
 from backend.presence.models import CompanyRegionPresence
 from backend.provenance.models import FactSourceLink, SourceObservation, SourceRef
 from backend.scoring.models import RegionMarketScore
 from backend.shared.provenance import DataOrigin, FactBindingType
+from scripts.beta_reference_data import _current_opportunity_summary
 from seeds import mvp_seed
 from seeds.mvp_data import (
     COMPANIES,
@@ -40,6 +49,13 @@ from seeds.mvp_data import (
     REGION_SF,
     REGIONS,
 )
+from seeds.opportunity_data import (
+    CORE_MARKET_IDS,
+    CURRENT_OPPORTUNITY_SOURCE,
+    core_scenarios,
+)
+
+CORE_SCENARIOS = core_scenarios()
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -100,7 +116,7 @@ def test_seed_creates_companies(seeded_session: Session) -> None:
     # Mag 7 is detected by the default classifier.
     assert by_id["comp_alphabet"].is_mag7 is True
     assert by_id["comp_alphabet"].is_major_tech is True
-    assert by_id["comp_microsoft"].is_mag7 is True
+    assert by_id["cmp_microsoft"].is_mag7 is True
     assert by_id["comp_meta"].is_mag7 is True
     # Override path:
     assert (
@@ -243,6 +259,31 @@ def test_seed_creates_output_metadata(seeded_session: Session) -> None:
     ) in pairs
 
 
+def test_seed_creates_synthetic_opportunity_workflows(seeded_session: Session) -> None:
+    marketplace = seeded_session.query(Opportunity).all()
+    marketplace_sources = seeded_session.query(OpportunitySource).all()
+    current = seeded_session.query(CurrentOpportunity).all()
+    current_sources = seeded_session.query(OpportunityDataSource).all()
+    observations = seeded_session.query(OpportunitySourceObservation).all()
+    coverage = seeded_session.query(OpportunityCoverageContract).all()
+
+    assert len(marketplace) == len(CORE_SCENARIOS)
+    assert {row.region_id for row in seeded_session.query(Region).all()} == {
+        REGION_BOSTON,
+        REGION_SF,
+    }
+    assert all("portfolio-demo.example" in row.source_url for row in marketplace_sources)
+    assert all(row.trust_label == "unverified" for row in marketplace)
+
+    assert len(current) == len(CORE_SCENARIOS)
+    assert {row.market_id for row in current} == {REGION_BOSTON, REGION_SF}
+    assert len(observations) == len(CORE_SCENARIOS)
+    assert len(coverage) == len(CORE_MARKET_IDS)
+    assert current_sources[0].source_id == CURRENT_OPPORTUNITY_SOURCE.source_id
+    assert current_sources[0].refresh_config["synthetic"] is True
+    assert all("portfolio-demo.example" in (row.application_url or "") for row in current)
+
+
 # ---------------------------------------------------------------------------
 # Idempotency
 # ---------------------------------------------------------------------------
@@ -274,6 +315,10 @@ def test_run_seed_is_idempotent(session: Session) -> None:
         ("company_outputs", second.company_outputs),
         ("comparison_outputs", second.comparison_outputs),
         ("contextual_outputs", second.contextual_outputs),
+        ("marketplace_opportunities", second.marketplace_opportunities),
+        ("current_opportunity_sources", second.current_opportunity_sources),
+        ("current_opportunity_coverage", second.current_opportunity_coverage),
+        ("current_opportunities", second.current_opportunities),
     ):
         assert counter.get("created", 0) == 0, f"{label}: unexpected creates"
         assert counter.get("updated", 0) == 0, f"{label}: unexpected updates"
@@ -283,6 +328,8 @@ def test_run_seed_is_idempotent(session: Session) -> None:
     assert second.presence["unchanged"] == len(PRESENCE)
     assert second.hiring["unchanged"] == len(HIRING)
     assert second.entry_level["unchanged"] == len(ENTRY_LEVEL)
+    assert second.marketplace_opportunities["unchanged"] == len(CORE_SCENARIOS)
+    assert second.current_opportunities["unchanged"] == len(CORE_SCENARIOS)
 
     # Row counts in canonical tables match the seed sizes (no duplication).
     assert session.query(Region).count() == len(REGIONS)
@@ -315,6 +362,71 @@ def test_get_regions_returns_seed_regions(seeded_client: TestClient) -> None:
     assert body["status"] == "success"
     region_ids = {r["region_id"] for r in body["data"]["regions"]}
     assert region_ids == {REGION_BOSTON, REGION_SF}
+
+
+def test_seeded_opportunity_filters_routes_and_local_auth(
+    seeded_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    marketplace = seeded_client.get(
+        "/opportunities",
+        params={
+            "region": REGION_BOSTON,
+            "role_family": "software_engineering",
+            "active": True,
+        },
+    )
+    assert marketplace.status_code == 200
+    opportunities = marketplace.json()["data"]["opportunities"]
+    assert [item["id"] for item in opportunities] == ["opp_demo_boston_software_2"]
+    assert opportunities[0]["trust_label"] == "unverified"
+    assert opportunities[0]["source_url"].startswith("https://portfolio-demo.example/")
+
+    routes = seeded_client.post(
+        "/opportunities/routes",
+        json={
+            "user_intent_summary": "early-career product roles",
+            "target_regions": [REGION_BOSTON, REGION_SF],
+            "target_role_families": ["software_engineering", "data_ai"],
+            "include_unverified": True,
+        },
+    )
+    assert routes.status_code == 200
+    route_items = routes.json()["data"]["routes"]
+    assert len(route_items) == 4
+    assert sum(bool(item["matched_opportunities"]) for item in route_items) == 2
+
+    current = seeded_client.get(
+        "/current-opportunities",
+        params={
+            "market": REGION_SF,
+            "role_family": "data_ai",
+            "opportunity_type": "job",
+        },
+        headers={
+            "X-Verified-OIDC-Claims": json.dumps(
+                {
+                    "iss": "https://local.job-market-intelligence.test/",
+                    "sub": "local|explorer",
+                    "email": "local-explorer@example.test",
+                    "name": "Local explorer",
+                }
+            )
+        },
+    )
+    assert current.status_code == 200
+    current_items = current.json()["data"]["opportunities"]
+    assert len(current_items) == 1
+    assert current_items[0]["market_id"] == REGION_SF
+    source = current_items[0]["provenance"]["sources"][0]
+    assert source["data_origin"] == "synthetic_or_curated_demo"
+    assert source["synthetic"] is True
+
+    summary = _current_opportunity_summary(seeded_session)
+    assert summary["mode"] == "synthetic_demo"
+    assert summary["enabled_provider_count"] == 0
+    assert summary["enabled_demo_source_count"] == 1
+    assert summary["claim"] == "Synthetic demonstration records are not live job openings."
 
 
 def test_get_region_detail(seeded_client: TestClient) -> None:

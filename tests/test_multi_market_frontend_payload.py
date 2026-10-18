@@ -48,14 +48,17 @@ def test_imported_markets_route_exposes_public_safe_multi_market_coverage(
         row = by_market[market_key]
         assert row["region_id"] == region_id
         assert row["display_name"] == display_name
-        assert row["imported_data_label"] == "Real imported data"
-        assert row["source_label"] == "Source-backed"
-        assert row["coverage_label"] in {"Seed coverage", "Partial coverage"}
-        assert row["freshness_label"] in {"Current", "Needs refresh"}
-        assert row["trust_label"] in {"Source-backed", "Not assessed"}
+        assert row["imported_data_label"] == "Demonstration data"
+        assert row["source_label"] == "Synthetic fixture-backed"
+        assert row["coverage_label"] == "Demonstration coverage"
+        assert row["freshness_label"] in {
+            "Demonstration snapshot",
+            "Demonstration snapshot needs refresh",
+        }
+        assert row["trust_label"] == "Demonstration only"
         assert row["risk_label"] in {"Low risk", "Use with caution", "Not assessed"}
         assert row["ranking_label"] in {
-            "Ranking-safe",
+            "Demo ranking only",
             "Some data ranking-excluded",
             "Ranking not assessed",
         }
@@ -64,17 +67,20 @@ def test_imported_markets_route_exposes_public_safe_multi_market_coverage(
         assert row["hiring_fact_count"] == 3
         assert row["entry_level_fact_count"] == 3
         assert row["source_count"] >= 3
-        assert row["unknown_count_dimensions"] > 0
-        assert row["observed_zero_count_dimensions"] > 0
         assert isinstance(row["comparison_available"], bool)
 
+    assert sum(row["unknown_count_dimensions"] for row in payload["markets"]) > 0
+    assert sum(row["observed_zero_count_dimensions"] for row in payload["markets"]) > 0
+    assert len(
+        {
+            (row["unknown_count_dimensions"], row["observed_zero_count_dimensions"])
+            for row in payload["markets"]
+        }
+    ) > 1
     assert any(
         row["ranking_excluded_fact_count"] > 0 for row in payload["markets"]
     )
-    assert any(
-        row["ranking_label"] == "Some data ranking-excluded"
-        for row in payload["markets"]
-    )
+    assert all(row["ranking_label"] == "Demo ranking only" for row in payload["markets"])
     _assert_public_payload_safe(payload)
 
 
@@ -98,10 +104,10 @@ def test_frontend_visible_comparison_payload_includes_multiple_imported_markets(
     }
     assert set(sides) == {"greater_nyc", "sf_bay_area"}
     assert sides["greater_nyc"]["import_metadata"]["imported_data_label"] == (
-        "Real imported data"
+        "Demonstration data"
     )
     assert sides["sf_bay_area"]["import_metadata"]["source_label"] == (
-        "Source-backed"
+        "Synthetic fixture-backed"
     )
     assert payload["category_winners"]
     _assert_public_payload_safe(payload)

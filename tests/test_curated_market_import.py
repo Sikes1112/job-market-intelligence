@@ -13,10 +13,10 @@ from backend.entry_level.models import CompanyRegionEntryLevel
 from backend.geography.models import Region
 from backend.hiring.models import CompanyRegionHiring
 from backend.imports.nyc import import_nyc_dataset
-from backend.imports.service import import_curated_market_dataset
+from backend.imports.service import _import_data_origin, import_curated_market_dataset
 from backend.presence.models import CompanyRegionPresence
 from backend.provenance.models import FactSourceLink, SourceObservation, SourceRef
-from backend.shared.provenance import ObservationStatus
+from backend.shared.provenance import DataOrigin, ObservationStatus
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 NYC_IMPORT_DIR = REPO_ROOT / "data" / "imports" / "nyc"
@@ -165,14 +165,24 @@ def test_provenance_metadata_is_preserved_and_attached(session: Session) -> None
     assert source.source_type == "manual_research"
     assert source.confidence == "medium"
     assert source.freshness_status == "fresh"
+    assert source.data_origin == DataOrigin.SYNTHETIC_OR_CURATED_DEMO.value
+    assert "not factual public market coverage" in (source.notes or "")
     assert observation.source_id == source.source_id
     assert observation.freshness_status == "fresh"
+    assert observation.data_origin == DataOrigin.SYNTHETIC_OR_CURATED_DEMO.value
     assert link.source_id == source.source_id
     assert link.collected_at == source.collected_at
     assert link.observed_at == source.observed_at
     assert link.license_or_terms_category == "permissive"
     assert link.freshness_status == "fresh"
+    assert link.data_origin == DataOrigin.SYNTHETIC_OR_CURATED_DEMO.value
     assert hiring.source_refs[0]["source_ref"] == source.source_id
+
+
+def test_non_fixture_curated_sources_keep_manual_reviewed_semantics() -> None:
+    assert _import_data_origin(
+        {"source_url_or_reference": "https://example.org/documented-source"}
+    ) is DataOrigin.MANUAL_REVIEWED
 
 
 def test_unknown_counts_remain_unknown_after_import(session: Session) -> None:
@@ -225,11 +235,11 @@ def test_positive_observed_counts_remain_positive_after_import(
         "entry_cmp_hudson_applied_ai_greater_nyc",
     )
 
-    assert hiring.active_posting_count_now == 5
+    assert hiring.active_posting_count_now == 9
     assert hiring.active_posting_count_now_status == (
         ObservationStatus.POSITIVE_OBSERVED.value
     )
-    assert entry.internship_count == 4
+    assert entry.internship_count == 7
     assert entry.internship_count_status == ObservationStatus.POSITIVE_OBSERVED.value
 
 

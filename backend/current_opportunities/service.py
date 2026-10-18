@@ -1345,6 +1345,19 @@ class CurrentOpportunityService:
                     if link.last_collected_at
                     else None,
                     "active": link.active,
+                    "source_name": source.display_name if source else None,
+                    "source_type": source.source_type if source else None,
+                    "provider": source.provider if source else None,
+                    "data_origin": (
+                        source.refresh_config.get("data_origin")
+                        if source and isinstance(source.refresh_config, dict)
+                        else None
+                    ),
+                    "synthetic": (
+                        bool(source.refresh_config.get("synthetic"))
+                        if source and isinstance(source.refresh_config, dict)
+                        else False
+                    ),
                     "source_trust": source.trust_classification if source else "unknown",
                     "display_use_allowed": bool(source.display_use_allowed) if source else False,
                     "ranking_use_allowed": bool(source.ranking_use_allowed) if source else False,

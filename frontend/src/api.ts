@@ -274,6 +274,9 @@ function normalizeEnvelope<T>(value: unknown, responseOk: boolean): ApiEnvelope<
       freshness: normalizeFreshness(metadataRecord.freshness),
       source_versions: normalizeSourceVersions(metadataRecord.source_versions),
       warnings: normalizeWarnings(metadataRecord.warnings),
+      career_identity_personalization: isRecord(metadataRecord.career_identity_personalization)
+        ? metadataRecord.career_identity_personalization as ApiEnvelope<T>["metadata"]["career_identity_personalization"]
+        : undefined,
     },
     error: rawEnvelope.error ?? null,
   };
@@ -725,14 +728,32 @@ export function discoverPersonalized(body: PersonalizedRequest) {
   });
 }
 
+let inFlightCareerIdentityDiscovery: {
+  getAccessToken: ProtectedRequestOptions["getAccessToken"];
+  key: string;
+  promise: Promise<ApiEnvelope<PersonalizedResult>>;
+} | null = null;
+
 export function discoverPersonalizedFromCareerIdentity(
   body: PersonalizedRequest,
   auth: ProtectedRequestOptions,
 ) {
-  return protectedRequest<PersonalizedResult>("/me/discover/personalized", auth, {
+  const key = JSON.stringify(body);
+  if (
+    inFlightCareerIdentityDiscovery?.key === key
+    && inFlightCareerIdentityDiscovery.getAccessToken === auth.getAccessToken
+  ) return inFlightCareerIdentityDiscovery.promise;
+
+  const promise = protectedRequest<PersonalizedResult>("/me/discover/personalized", auth, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: key,
   });
+  inFlightCareerIdentityDiscovery = { getAccessToken: auth.getAccessToken, key, promise };
+  const clear = () => {
+    if (inFlightCareerIdentityDiscovery?.promise === promise) inFlightCareerIdentityDiscovery = null;
+  };
+  void promise.then(clear, clear);
+  return promise;
 }
 
 export function getRecommendationGoalModes() {
@@ -772,7 +793,16 @@ export function getOpportunityRoutes(body: TypedOpportunityRouteRequest) {
   });
 }
 
-export function getCareerAgentAnswer(body: TypedCareerAgentRequest) {
+export function getCareerAgentAnswer(
+  body: TypedCareerAgentRequest,
+  auth?: ProtectedRequestOptions,
+) {
+  if (auth) {
+    return protectedRequest<CareerAgentAnswer>("/me/career-agent/answers", auth, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
   return request<CareerAgentAnswer>("/me/career-agent/answers", {
     method: "POST",
     body: JSON.stringify(body),

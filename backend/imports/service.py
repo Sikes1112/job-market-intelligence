@@ -336,6 +336,8 @@ def _upsert_source_ref_and_observation(
     counts: dict[str, dict[str, int]],
 ) -> None:
     source_id = source_ref["source_ref"]
+    data_origin = _import_data_origin(source_ref)
+    notes = _import_provenance_notes(data_origin)
     source_definition = SourceRefDefinition(
         source_id=source_id,
         source_type=SourceType(source_ref["source_type"]),
@@ -348,8 +350,8 @@ def _upsert_source_ref_and_observation(
         ),
         confidence=Confidence(source_ref["confidence"]),
         freshness_status=FreshnessStatus(source_ref["freshness_status"]),
-        data_origin=DataOrigin.MANUAL_REVIEWED,
-        notes="Layer 31B curated deterministic import source.",
+        data_origin=data_origin,
+        notes=notes,
     )
     _, source_outcome = provenance_service.upsert_source_ref(source_definition)
     _record(counts, "source_refs", source_outcome)
@@ -360,11 +362,11 @@ def _upsert_source_ref_and_observation(
             source_id=source_id,
             collected_at=_date_to_datetime(source_ref["collected_at"]),
             observed_at=_date_to_datetime(source_ref["observed_at"]),
-            data_origin=DataOrigin.MANUAL_REVIEWED,
+            data_origin=data_origin,
             observation_status=ObservationStatus.UNKNOWN,
             confidence=Confidence(source_ref["confidence"]),
             freshness_status=FreshnessStatus(source_ref["freshness_status"]),
-            notes="Layer 31B curated deterministic import observation.",
+            notes=notes,
         )
     )
     _record(counts, "source_observations", observation_outcome)
@@ -380,6 +382,7 @@ def _link_fact(
     counts: dict[str, dict[str, int]],
 ) -> str:
     source_id = source_ref["source_ref"]
+    data_origin = _import_data_origin(source_ref)
     link_id = _link_id(fact_type, fact_id, source_id)
     _, outcome = provenance_service.upsert_fact_source_link(
         FactSourceLinkDefinition(
@@ -387,15 +390,33 @@ def _link_fact(
             observation_id=_observation_id(source_id),
             fact_type=fact_type,
             fact_id=fact_id,
-            data_origin=DataOrigin.MANUAL_REVIEWED,
+            data_origin=data_origin,
             observation_status=observation_status,
             confidence=Confidence(source_ref["confidence"]),
             freshness_status=FreshnessStatus(source_ref["freshness_status"]),
-            notes="Layer 31B curated deterministic import fact link.",
+            notes=_import_provenance_notes(data_origin),
         )
     )
     _record(counts, "fact_source_links", outcome)
     return link_id
+
+
+def _import_data_origin(source_ref: dict[str, str]) -> DataOrigin:
+    """Classify bundled repository fixtures without changing real import semantics."""
+
+    reference = source_ref.get("source_url_or_reference", "").strip().lower()
+    if reference.startswith("repo_fixture:"):
+        return DataOrigin.SYNTHETIC_OR_CURATED_DEMO
+    return DataOrigin.MANUAL_REVIEWED
+
+
+def _import_provenance_notes(data_origin: DataOrigin) -> str:
+    if data_origin is DataOrigin.SYNTHETIC_OR_CURATED_DEMO:
+        return (
+            "Bundled synthetic demonstration import fixture; not factual public "
+            "market coverage."
+        )
+    return "Curated deterministic import source accepted through manual review."
 
 
 def _region_definition(region: dict[str, Any]) -> RegionDefinition:

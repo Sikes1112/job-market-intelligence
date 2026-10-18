@@ -17,6 +17,7 @@ import {
   deleteCareerMemory,
   deleteSavedMarketArtifact,
   dismissAlert,
+  discoverPersonalizedFromCareerIdentity,
   explainAlert,
   explainComparison,
   explainCompany,
@@ -143,6 +144,64 @@ describe("frontend API client auth boundary", () => {
     const [, init] = fetchMock.mock.calls[0];
     expect(fetchMock.mock.calls[0][0]).toBe("/regions");
     expect((init as RequestInit).headers).toEqual({ "Content-Type": "application/json" });
+  });
+
+  test("preserves authenticated Career Identity personalization metadata", async () => {
+    const metadata = {
+      source: "career_identity",
+      career_identity_applied: true,
+      career_identity_version: 9,
+      role_targets: ["applied_ai"],
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      ...envelope({ ranked_regions: [], ranked_companies: [] }),
+      metadata: { state: "current", source_versions: {}, warnings: [], career_identity_personalization: metadata },
+    }), { headers: { "Content-Type": "application/json" }, status: 200 })));
+
+    const result = await discoverPersonalizedFromCareerIdentity({
+      role_targets: [],
+      industry_preferences: [],
+      career_stage: "entry_level",
+      prestige_preference: "medium",
+      brand_preference: "medium",
+      region_ids: ["sf_bay_area"],
+      limit: 10,
+    }, { getAccessToken: async () => "test-token" });
+
+    expect(result.metadata.career_identity_personalization).toEqual(metadata);
+  });
+
+  test("deduplicates concurrent Career Identity discovery without caching completed results", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const fetchMock = vi.fn(async () => {
+      await pending;
+      return new Response(JSON.stringify(envelope({ ranked_regions: [], ranked_companies: [] })), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const getAccessToken = async () => "test-token";
+    const requestBody = {
+      role_targets: [],
+      industry_preferences: [],
+      career_stage: "entry_level",
+      prestige_preference: "medium",
+      brand_preference: "medium",
+      region_ids: ["sf_bay_area"],
+      limit: 10,
+    };
+
+    const first = discoverPersonalizedFromCareerIdentity(requestBody, { getAccessToken });
+    const concurrent = discoverPersonalizedFromCareerIdentity(requestBody, { getAccessToken });
+    expect(first).toBe(concurrent);
+    release();
+    await Promise.all([first, concurrent]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await discoverPersonalizedFromCareerIdentity(requestBody, { getAccessToken });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   test("imported market coverage request stays public and read-only", async () => {
@@ -496,6 +555,25 @@ describe("frontend API client auth boundary", () => {
     expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({
       "Content-Type": "application/json",
     });
+  });
+
+  test("career agent API call carries protected local-auth credentials when provided", async () => {
+    const fetchMock = mockFetch({ recommendations: [], guardrails: { passed: true } });
+
+    await getCareerAgentAnswer({
+      question_type: "city_fit",
+      target_region_ids: ["greater_boston"],
+      target_role_families: ["software_engineering"],
+      include_forecasts: false,
+      limit: 3,
+    }, { getAccessToken: async () => "local-token" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/me/career-agent/answers",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer local-token" }),
+      }),
+    );
   });
 
   test("career action plan API call stays public and structured", async () => {

@@ -35,6 +35,7 @@ from backend.imports.service import (
     _entry_level_id,
     _hiring_groups,
     _hiring_id,
+    _import_data_origin,
     _load_dataset,
     _presence_id,
 )
@@ -771,6 +772,7 @@ def _source_public(row: dict[str, str]) -> dict[str, Any]:
         "confidence": _text(row.get("confidence")),
         "license_or_terms_category": _text(row.get("license_or_terms_category")),
         "freshness_status": _text(row.get("freshness_status")),
+        "data_origin": _import_data_origin(row).value,
     }
 
 
@@ -783,6 +785,7 @@ def _source_current_public(source) -> dict[str, Any]:
         "confidence": source.confidence,
         "license_or_terms_category": source.license_or_terms_category,
         "freshness_status": source.stored_freshness_status,
+        "data_origin": source.data_origin,
     }
 
 

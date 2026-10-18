@@ -1631,6 +1631,8 @@ def _freshness_status_score(value: Any) -> float | None:
         return 1.0
     if lowered == "partial":
         return 0.5
+    if lowered == "simulated_current":
+        return 0.5
     if lowered in {"stale", "seeded_demo"}:
         return 0.2
     if lowered == "unknown":

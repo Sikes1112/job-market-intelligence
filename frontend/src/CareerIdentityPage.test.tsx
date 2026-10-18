@@ -322,7 +322,7 @@ describe("CareerIdentityPage", () => {
       expect.objectContaining({ region_ids: ["greater_boston"] }),
       expect.any(Object),
     );
-    expect(screen.getByText(/Career Identity applied: true/i)).toBeInTheDocument();
+    expect(screen.getByText(/Career Identity applied to this preview/i)).toBeInTheDocument();
   });
 
   test("keeps validation errors private and handles version conflicts by refetching", async () => {
@@ -346,6 +346,19 @@ describe("CareerIdentityPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Add project/i }));
 
     await screen.findByText(/latest version was reloaded/i);
+  });
+
+  test("renders legacy evaluation payloads without actionable reason codes", async () => {
+    apiState.identity = makeIdentity();
+    apiState.identity.completeness = {
+      ...completeEvaluation(apiState.identity.current_version),
+      actionable_reason_codes: undefined,
+    };
+
+    render(<CareerIdentityPage auth={auth} defaultRegionIds={["greater_boston"]} />);
+
+    expect(await screen.findByText("Add a target role or location preference to begin shaping personalized results.")).toBeInTheDocument();
+    expect(screen.queryByText("Your core Career Identity sections are ready.")).not.toBeInTheDocument();
   });
 
   test("shows empty authenticated and unauthenticated states", async () => {

@@ -126,9 +126,8 @@ export default function OpportunityRoutesPage() {
         <section className="notice-state">
           <strong>Opportunity routes are not available in public demo</strong>
           <p>
-            The public-demo backend intentionally blocks opportunity routing and
-            opportunity submission routes. Use market exploration, public reports,
-            forecasts, data standards metadata, or career-agent public answers instead.
+            Opportunity routing is not included in the public demo. Use market exploration,
+            public reports, forecasts, or current opportunities instead.
           </p>
         </section>
       </div>

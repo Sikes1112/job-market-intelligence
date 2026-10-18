@@ -44,7 +44,7 @@ from backend.presence.models import CompanyRegionPresence
 from backend.provenance.models import FactSourceLink, SourceRef
 from backend.shared.confidence import Confidence
 from backend.shared.freshness import FreshnessStatus
-from backend.shared.provenance import FactBindingType, ObservationStatus
+from backend.shared.provenance import DataOrigin, FactBindingType, ObservationStatus
 from backend.trust.models import RiskRoutingDecision
 from backend.trust.repository import routing_decision_from_row
 from backend.trust.schemas import (
@@ -91,6 +91,7 @@ class SourceSnapshot:
     source_id: str
     source_label: str
     source_type: str
+    data_origin: str
     observed_date: date | None
     collected_date: date | None
     age_days: int | None
@@ -775,6 +776,19 @@ def _source_snapshot(
             else "unknown"
         )
         or "unknown",
+        data_origin=(
+            row.data_origin
+            if row is not None
+            else (
+                DataOrigin.SYNTHETIC_OR_CURATED_DEMO.value
+                if file_row
+                and _optional_text(file_row.get("source_url_or_reference"))
+                and _optional_text(file_row.get("source_url_or_reference")).lower().startswith(
+                    "repo_fixture:"
+                )
+                else DataOrigin.UNKNOWN_ORIGIN.value
+            )
+        ),
         observed_date=observed_date,
         collected_date=collected_date,
         age_days=age_days,

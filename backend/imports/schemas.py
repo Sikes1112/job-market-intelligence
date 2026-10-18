@@ -122,6 +122,7 @@ class SourceDiagnostic(PublicDTO):
     source_id: str
     source_label: str
     source_type: str
+    data_origin: str
     observed_date: str | None
     collected_date: str | None
     age_days: int | None

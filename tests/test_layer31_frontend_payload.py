@@ -25,13 +25,14 @@ def test_nyc_region_payload_exposes_public_import_display_state(
     assert response.status_code == 200
     payload = response.json()["data"]
     metadata = payload["import_metadata"]
-    assert metadata["imported_data_label"] == "Real imported data"
-    assert metadata["source_label"] == "Source-backed"
-    assert metadata["coverage_label"] == "Partially covered"
-    assert metadata["freshness_label"] == "Freshness: current"
-    assert metadata["trust_label"] == "Verified"
+    assert metadata["data_basis"] == "seeded_demo"
+    assert metadata["imported_data_label"] == "Demonstration data"
+    assert metadata["source_label"] == "Synthetic fixture-backed"
+    assert metadata["coverage_label"] == "Demonstration coverage"
+    assert metadata["freshness_label"] == "Freshness: demonstration snapshot"
+    assert metadata["trust_label"] == "Demonstration only"
     assert metadata["risk_label"] == "Low risk"
-    assert metadata["ranking_label"] == "Ranking-safe"
+    assert metadata["ranking_label"] == "Demo ranking only"
 
     entry_summary = payload["entry_level_summary"]
     assert entry_summary["internship_count_total"] is None
@@ -52,13 +53,13 @@ def test_nyc_region_payload_exposes_public_import_display_state(
         hiring["cmp_liberty_cyber_systems"]["active_posting_count_now_status"]
         == "unknown"
     )
-    assert hiring["cmp_hudson_applied_ai"]["active_posting_count_now"] == 5
+    assert hiring["cmp_hudson_applied_ai"]["active_posting_count_now"] == 9
     assert (
         hiring["cmp_hudson_applied_ai"]["active_posting_count_now_status"]
         == "positive_observed"
     )
     assert hiring["cmp_hudson_applied_ai"]["import_metadata"]["source_label"] == (
-        "Source-backed"
+        "Synthetic fixture-backed"
     )
     _assert_public_payload_safe(payload)
 
@@ -74,13 +75,13 @@ def test_company_payload_preserves_unknown_and_observed_zero_for_display(
 
     assert response.status_code == 200
     payload = response.json()["data"]
-    assert payload["import_metadata"]["imported_data_label"] == "Real imported data"
-    assert payload["import_metadata"]["ranking_label"] == "Ranking-safe"
+    assert payload["import_metadata"]["imported_data_label"] == "Demonstration data"
+    assert payload["import_metadata"]["ranking_label"] == "Demo ranking only"
 
     hiring = payload["regions_hiring"][0]
     assert hiring["active_posting_count_now"] == 0
     assert hiring["active_posting_count_now_status"] == "zero_observed"
-    assert hiring["import_metadata"]["trust_label"] == "Verified"
+    assert hiring["import_metadata"]["trust_label"] == "Demonstration only"
 
     entry = payload["entry_level_regions"][0]
     assert entry["internship_count"] == 0
@@ -92,7 +93,7 @@ def test_company_payload_preserves_unknown_and_observed_zero_for_display(
     _assert_public_payload_safe(payload)
 
 
-def test_comparison_payload_marks_nyc_side_as_real_imported_data(
+def test_comparison_payload_marks_nyc_side_as_demonstration_data(
     api_client: TestClient,
     session: Session,
 ) -> None:
@@ -116,10 +117,10 @@ def test_comparison_payload_marks_nyc_side_as_real_imported_data(
         payload["region_b"]["region_id"]: payload["region_b"],
     }
     nyc_metadata = sides["greater_nyc"]["import_metadata"]
-    assert nyc_metadata["imported_data_label"] == "Real imported data"
-    assert nyc_metadata["source_label"] == "Source-backed"
-    assert nyc_metadata["freshness_label"] == "Freshness: current"
-    assert nyc_metadata["ranking_label"] == "Ranking-safe"
+    assert nyc_metadata["imported_data_label"] == "Demonstration data"
+    assert nyc_metadata["source_label"] == "Synthetic fixture-backed"
+    assert nyc_metadata["freshness_label"] == "Freshness: demonstration snapshot"
+    assert nyc_metadata["ranking_label"] == "Demo ranking only"
     assert sides["greater_boston"]["import_metadata"]["source_label"] == (
         "Source evidence unknown"
     )

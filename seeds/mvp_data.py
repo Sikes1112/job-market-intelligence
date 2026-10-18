@@ -82,7 +82,7 @@ COMPANIES: tuple[CompanyDefinition, ...] = (
         prestige_score=0.95,
     ),
     CompanyDefinition(
-        company_id="comp_microsoft",
+        company_id="cmp_microsoft",
         company_name="Microsoft",
         normalized_company_name="microsoft",
         sector_primary="cloud",
@@ -182,8 +182,8 @@ PRESENCE: tuple[PresenceDefinition, ...] = (
     _presence("comp_alphabet", REGION_BOSTON, office=True, ops=True, hiring=True),
     _presence("comp_alphabet", REGION_SF, office=True, ops=True, hiring=True),
     # Office + hiring (no operations evidence).
-    _presence("comp_microsoft", REGION_BOSTON, office=True, ops=False, hiring=True),
-    _presence("comp_microsoft", REGION_SF, office=True, ops=True, hiring=True),
+    _presence("cmp_microsoft", REGION_BOSTON, office=True, ops=False, hiring=True),
+    _presence("cmp_microsoft", REGION_SF, office=True, ops=True, hiring=True),
     _presence("comp_meta", REGION_SF, office=True, ops=True, hiring=True),
     _presence("comp_hubspot", REGION_BOSTON, office=True, ops=True, hiring=True),
     # Office + operations only → office_plus_operations basis.
@@ -260,7 +260,7 @@ HIRING: tuple[HiringDefinition, ...] = (
         confidence=HiringConfidence.HIGH_CONFIDENCE,
     ),
     _hiring(
-        "comp_microsoft",
+        "cmp_microsoft",
         REGION_BOSTON,
         currently_hiring=True,
         now=8,
@@ -272,7 +272,7 @@ HIRING: tuple[HiringDefinition, ...] = (
         seasonal=SeasonalStudentHiringSignal.MODERATE,
     ),
     _hiring(
-        "comp_microsoft",
+        "cmp_microsoft",
         REGION_SF,
         currently_hiring=True,
         now=15,
@@ -396,7 +396,7 @@ ENTRY_LEVEL: tuple[EntryLevelDefinition, ...] = (
         recurrence=StudentSeasonRecurrenceSignal.STRONG,
     ),
     _entry_level(
-        "comp_microsoft",
+        "cmp_microsoft",
         REGION_BOSTON,
         internships=8,
         coops=4,
@@ -405,7 +405,7 @@ ENTRY_LEVEL: tuple[EntryLevelDefinition, ...] = (
         recurrence=StudentSeasonRecurrenceSignal.MODERATE,
     ),
     _entry_level(
-        "comp_microsoft",
+        "cmp_microsoft",
         REGION_SF,
         internships=12,
         coops=2,

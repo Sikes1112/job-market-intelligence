@@ -216,9 +216,9 @@ describe("Layer 27 data standards page", () => {
     expect(screen.getByRole("heading", { name: "Submission Validation Preview" })).toBeTruthy();
 
     expect(screen.getByText("Controlled merge only")).toBeTruthy();
-    expect(screen.getByText(/Layer 28 adds controlled reviewer-approved canonical merge/i)).toBeTruthy();
-    expect(screen.getByText(/partner-submitted data never mutates canonical truth directly/i)).toBeTruthy();
-    expect(screen.getByText(/quality labels do not currently alter rankings, recommendations, forecasts, policy outputs, career-agent outputs, public reports, or market scores/i)).toBeTruthy();
+    expect(screen.getByText(/validation expectations, not automatic acceptance/i)).toBeTruthy();
+    expect(screen.getByText(/Partner submissions never become canonical records without review/i)).toBeTruthy();
+    expect(screen.getByText(/Quality labels are currently non-ranking metadata/i)).toBeTruthy();
     expect(screen.getAllByText(/Low-confidence signals are not ranking inputs/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/self-reported employer data/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Trust: Excluded from rankings").length).toBeGreaterThan(0);

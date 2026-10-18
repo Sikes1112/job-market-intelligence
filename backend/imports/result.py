@@ -92,6 +92,8 @@ class CuratedTrustLabel:
     ranking_influence_allowed: bool
     imported_data: bool
     source_backed: bool
+    data_origin: str
+    demonstration_data: bool
 
     def as_dict(self) -> dict[str, str | bool | None]:
         return {
@@ -105,6 +107,8 @@ class CuratedTrustLabel:
             "ranking_influence_allowed": self.ranking_influence_allowed,
             "imported_data": self.imported_data,
             "source_backed": self.source_backed,
+            "data_origin": self.data_origin,
+            "demonstration_data": self.demonstration_data,
         }
 
 

@@ -93,11 +93,13 @@ def test_layer33_health_reports_all_eight_markets_are_deterministic(
         assert counts["hiring_fact_count"] == 3
         assert counts["entry_level_fact_count"] == 3
         assert counts["total_fact_count"] == 13
-        assert counts["unknown_fact_count"] > 0
-        assert counts["observed_zero_fact_count"] > 0
         assert counts["ranking_eligible_fact_count"] == 13
         assert counts["ranking_excluded_fact_count"] == 0
         assert counts["stale_source_count"] == 0
+    assert any(report["counts"]["unknown_fact_count"] > 0 for report in first)
+    assert any(report["counts"]["observed_zero_fact_count"] > 0 for report in first)
+    assert len({report["counts"]["unknown_fact_count"] for report in first}) > 1
+    assert len({report["counts"]["observed_zero_fact_count"] for report in first}) > 1
 
 
 def test_batched_snapshots_are_semantically_identical_to_single_market_path(

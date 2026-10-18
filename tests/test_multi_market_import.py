@@ -113,9 +113,9 @@ def test_market_specific_presence_hiring_and_entry_facts_remain_separate(
     assert seattle_presence is not None
     assert nyc_presence.region_id == "greater_nyc"
     assert seattle_presence.region_id == "greater_seattle"
-    assert nyc_hiring.active_posting_count_now == 5
+    assert nyc_hiring.active_posting_count_now == 9
     assert seattle_hiring.active_posting_count_now == 2
-    assert nyc_entry.internship_count == 4
+    assert nyc_entry.internship_count == 7
     assert seattle_entry.internship_count == 1
 
 

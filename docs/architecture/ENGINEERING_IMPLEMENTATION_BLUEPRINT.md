@@ -1,9 +1,10 @@
-Engineering Implementation Blueprint
+# Engineering Implementation Blueprint
+
+> **Status: historical/deferred architecture plan.** This document predates the implemented local architecture and intentionally describes possible queues, workers, caches, and object storage. Those components are not required by the portfolio application. See [`../ENGINEERING_GUIDE.md`](../ENGINEERING_GUIDE.md) for the current runnable system.
 
 Backend Components, Data Stores, Queues, Workers, Schedulers, Caches, and API Surfaces
 
-This translates the workflow system into an actual build blueprint.
-It is not code yet. It is the implementation architecture the code should follow.
+This preserves the original workflow-system blueprint for historical context. It is not a statement that every component below is currently deployed.
 
 ⸻
 

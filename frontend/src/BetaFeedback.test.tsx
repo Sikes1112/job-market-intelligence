@@ -35,7 +35,7 @@ describe("beta feedback", () => {
 
   test("submits user text with route and release but no Profile payload", async () => {
     render(<BetaFeedback auth={auth} route="/explore?focus=boston" />);
-    fireEvent.click(screen.getByRole("button", { name: "Beta feedback" }));
+    fireEvent.click(screen.getByRole("button", { name: "Feedback" }));
     fireEvent.change(screen.getByLabelText("What felt confusing or unhelpful?"), {
       target: { value: "The confidence label was unclear." },
     });
@@ -53,7 +53,7 @@ describe("beta feedback", () => {
   test("preserves the draft when submission fails", async () => {
     mocks.createSupportCase.mockRejectedValueOnce(new Error("network unavailable"));
     render(<BetaFeedback auth={auth} route="/my-search" />);
-    fireEvent.click(screen.getByRole("button", { name: "Beta feedback" }));
+    fireEvent.click(screen.getByRole("button", { name: "Feedback" }));
     const field = screen.getByLabelText("What felt confusing or unhelpful?");
     fireEvent.change(field, { target: { value: "Keep this draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Send feedback" }));

@@ -54,10 +54,14 @@ def test_post_import_refresh_runs_and_rebuilds_nyc_outputs(
     assert session.query(RiskRoutingDecision).count() == 13
     assert all(label.imported_data for label in result.trust_labels)
     assert all(label.source_backed for label in result.trust_labels)
-    assert {label.freshness_label for label in result.trust_labels} == {"Fresh"}
+    assert {label.freshness_label for label in result.trust_labels} == {
+        "Demonstration snapshot"
+    }
     assert any(
         label.subject_id == "greater_nyc"
-        and label.trust_label == "Verified"
+        and label.trust_label == "Demonstration only"
+        and label.data_origin == "synthetic_or_curated_demo"
+        and label.demonstration_data
         and label.ranking_influence_allowed
         for label in result.trust_labels
     )
@@ -182,7 +186,7 @@ def test_ranking_ineligible_imported_hiring_does_not_affect_scores(
     assert "cmp_hudson_applied_ai" not in hiring_ids
     assert any(
         label.subject_id == "hiring_cmp_hudson_applied_ai_greater_nyc"
-        and label.freshness_label == "Stale source"
+        and label.freshness_label == "Demonstration snapshot (stale)"
         and not label.ranking_influence_allowed
         for label in second.trust_labels
     )
@@ -230,7 +234,7 @@ def test_unknown_and_observed_zero_counts_survive_recompute(
     assert zero_hiring.active_posting_count_now_status == (
         ObservationStatus.ZERO_OBSERVED
     )
-    assert positive_hiring.active_posting_count_now == 5
+    assert positive_hiring.active_posting_count_now == 9
     assert positive_hiring.active_posting_count_now_status == (
         ObservationStatus.POSITIVE_OBSERVED
     )
@@ -239,7 +243,7 @@ def test_unknown_and_observed_zero_counts_survive_recompute(
     assert unknown_entry.entry_level_access_score is None
     assert zero_entry.internship_count == 0
     assert zero_entry.internship_count_status == ObservationStatus.ZERO_OBSERVED
-    assert positive_entry.internship_count == 4
+    assert positive_entry.internship_count == 7
     assert positive_entry.internship_count_status == (
         ObservationStatus.POSITIVE_OBSERVED
     )

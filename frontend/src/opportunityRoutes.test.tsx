@@ -188,7 +188,7 @@ describe("OpportunityRoutesPage", () => {
     render(<OpportunityRoutesPage />);
 
     expect(screen.getByText("Opportunity routes are not available in public demo")).toBeTruthy();
-    expect(screen.getByText(/public-demo backend intentionally blocks opportunity routing/i)).toBeTruthy();
+    expect(screen.getByText(/Opportunity routing is not included in the public demo/i)).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

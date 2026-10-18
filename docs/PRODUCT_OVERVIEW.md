@@ -1,3 +1,5 @@
+> **Status: historical product-framing notes.** This conversational planning artifact is preserved for development history. It is not the current product overview or architecture authority. Start with the repository [`README`](../README.md) and [`ENGINEERING_GUIDE.md`](ENGINEERING_GUIDE.md).
+
 Overall Product: 
 #JobApp 
 

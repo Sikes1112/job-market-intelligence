@@ -10,6 +10,9 @@ node_modules/
 
 # Env
 .env
+.env.*
+!.env.example
+!frontend/.env.example
 .env.local
 
 # OS/editor
@@ -21,6 +24,8 @@ node_modules/
 dist/
 build/
 *.egg-info/
+.coverage
+htmlcov/
 
 # Logs
 *.log
@@ -37,6 +42,12 @@ tmp/
 /demo.db-*
 /jmi.db
 /jmi.db-*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
 
 # Local Codex implementation-loop runtime
 .agent_loop/

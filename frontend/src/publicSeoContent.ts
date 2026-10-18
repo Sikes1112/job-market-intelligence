@@ -120,7 +120,7 @@ export const REQUIRED_PUBLIC_SEO_SLUGS = [
 ];
 
 const METHODOLOGY_LINK: PublicSeoLink = {
-  label: "Methodology foundation",
+  label: "Methodology",
   href: "/methodology",
   linkType: "public_page",
 };
@@ -222,10 +222,10 @@ const SOURCE_AUTHORITY: PublicSeoSourceAuthority = {
     "low-confidence",
     "methodology-backed",
     "not production ranking truth",
-    "Layer 19 public guide artifact",
+    "illustrative public guide",
   ],
   summary:
-    "This guide is a public Layer 19 display artifact. It uses category language, methodology, limitations, freshness, confidence, and related public assets without creating production rankings or hidden scoring.",
+    "This guide uses shared definitions, methodology, limitations, freshness, and confidence without presenting an unsupported ranking.",
 };
 
 const INSTITUTIONAL_CTA: PublicSeoInstitutionalCta = {
@@ -597,7 +597,7 @@ export const PUBLIC_SEO_PAGES: PublicSeoPage[] = [
     contentPeriod: "2026 methodology preview",
     freshnessDate: "2026-06-18",
     methodologySummary:
-      "This page uses Layer 19 category language and related product report/benchmark pages to explain what to verify in Atlanta.",
+      "This page uses shared category definitions and related reports and benchmarks to explain what to verify in Atlanta.",
     limitations: COMMON_LIMITATIONS,
     primarySections: [
       {
@@ -693,7 +693,7 @@ export const PUBLIC_SEO_PAGES: PublicSeoPage[] = [
     contentPeriod: "2026 methodology preview",
     freshnessDate: "2026-06-18",
     methodologySummary:
-      "This role page uses Layer 19 vocabulary and related early-career benchmark/report pages. It does not create a cybersecurity scoring model.",
+      "This role page uses shared definitions and related early-career reports and benchmarks. It does not present a cybersecurity market score.",
     limitations: COMMON_LIMITATIONS,
     primarySections: [
       {

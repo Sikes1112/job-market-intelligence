@@ -1,12 +1,12 @@
 # DATA_MODEL.md
 
+> **Status: current but cumulative specialist reference.** This document preserves schema decisions across many implementation phases. For a concise current-system path, start with [`ENGINEERING_GUIDE.md`](ENGINEERING_GUIDE.md). Source models and migrations remain authoritative when this historical narrative is incomplete.
+
 ## Purpose
 
-This file defines the canonical data model for MVP V1 of the job-market intelligence platform backend.
+This file documents the canonical data model of the job-market intelligence backend.
 
-It exists to prevent schema drift during implementation.
-
-Claude Code must treat this file as the source of truth for the MVP data model unless a later prompt explicitly updates it.
+It exists to explain the durable separation between canonical market truth, derived outputs, governed opportunities, and user-owned state.
 
 ---
 

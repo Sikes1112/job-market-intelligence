@@ -306,6 +306,7 @@ function emptySupportDraft(): SupportDraft {
 
 function label(value: string | null | undefined): string {
   if (!value) return "Not set";
+  if (value === "region_ids") return "Markets";
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
@@ -341,11 +342,25 @@ function isOverdue(value: string | null | undefined): boolean {
 }
 
 function itemTitle(item: Record<string, unknown>): string {
-  return truthyString(item.title) ?? truthyString(item.label) ?? truthyString(item.message) ?? truthyString(item.type) ?? "Recorded item";
+  return truthyString(item.title)
+    ?? truthyString(item.label)
+    ?? truthyString(item.message)
+    ?? truthyString(item.reference_type)
+    ?? truthyString(item.type)
+    ?? truthyString(item.kind)
+    ?? "Recorded item";
+}
+
+function readableEvidenceLabel(value: string): string {
+  return value.includes("_") && !value.includes(" ") ? label(value) : value;
 }
 
 function itemBody(item: Record<string, unknown>): string | null {
-  return truthyString(item.message) ?? truthyString(item.description) ?? truthyString(item.reason) ?? null;
+  return truthyString(item.message)
+    ?? truthyString(item.description)
+    ?? truthyString(item.reason)
+    ?? truthyString(item.note)
+    ?? null;
 }
 
 export default function DecisionWorkspacePage({
@@ -901,7 +916,7 @@ export default function DecisionWorkspacePage({
       <section className="decision-workspace">
         <header className="section-header">
           <div>
-            <p className="eyebrow">Layer 36</p>
+            <p className="eyebrow">Private career planning</p>
             <h2>Decision Workspace</h2>
           </div>
         </header>
@@ -918,10 +933,13 @@ export default function DecisionWorkspacePage({
 
   return (
     <section className="decision-workspace">
-      <header className="section-header">
+      <header className="decision-workspace-hero">
         <div>
-          <p className="eyebrow">Layer 36</p>
-          <h2>Decision Workspace</h2>
+          <p className="eyebrow">Decision</p>
+          <h1>{selected?.title ?? "Compare a real career choice"}</h1>
+          <p>{selected
+            ? `${selected.options.length} alternatives · ${selectedOption ? `${selectedOption.title} selected` : "choice still open"} · ${selected.action_plan?.actions.length ?? 0} next actions`
+            : "Compare alternatives and turn your choice into an action plan."}</p>
         </div>
         <button type="button" className="secondary-button" onClick={() => void loadWorkspace()} disabled={loading}>
           Refresh
@@ -939,12 +957,6 @@ export default function DecisionWorkspacePage({
       ) : null}
 
       <IdentityBridge identity={identity} decision={selected} onOpenCareerIdentity={onOpenCareerIdentity} />
-      <BetaAccessStrip
-        betaAccess={betaAccess}
-        feedbackAccess={decisionFeedbackAccess}
-        saving={saving}
-        onCommercialInterest={handleCommercialInterest}
-      />
 
       <div className="decision-workspace-grid">
         <aside className="decision-home-panel" aria-label="Career decisions">
@@ -966,16 +978,19 @@ export default function DecisionWorkspacePage({
           ) : (
             <EmptyBlock
               title="No career decisions yet"
-              body="Create a focused decision to compare realistic options using your Career Identity."
+              body="Create a decision, add realistic options, and compare their trade-offs."
             />
           )}
 
-          <CreateDecisionForm
-            draft={decisionDraft}
-            saving={saving}
-            setDraft={setDecisionDraft}
-            onSubmit={handleCreateDecision}
-          />
+          <details className="decision-disclosure">
+            <summary>Start another decision</summary>
+            <CreateDecisionForm
+              draft={decisionDraft}
+              saving={saving}
+              setDraft={setDecisionDraft}
+              onSubmit={handleCreateDecision}
+            />
+          </details>
         </aside>
 
         <div className="decision-flow">
@@ -1000,24 +1015,6 @@ export default function DecisionWorkspacePage({
                 onCompare={handleCompare}
                 saving={saving}
               />
-              <MeasurementFeedbackPanel
-                decision={selected}
-                feedbackAccess={decisionFeedbackAccess}
-                draft={feedbackDraft}
-                saving={saving}
-                setDraft={setFeedbackDraft}
-                onSubmit={handleSubmitFeedback}
-              />
-              <DeepAdvisorPanel
-                analysis={deepAnalysis}
-                decision={selected}
-                loading={deepLoading}
-                error={deepError}
-                reviews={strategicReviews}
-                saving={saving}
-                onGenerate={handleGenerateDeepAnalysis}
-                onRetry={() => loadDeepDecisionState(selected.decision_id)}
-              />
               <SelectionPanel
                 decision={selected}
                 recommendedOption={recommendedOption}
@@ -1027,51 +1024,41 @@ export default function DecisionWorkspacePage({
                 onSelect={handleSelectOption}
                 onReopen={handleReopen}
               />
-              <JournalPanel journal={journal} options={selected.options} />
               <ActionPlanPanel
                 decision={selected}
                 saving={saving}
                 onCreatePlan={handleCreatePlan}
                 onUpdateAction={handleUpdateAction}
               />
-              <ApplicationPanel
-                decision={selected}
-                draft={applicationDraft}
-                saving={saving}
-                setDraft={setApplicationDraft}
-                onCreateApplication={handleCreateApplication}
-                onTransitionApplication={handleTransitionApplication}
-              />
-              <OutcomePanel
-                decision={selected}
-                draft={outcomeDraft}
-                saving={saving}
-                setDraft={setOutcomeDraft}
-                onCreateOutcome={handleCreateOutcome}
-              />
-              <DecisionReviewOperationsPanel
-                decision={selected}
-                reflectionDraft={reflectionDraft}
-                strategyDraft={strategyDraft}
-                supportDraft={supportDraft}
-                saving={saving}
-                setReflectionDraft={setReflectionDraft}
-                setStrategyDraft={setStrategyDraft}
-                setSupportDraft={setSupportDraft}
-                onRecordReflection={handleRecordReflection}
-                onRecordStrategyChange={handleRecordStrategyChange}
-                onCreateSupportCase={handleCreateSupportCase}
-              />
+              <details className="decision-disclosure"><summary>Decision history</summary><JournalPanel journal={journal} options={selected.options} /></details>
+              <details className="decision-disclosure"><summary>Applications and outcomes</summary>
+                <ApplicationPanel decision={selected} draft={applicationDraft} saving={saving} setDraft={setApplicationDraft} onCreateApplication={handleCreateApplication} onTransitionApplication={handleTransitionApplication} />
+                <OutcomePanel decision={selected} draft={outcomeDraft} saving={saving} setDraft={setOutcomeDraft} onCreateOutcome={handleCreateOutcome} />
+              </details>
+              <details className="decision-disclosure"><summary>Advanced analysis and review tools</summary>
+                <DeepAdvisorPanel analysis={deepAnalysis} decision={selected} loading={deepLoading} error={deepError} reviews={strategicReviews} saving={saving} onGenerate={handleGenerateDeepAnalysis} onRetry={() => loadDeepDecisionState(selected.decision_id)} />
+                <MeasurementFeedbackPanel decision={selected} feedbackAccess={decisionFeedbackAccess} draft={feedbackDraft} saving={saving} setDraft={setFeedbackDraft} onSubmit={handleSubmitFeedback} />
+                <DecisionReviewOperationsPanel decision={selected} reflectionDraft={reflectionDraft} strategyDraft={strategyDraft} supportDraft={supportDraft} saving={saving} setReflectionDraft={setReflectionDraft} setStrategyDraft={setStrategyDraft} setSupportDraft={setSupportDraft} onRecordReflection={handleRecordReflection} onRecordStrategyChange={handleRecordStrategyChange} onCreateSupportCase={handleCreateSupportCase} />
+              </details>
             </>
           ) : !loading ? (
             <EmptyBlock
               title="Start with a decision question"
-              body="The workspace will connect options, recommendation evidence, your choice, actions, applications, outcomes, and weekly review."
+              body="Create a decision to compare alternatives and plan your next actions."
             />
           ) : null}
-          <WeeklyReviewPanel review={weeklyReview} />
+          <details className="decision-disclosure"><summary>Weekly review</summary><WeeklyReviewPanel review={weeklyReview} /></details>
         </div>
       </div>
+      <details className="decision-advanced-tools evidence-disclosure">
+        <summary>Feedback and research settings</summary>
+        <BetaAccessStrip
+          betaAccess={betaAccess}
+          feedbackAccess={decisionFeedbackAccess}
+          saving={saving}
+          onCommercialInterest={handleCommercialInterest}
+        />
+      </details>
     </section>
   );
 }
@@ -1092,15 +1079,16 @@ function BetaAccessStrip({
     ? cohorts.map((cohort) => `${cohort.name} (${label(cohort.membership_status)})`).join(", ")
     : "No beta cohort assigned";
   return (
-    <section className="decision-identity-bridge" aria-label="Beta access and product configuration">
+    <section className="decision-identity-bridge" aria-label="Local feature access and product research settings">
       <div>
-        <p className="eyebrow">Beta / Entitlement</p>
-        <h3>{cohortLabels}</h3>
+        <p className="eyebrow">Optional</p>
+        <h3>Feedback and research</h3>
         <p>
           {feedbackAccess
             ? `${label(feedbackAccess.feature_key)} is ${feedbackAccess.allowed ? "available" : "not available"}: ${feedbackAccess.reason}.`
-            : "Feature access is evaluated by the server and defaults closed when access is unknown."}
+            : "Feedback access is unavailable."}
         </p>
+        <small>{cohortLabels}</small>
       </div>
       <div className="choice-button-row">
         <button type="button" className="secondary-button" disabled={saving} onClick={() => void onCommercialInterest("learn_more")}>
@@ -1131,21 +1119,23 @@ function IdentityBridge({
   return (
     <section className="decision-identity-bridge" aria-label="Career Identity decision context">
       <div>
-        <p className="eyebrow">Career Identity source</p>
+        <p className="eyebrow">Personalization</p>
         <h3>
-          {evaluation?.sufficiency_state === "sufficient" ? "Sufficient signal for personalization" : "More identity signal can improve future decisions"}
+          {evaluation?.sufficiency_state === "sufficient" ? "Career Identity ready" : "Add details for stronger personalization"}
         </h3>
         <p>
           {consent
-            ? "Decision comparisons use the private Career Identity adapter and preserve the context version used at recommendation time."
-            : "Downstream personalization consent is off, so recommendations may abstain or rely on limited context."}
+            ? "Your Career Identity can inform new comparisons."
+            : "Personalization is off, so recommendations may use limited context."}
         </p>
         {decision?.context ? (
           <small>
-            This decision is using Career Identity v{decision.context.career_identity_version} · {label(decision.context.sufficiency_state)} · {decision.context.privacy_scope}
+            {decision.context.sufficiency_state === "sufficient"
+              ? "Created with sufficient Career Identity context"
+              : "Created with limited Career Identity context"}
           </small>
         ) : identity ? (
-          <small>Current Career Identity v{identity.current_version} · {label(identity.sufficiency_state)}</small>
+          <small>{identity.sufficiency_state === "sufficient" ? "Sufficient profile context" : "Limited profile context"}</small>
         ) : null}
       </div>
       {onOpenCareerIdentity ? (
@@ -1178,7 +1168,7 @@ function MeasurementFeedbackPanel({
         <div className="decision-panel-header">
           <div>
             <p className="eyebrow">Recommendation Feedback</p>
-            <h3>Usefulness Signal</h3>
+            <h3>Recommendation feedback</h3>
           </div>
         </div>
         <EmptyBlock title="No recommendation to evaluate" body="Feedback is tied to the exact recommendation version that was generated." />
@@ -1191,7 +1181,7 @@ function MeasurementFeedbackPanel({
         <div className="decision-panel-header">
           <div>
             <p className="eyebrow">Recommendation Feedback</p>
-            <h3>Usefulness Signal</h3>
+            <h3>Recommendation feedback</h3>
           </div>
           <Badge label="Unavailable" tone="warning" />
         </div>
@@ -1204,7 +1194,7 @@ function MeasurementFeedbackPanel({
       <div className="decision-panel-header">
         <div>
           <p className="eyebrow">Recommendation Feedback</p>
-          <h3>Usefulness Signal</h3>
+          <h3>Recommendation feedback</h3>
         </div>
         <Badge label={`Recommendation ${decision.recommendation.recommendation_id}`} tone="neutral" />
       </div>
@@ -1400,7 +1390,6 @@ function DecisionSummary({
       <div className="decision-state-strip">
         <Badge label={label(decision.status)} tone={decision.status === "decided" ? "success" : "neutral"} />
         <Badge label={label(decision.decision_type)} tone="neutral" />
-        <Badge label={`Version ${decision.current_version}`} tone="neutral" />
         {decision.time_horizon ? <Badge label={decision.time_horizon} tone="neutral" /> : null}
       </div>
       <div className="decision-quick-facts">
@@ -1451,6 +1440,8 @@ function OptionBuilder({
       ) : (
         <EmptyBlock title="No scenario options yet" body="Add at least two realistic paths before comparing tradeoffs." />
       )}
+      <details className="decision-option-editor evidence-disclosure">
+        <summary>Add another scenario</summary>
       <form className="scenario-form" onSubmit={onSubmit}>
         <label>
           Scenario name
@@ -1556,6 +1547,7 @@ function OptionBuilder({
           Add scenario
         </button>
       </form>
+      </details>
     </section>
   );
 }
@@ -1577,13 +1569,28 @@ function OptionCard({ option }: { option: CareerDecisionOption }) {
           {scenarioEntries.map(([key, value]) => (
             <div key={key}>
               <dt>{label(key)}</dt>
-              <dd>{Array.isArray(value) ? value.join(", ") : String(value)}</dd>
+              <dd>{scenarioDisplayValue(value)}</dd>
             </div>
           ))}
         </dl>
       ) : <p className="meta-copy">Scenario details not provided.</p>}
     </article>
   );
+}
+
+const SCENARIO_VALUE_LABELS: Record<string, string> = {
+  sf_bay_area: "San Francisco Bay Area",
+  greater_seattle: "Greater Seattle",
+  greater_boston: "Greater Boston",
+  greater_nyc: "New York City",
+  washington_dc: "Washington, DC",
+};
+
+function scenarioDisplayValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map(scenarioDisplayValue).join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string") return SCENARIO_VALUE_LABELS[value] ?? label(value);
+  return String(value);
 }
 
 function RecommendationSurface({
@@ -1615,7 +1622,7 @@ function RecommendationSurface({
       ) : recommendation.recommendation_status === "abstained" ? (
         <div className="decision-abstention" role="status">
           <strong>There is not enough evidence yet to recommend one path confidently.</strong>
-          <p>{recommendation.summary ?? "The backend abstained instead of manufacturing a winner."}</p>
+          <p>{recommendation.summary ?? "There is not enough evidence to name a winner."}</p>
           <EvidenceMeta recommendation={recommendation} />
         </div>
       ) : (
@@ -1631,8 +1638,12 @@ function RecommendationSurface({
       {recommendation ? (
         <>
           <ChallengeList challenges={recommendation.challenges} options={decision.options} />
-          <ScenarioComparison fitOptions={fitOptions} options={decision.options} />
-          <EvidencePanel recommendation={recommendation} />
+          <details className="evidence-disclosure decision-evidence-disclosure">
+            <summary>Inspect scenario scoring and supporting evidence</summary>
+            <p className="meta-copy">Preserved context snapshot: {recommendation.context_snapshot_id}</p>
+            <ScenarioComparison fitOptions={fitOptions} options={decision.options} />
+            <EvidencePanel recommendation={recommendation} />
+          </details>
         </>
       ) : null}
     </section>
@@ -1645,7 +1656,6 @@ function EvidenceMeta({ recommendation }: { recommendation: DecisionRecommendati
       <Badge label={`Confidence: ${label(recommendation.confidence)}`} tone={recommendation.confidence === "high" ? "success" : recommendation.confidence === "low" ? "warning" : "neutral"} />
       <Badge label={`Evidence: ${label(recommendation.evidence_sufficiency)}`} tone={recommendation.evidence_sufficiency === "comparison_ready" ? "success" : "warning"} />
       <Badge label={recommendation.recommendation_status === "abstained" ? "Abstained" : "Ready"} tone={recommendation.recommendation_status === "abstained" ? "warning" : "success"} />
-      <Badge label={`Context ${recommendation.context_snapshot_id}`} tone="neutral" />
     </div>
   );
 }
@@ -1741,7 +1751,7 @@ function EvidenceBucket({ title, items, empty }: { title: string; items: Array<R
       <h4>{title}</h4>
       {items.length ? items.map((item, index) => (
         <p key={index}>
-          <strong>{itemTitle(item)}</strong>
+          <strong>{readableEvidenceLabel(itemTitle(item))}</strong>
           {itemBody(item) ? <span> {itemBody(item)}</span> : null}
         </p>
       )) : <p className="meta-copy">{empty}</p>}
@@ -1772,7 +1782,7 @@ function DeepAdvisorPanel({
     <section className="decision-panel deep-advisor-panel">
       <div className="decision-panel-header">
         <div>
-          <p className="eyebrow">Layer 37 Advisor</p>
+          <p className="eyebrow">Decision analysis</p>
           <h3>Deep Decision Intelligence</h3>
         </div>
         <button
@@ -2640,8 +2650,8 @@ function WeeklyReviewPanel({ review }: { review: WeeklyCareerReview | null }) {
         </div>
         {review ? <Badge label={`${compactDate(review.window_start)} to ${compactDate(review.window_end)}`} tone="neutral" /> : null}
       </div>
-      {!review ? <EmptyBlock title="Weekly review unavailable" body="Review data will appear after the backend aggregation loads." /> : null}
-      {review && !hasActivity ? <EmptyBlock title="Quiet week" body="No activity was manufactured; the backend returned no stored decision events for this review window." /> : null}
+      {!review ? <EmptyBlock title="Weekly review unavailable" body="No review is available yet." /> : null}
+      {review && !hasActivity ? <EmptyBlock title="Quiet week" body="No decision activity was recorded in this review window." /> : null}
       {review ? (
         <div className="weekly-review-grid">
           {sections.map((section) => (
@@ -2815,13 +2825,36 @@ function EvidenceObjectList({ title, items }: { title: string; items: Array<Reco
   );
 }
 
-function TextList({ title, items, empty }: { title: string; items?: string[]; empty: string }) {
+function textListItem(item: string | Record<string, unknown>): string {
+  if (typeof item === "string") return item;
+  const code = truthyString(item.code);
+  const detail = truthyString(item.detail);
+  if (code) return `${label(code)}${detail ? ` — ${detail.includes("_") && !detail.includes(" ") ? label(detail) : detail}` : ""}`;
+  return truthyString(item.note)
+    ?? truthyString(item.message)
+    ?? truthyString(item.description)
+    ?? valueSummary(item)
+    ?? itemTitle(item);
+}
+
+function TextList({
+  title,
+  items,
+  empty,
+}: {
+  title: string;
+  items?: Array<string | Record<string, unknown>>;
+  empty: string;
+}) {
   return (
     <div className="decision-text-list">
       <h4>{title}</h4>
       {items?.length ? (
         <ul>
-          {items.map((item) => <li key={item}>{item}</li>)}
+          {items.map((item, index) => {
+            const text = textListItem(item);
+            return <li key={`${text}:${index}`}>{text}</li>;
+          })}
         </ul>
       ) : <p className="meta-copy">{empty}</p>}
     </div>

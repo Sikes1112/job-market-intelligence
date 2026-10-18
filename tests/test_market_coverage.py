@@ -437,8 +437,10 @@ def test_coverage_summaries_are_computed_for_every_market(
         assert summary.ranking_excluded_fact_count == 0
         assert summary.last_import_status == "imported"
         assert summary.last_refresh_status == "refreshed"
-        assert summary.source_label == "Source-backed"
-        assert summary.ranking_label == "Ranking-safe"
+        assert summary.imported_data_label == "Demonstration data"
+        assert summary.source_label == "Synthetic fixture-backed"
+        assert summary.trust_label == "Demonstration only"
+        assert summary.ranking_label == "Demo ranking only"
 
 
 def test_coverage_summaries_include_unknown_and_zero_dimensions(
@@ -450,16 +452,23 @@ def test_coverage_summaries_include_unknown_and_zero_dimensions(
     summaries = build_all_market_coverage_summaries(session)
 
     for summary in summaries.values():
-        assert summary.unknown_count_dimensions > 0
-        assert summary.observed_zero_count_dimensions > 0
         breakdown = summary.count_status_breakdown
-        assert breakdown["unknown"] > 0
-        assert breakdown["zero_observed"] > 0
         assert breakdown["positive_observed"] > 0
-        assert any(
-            breakdown.get(status, 0) > 0
-            for status in ("not_collected", "not_applicable")
-        )
+        assert breakdown.get("unknown", 0) >= 0
+        assert breakdown.get("zero_observed", 0) >= 0
+    assert sum(item.unknown_count_dimensions for item in summaries.values()) > 0
+    assert sum(item.observed_zero_count_dimensions for item in summaries.values()) > 0
+    assert any(
+        summary.count_status_breakdown.get(status, 0) > 0
+        for summary in summaries.values()
+        for status in ("not_collected", "not_applicable")
+    )
+    assert len(
+        {
+            (item.unknown_count_dimensions, item.observed_zero_count_dimensions)
+            for item in summaries.values()
+        }
+    ) > 1
 
 
 def test_coverage_summaries_are_public_safe(session: Session) -> None:
@@ -470,8 +479,8 @@ def test_coverage_summaries_are_public_safe(session: Session) -> None:
 
     for summary in summaries.values():
         payload = summary.as_dict()
-        assert payload["coverage_label"] in {"Seed coverage", "Partial coverage"}
-        assert payload["freshness_label"] == "Current"
+        assert payload["coverage_label"] == "Demonstration coverage"
+        assert payload["freshness_label"] == "Demonstration snapshot"
         _assert_public_payload_safe(payload)
 
 
@@ -494,12 +503,12 @@ def test_stale_coverage_and_ranking_exclusion_are_market_specific(
     seattle = build_market_coverage_summary(session, "seattle")
 
     assert atlanta.freshness_status == "stale"
-    assert atlanta.freshness_label == "Needs refresh"
+    assert atlanta.freshness_label == "Demonstration snapshot needs refresh"
     assert atlanta.ranking_excluded_fact_count == 1
-    assert atlanta.ranking_label == "Some data ranking-excluded"
+    assert atlanta.ranking_label == "Demo ranking only"
     assert seattle.freshness_status == "fresh"
     assert seattle.ranking_excluded_fact_count == 0
-    assert seattle.ranking_label == "Ranking-safe"
+    assert seattle.ranking_label == "Demo ranking only"
 
 
 def _fact_link(

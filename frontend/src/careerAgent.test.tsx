@@ -454,7 +454,7 @@ describe("CareerAgentPage", () => {
 
     render(<CareerAgentPage />);
 
-    expect(await screen.findByText("Grounded Career Agent")).toBeTruthy();
+    expect(await screen.findByText("Career planning")).toBeTruthy();
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/me/career-agent/answers",
@@ -463,11 +463,11 @@ describe("CareerAgentPage", () => {
     );
 
     expect(screen.getByText("Greater Boston career fit")).toBeTruthy();
-    expect(screen.getByText("Evidence Status")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Quality checks" })).toBeTruthy();
     expect(screen.getByText("Greater Boston market score")).toBeTruthy();
     expect(screen.getByText("Rising AI market signal")).toBeTruthy();
-    expect(screen.getByText("Preferences excluded: true")).toBeTruthy();
-    expect(screen.getByText("Progress Memory")).toBeTruthy();
+    expect(screen.getByText("Private fields protected")).toBeTruthy();
+    expect(screen.getByText("Career context")).toBeTruthy();
     expect(screen.getByText("Off")).toBeTruthy();
     expect(screen.getAllByText(/not a certain outcome/i).length).toBeGreaterThan(0);
     expect(document.body.textContent).not.toContain("internal_review_notes");
@@ -759,7 +759,7 @@ describe("CareerAgentPage", () => {
     });
     fireEvent.click(screen.getByText("Preview tool action"));
 
-    expect(await screen.findByText("Export-safe payload")).toBeTruthy();
+    expect(await screen.findByText("Export preview")).toBeTruthy();
     expect(screen.getByText("Career Agent Report: Greater Boston career fit")).toBeTruthy();
     expect(screen.getByText("Private memory is redacted from this public-safe preview.")).toBeTruthy();
     expect(document.body.textContent).not.toContain("private_company");

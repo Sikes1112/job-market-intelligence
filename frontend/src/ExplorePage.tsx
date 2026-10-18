@@ -67,6 +67,42 @@ const CURATED_PUBLIC_SLUGS: Record<string, string> = {
   chicago: "chicago",
 };
 
+const CURRENT_OPPORTUNITY_ROLE_BY_EXPLORE_GOAL: Record<string, string> = {
+  ai_ml: "applied_ai",
+  data_science: "data_ai",
+  product_management: "product_management",
+  software_engineering: "software_engineering",
+};
+
+const CURRENT_OPPORTUNITY_TYPE_BY_EXPLORE_TYPE: Record<string, string> = {
+  full_time: "job",
+  "full time": "job",
+  job: "job",
+  internship: "internship",
+};
+
+const CURRENT_OPPORTUNITY_WORK_ARRANGEMENTS = new Set([
+  "remote",
+  "hybrid",
+  "onsite",
+  "mixed",
+  "unknown",
+]);
+
+function currentOpportunityRole(goal: string | null | undefined): string | undefined {
+  return goal ? CURRENT_OPPORTUNITY_ROLE_BY_EXPLORE_GOAL[goal] : undefined;
+}
+
+function currentOpportunityType(value: string | null | undefined): string | undefined {
+  return value ? CURRENT_OPPORTUNITY_TYPE_BY_EXPLORE_TYPE[value] : undefined;
+}
+
+function currentOpportunityWorkArrangement(
+  value: string | null | undefined,
+): string | undefined {
+  return value && CURRENT_OPPORTUNITY_WORK_ARRANGEMENTS.has(value) ? value : undefined;
+}
+
 const OPPORTUNITY_OPTIONS = ["internship", "job", "coop"];
 const WORK_OPTIONS = ["remote", "hybrid", "onsite", "flexible"];
 
@@ -269,6 +305,10 @@ export default function ExplorePage({ auth, state, onNavigate }: Props) {
   const [saved, setSaved] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const emittedEvents = useRef(new Set<string>());
+  const evaluationRequestRef = useRef<{
+    key: string;
+    promise: ReturnType<typeof evaluateExploreMarkets>;
+  } | null>(null);
   const protectedOptions = useMemo<ProtectedRequestOptions>(() => ({ getAccessToken: auth.getAccessTokenSilently }), [auth.getAccessTokenSilently]);
   const overrideKey = JSON.stringify([state.goal, state.opportunityTypes, state.workArrangements, resolvedGeographicScope, state.industries]);
   const overrides = useMemo<ExploreSessionOverrides>(() => ({
@@ -320,7 +360,12 @@ export default function ExplorePage({ auth, state, onNavigate }: Props) {
     let active = true;
     setLoading(true);
     setError(null);
-    evaluateExploreMarkets(overrides, protectedOptions)
+    const requestKey = `${overrideKey}:${reloadNonce}`;
+    const request = evaluationRequestRef.current?.key === requestKey
+      ? evaluationRequestRef.current.promise
+      : evaluateExploreMarkets(overrides, protectedOptions);
+    evaluationRequestRef.current = { key: requestKey, promise: request };
+    request
       .then((envelope) => {
         if (!active) return;
         if (!envelope.data) throw new Error(envelope.error?.message ?? "Explore returned no results.");
@@ -385,12 +430,17 @@ export default function ExplorePage({ auth, state, onNavigate }: Props) {
         payload: { region_id: focusedMarket.region.region_id },
       }, protectedOptions).catch(() => undefined);
     }
-    const opportunityType = results?.context.effective_context.opportunity_types[0];
-    const workArrangement = results?.context.effective_context.work_arrangements[0];
+    const roleFamily = currentOpportunityRole(results?.context.supported_goal);
+    const opportunityType = currentOpportunityType(
+      results?.context.effective_context.opportunity_types[0],
+    );
+    const workArrangement = currentOpportunityWorkArrangement(
+      results?.context.effective_context.work_arrangements[0],
+    );
     Promise.allSettled([
       getRegion(focusedMarket.region.region_id),
       listSavedMarketArtifacts(protectedOptions, "region"),
-      ...(hasCoverage ? [getCurrentOpportunities({ market: focusedMarket.region.region_id, role_family: results?.context.supported_goal, opportunity_type: opportunityType, work_arrangement: workArrangement, limit: 3 }, protectedOptions)] : []),
+      ...(hasCoverage ? [getCurrentOpportunities({ market: focusedMarket.region.region_id, role_family: roleFamily, opportunity_type: opportunityType, work_arrangement: workArrangement, limit: 3 }, protectedOptions)] : []),
     ]).then((settled) => {
       if (!active) return;
       if (settled[0]?.status === "fulfilled") setRegionDetail(settled[0].value.data);
@@ -515,11 +565,18 @@ export default function ExplorePage({ auth, state, onNavigate }: Props) {
   const hiringCompanies = regionDetail?.top_companies_hiring ?? [];
   const companyEvidence = hiringCompanies.length ? hiringCompanies : regionDetail?.top_companies_present ?? [];
   const companyEvidenceKind = hiringCompanies.length ? "Current hiring evidence" : "Company presence (not active hiring evidence)";
+  const opportunityRole = currentOpportunityRole(context?.supported_goal);
+  const exploreOpportunityType = context?.effective_context.opportunity_types[0];
+  const opportunityType = currentOpportunityType(exploreOpportunityType);
+  const exploreWorkArrangement = context?.effective_context.work_arrangements[0];
+  const opportunityWorkArrangement = currentOpportunityWorkArrangement(
+    exploreWorkArrangement,
+  );
   const opportunityUrl = focusedMarket ? currentOpportunitiesUrl({
     market: focusedMarket.region.region_id,
-    roleFamily: context?.supported_goal ?? undefined,
-    opportunityType: context?.effective_context.opportunity_types[0],
-    workArrangement: context?.effective_context.work_arrangements[0],
+    roleFamily: opportunityRole,
+    opportunityType,
+    workArrangement: opportunityWorkArrangement,
     returnTo: exploreUrl(state),
   }) : currentOpportunitiesUrl();
   const strongest = markets.filter((market) => market.rank).slice(0, 3).map((market) => market.region.primary_city ?? market.region.display_name);
@@ -531,43 +588,50 @@ export default function ExplorePage({ auth, state, onNavigate }: Props) {
         <div>
           <p className="eyebrow">Career market exploration</p>
           <h1 id="explore-title">Find where your career can move.</h1>
-          <p>{strongest.length ? `${strongest.join(", ")} currently look strongest for this search.` : "Explore supported U.S. career markets and inspect the evidence behind each result."}</p>
+          <p>{strongest.length ? `${strongest.join(", ")} currently look strongest for this search.` : "Explore eight U.S. career markets."}</p>
         </div>
         <label className="explore-search">
           <span>Search markets or roles</span>
-          <input aria-label="Search markets or roles" aria-describedby="search-help" onChange={(event) => setQuery(event.target.value)} onKeyDown={handleSearchKey} placeholder="Try Boston or AI / machine learning" type="search" value={query} />
-          <small id="search-help">Choose a market below, or press Enter for the first match.</small>
+          <input aria-label="Search markets or roles" onChange={(event) => setQuery(event.target.value)} onKeyDown={handleSearchKey} placeholder="Try Boston or AI / machine learning" type="search" value={query} />
         </label>
       </section>
+
+      <p className="demo-data-note explore-scope-note"><strong>Illustrative data:</strong> synthetic opportunities and partial coverage—not live listings.</p>
 
       <section className="personalization-strip" aria-label="Active Explore context">
         <div className="context-summary">
           <div><span>{context?.personalization_state === "personalized" ? "Fit based on" : "Showing"}</span><strong>{fitContextParts.length ? fitContextParts.join(" · ") : "General market intelligence"}</strong></div>
-          {contextualParts.length ? <div><span>Also filtering/context</span><strong>{contextualParts.join(" · ")}</strong><small>Not currently used in market Fit</small></div> : null}
-          {unsupportedParts.length ? <div><span>Unsupported</span><strong>{unsupportedParts.join(" · ")}</strong><small>Not interpreted by the current Explore contract</small></div> : null}
+          {contextualParts.length ? <div><span>Opportunity filters</span><strong>{contextualParts.join(" · ")}</strong></div> : null}
+          {unsupportedParts.length ? <div><span>Not applied</span><strong>{unsupportedParts.join(" · ")}</strong></div> : null}
         </div>
         <div className="context-actions">
-          {hasTemporaryOverrides ? <span className="temporary-flag">Temporary Explore override</span> : <span className="profile-default-flag">Profile defaults</span>}
-          <button className="text-button" onClick={() => setFiltersOpen((open) => !open)} type="button">{filtersOpen ? "Close filters" : "Edit"}</button>
+          {hasTemporaryOverrides ? (
+            <span className="temporary-flag">Temporary Explore override</span>
+          ) : context?.personalization_state === "general_market_intelligence" ? (
+            <span className="profile-default-flag">{context.career_identity_id ? "Personalization off" : "Profile not set"}</span>
+          ) : (
+            <span className="profile-default-flag">Profile defaults</span>
+          )}
+          {context?.personalization_state === "general_market_intelligence" ? <a className="text-button" href={profileUrl()}>{context.career_identity_id ? "Review profile" : "Set profile"}</a> : null}
+          <button className="text-button" onClick={() => setFiltersOpen((open) => !open)} type="button">{filtersOpen ? "Close filters" : "Filters"}</button>
         </div>
       </section>
 
       {filtersOpen ? (
         <section className="explore-filters" aria-label="Temporary Explore filters">
-          <label>Target role <span className="applied-label">Used in Fit when supported</span><select onChange={(event) => update({ goal: event.target.value || undefined })} value={state.goal ?? ""}><option value="">From Profile</option>{EXPLORE_ROLE_OPTIONS.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
-          <label>Opportunity type <span className="unapplied-label">Jobs/context only</span><select onChange={(event) => update({ opportunityTypes: event.target.value ? [event.target.value] : [] })} value={state.opportunityTypes[0] ?? ""}><option value="">From Profile</option>{OPPORTUNITY_OPTIONS.map((value) => <option key={value}>{label(value)}</option>)}</select></label>
-          <label>Work arrangement <span className="unapplied-label">Jobs/context only</span><select onChange={(event) => update({ workArrangements: event.target.value ? [event.target.value] : [] })} value={state.workArrangements[0] ?? ""}><option value="">From Profile</option>{WORK_OPTIONS.map((value) => <option key={value}>{label(value)}</option>)}</select></label>
+          <label>Target role<select onChange={(event) => update({ goal: event.target.value || undefined })} value={state.goal ?? ""}><option value="">From Profile</option>{EXPLORE_ROLE_OPTIONS.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
+          <label>Opportunity type<select onChange={(event) => update({ opportunityTypes: event.target.value ? [event.target.value] : [] })} value={state.opportunityTypes[0] ?? ""}><option value="">From Profile</option>{OPPORTUNITY_OPTIONS.map((value) => <option key={value}>{label(value)}</option>)}</select></label>
+          <label>Work arrangement<select onChange={(event) => update({ workArrangements: event.target.value ? [event.target.value] : [] })} value={state.workArrangements[0] ?? ""}><option value="">From Profile</option>{WORK_OPTIONS.map((value) => <option key={value}>{label(value)}</option>)}</select></label>
           <label>Geography<select onChange={(event) => update({ geographicScope: event.target.value ? [event.target.value] : [] })} value={state.geographicScope[0] ?? ""}><option value="">Nationwide</option>{markets.map((market) => <option key={market.region.region_id} value={marketSlug(market)}>{market.region.display_name}</option>)}</select></label>
-          <label>Industry <span className="unapplied-label">Context only — not used in Fit</span><input onChange={(event) => update({ industries: event.target.value ? [event.target.value] : [] })} placeholder="e.g. healthcare" value={state.industries[0] ?? ""} /></label>
-          <button className="secondary-button" onClick={() => onNavigate(exploreUrl())} type="button">Clear temporary filters</button>
+          <label>Industry<input onChange={(event) => update({ industries: event.target.value ? [event.target.value] : [] })} placeholder="e.g. healthcare" value={state.industries[0] ?? ""} /></label>
+          <button className="secondary-button" onClick={() => onNavigate(exploreUrl())} type="button">Reset filters</button>
         </section>
       ) : null}
 
-      {context?.personalization_state === "general_market_intelligence" ? <div className="explore-notice"><strong>General market intelligence</strong><span>{!context.career_identity_id ? "Tell us what kind of role you're looking for." : !context.personalization_consent ? "Personalization is off. Showing general market intelligence." : "Add a supported target role for personalized Fit."}</span><a href={profileUrl()}>{context.career_identity_id ? "Open Profile" : "Create Profile"}</a></div> : null}
       {context?.personalization_state === "needs_input" ? <div className="explore-notice"><strong>{context.career_identity_id ? "A supported target role is needed" : "Profile essentials are missing"}</strong><span>{context.career_identity_id ? "Your Profile is saved, but its target role is not supported for personalized Fit yet." : "Tell us what kind of role you're looking for."}</span><a href={profileUrl()}>{context.career_identity_id ? "Open Profile" : "Complete Profile"}</a></div> : null}
       {context?.personalization_state === "unsupported" ? <div className="explore-notice explore-notice-warning"><strong>Personalized Fit is not supported for this role yet</strong><span>General market evidence remains available. Choose a supported temporary role to personalize Fit.</span></div> : null}
       {results?.contradiction_blocking ? <div className="explore-notice explore-notice-warning"><strong>Evidence conflicts</strong><span>{results.contradiction_summary ?? "We cannot name a confident result for this search."}</span></div> : null}
-      {context?.limitations.length ? <details className="context-limitations"><summary>Search context limitations</summary><ul>{context.limitations.map((item) => <li key={item}>{item}</li>)}</ul></details> : null}
+      {context?.limitations.length ? <details className="context-limitations"><summary>Evidence limitations</summary><ul>{context.limitations.map((item) => <li key={item}>{item}</li>)}</ul></details> : null}
       {loading ? <div className="explore-status" role="status">Evaluating your search across supported markets…</div> : null}
       {error ? <div className="explore-status explore-error" role="alert"><strong>Explore could not load</strong><span>{error}</span>{auth.isAuthenticated ? <button onClick={() => setReloadNonce((value) => value + 1)} type="button">Try again</button> : <button onClick={() => void auth.login()} type="button">Sign in</button>}</div> : null}
 
@@ -580,7 +644,7 @@ export default function ExplorePage({ auth, state, onNavigate }: Props) {
             <p className="map-caption">Markers represent {context?.personalization_state === "personalized" ? "market Fit for this search" : "general market evidence"}—not job volume. Markets without coordinates remain in the list.</p>
           </div>
           <div className={`market-list-pane ${state.view === "list" ? "mobile-pane-active" : ""}`}>
-            <header><div><p className="eyebrow">Explore Fit</p><h2>Ranked markets</h2></div><span>{results.ranking_universe.label}</span></header>
+            <header><div><p className="eyebrow">Markets</p><h2>Ranked results</h2></div></header>
             <ol className="market-results">{matchingMarkets.map((market) => <MarketRow active={marketSlug(market) === state.focus} compared={selectedRegionIds.has(market.region.region_id)} key={market.region.region_id} market={market} onCompare={() => toggleCompare(market)} onOpen={() => focusMarket(market)} />)}</ol>
             {!matchingMarkets.length ? <p className="empty-inline">No markets match “{query}”. Clear search to restore the full Fit universe.</p> : null}
           </div>
@@ -604,7 +668,7 @@ export default function ExplorePage({ auth, state, onNavigate }: Props) {
       ) : null}
 
       <aside className="comparison-tray" aria-label="Comparison selection">
-        <div><strong>{selectedRegionIds.size ? `${selectedRegionIds.size} market${selectedRegionIds.size === 1 ? "" : "s"} selected` : "Select up to 4 markets"}</strong><span>Select 2–4 markets to compare governed Fit, evidence, and tradeoffs.</span></div>
+        <div><strong>{selectedRegionIds.size ? `${selectedRegionIds.size} market${selectedRegionIds.size === 1 ? "" : "s"} selected` : "Compare markets"}</strong><span>Select 2–4 markets.</span></div>
         <div className="comparison-chips">{state.selected.flatMap((slug) => { const market = markets.find((candidate) => marketSlug(candidate) === slug); return market ? [<button aria-label={`Remove ${market.region.display_name} from comparison`} key={slug} onClick={() => toggleCompare(market)} type="button">{market.region.display_name} ×</button>] : []; })}</div>
         <button disabled={selectedRegionIds.size < 2} onClick={() => onNavigate(exploreComparisonUrl(state))} type="button">Compare {selectedRegionIds.size || ""}</button>
       </aside>

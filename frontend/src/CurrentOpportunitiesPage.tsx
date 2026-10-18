@@ -21,8 +21,8 @@ import type {
 import {
   careerIdentityUrl,
   currentOpportunityDetailUrl,
-  currentOpportunityOperationsUrl,
   decisionsUrl,
+  recommendationsUrl,
   type CurrentOpportunityUrlState,
 } from "./urlState";
 
@@ -64,6 +64,24 @@ const DEFAULT_FILTERS: OpportunityFilters = {
 const WORK_ARRANGEMENTS = ["", "remote", "hybrid", "onsite", "mixed", "unknown"];
 const FRESHNESS_STATES = ["", "fresh", "aging", "stale", "unknown"];
 const RELEVANCE_STATES = ["", "direct_fit", "adjacent_fit", "limited_or_ineligible"];
+const MARKET_OPTIONS = [
+  ["greater_boston", "Greater Boston"],
+  ["greater_nyc", "New York City"],
+  ["sf_bay_area", "San Francisco Bay Area"],
+  ["greater_seattle", "Seattle"],
+  ["washington_dc", "Washington, DC"],
+  ["austin", "Austin"],
+  ["atlanta", "Atlanta"],
+  ["chicago", "Chicago"],
+] as const;
+const ROLE_OPTIONS = [
+  ["software_engineering", "Software engineering"],
+  ["applied_ai", "Applied AI"],
+  ["data_ai", "Data and AI"],
+  ["product_management", "Technical product management"],
+  ["solutions_engineering", "Solutions engineering"],
+] as const;
+const OPPORTUNITY_TYPES = [["job", "Jobs"], ["internship", "Internships"]] as const;
 
 function emptyLoad<T>(): LoadState<T> {
   return { loading: false, data: null, error: null };
@@ -163,6 +181,26 @@ export default function CurrentOpportunitiesPage({
   }, [auth.isAuthenticated, auth.isLoading, operations, opportunityId, protectedOptions]);
 
   useEffect(() => {
+    if (!opportunityId || !detailState.data) return;
+    const opportunity = detailState.data;
+    setFilters((current) => {
+      const next = {
+        ...current,
+        market: initialState?.market ?? opportunity.market_id ?? current.market,
+        roleFamily: initialState?.roleFamily ?? opportunity.role_family,
+        opportunityType: initialState?.opportunityType ?? opportunity.opportunity_type,
+        workArrangement: initialState?.workArrangement ?? current.workArrangement,
+      };
+      return current.market === next.market
+        && current.roleFamily === next.roleFamily
+        && current.opportunityType === next.opportunityType
+        && current.workArrangement === next.workArrangement
+        ? current
+        : next;
+    });
+  }, [detailState.data, initialState, opportunityId]);
+
+  useEffect(() => {
     if (!operations || auth.isLoading || !auth.isAuthenticated) return;
     let active = true;
     setDiagnosticsState((current) => ({ ...current, loading: true, error: null }));
@@ -208,7 +246,7 @@ export default function CurrentOpportunitiesPage({
       <PageFrame>
         <section className="empty-state current-opportunity-state">
           <strong>Sign in to view current opportunities</strong>
-          <p>Strategic opportunity matching uses your Career Identity, decisions, and strategic reviews through backend contracts.</p>
+          <p>Sign in to see opportunity matches informed by your Career Identity and saved decisions.</p>
           <button className="primary-button" type="button" onClick={() => void auth.login()}>
             Sign in
           </button>
@@ -248,22 +286,18 @@ export default function CurrentOpportunitiesPage({
       <section className="card current-opportunity-hero">
         <div className="card-header">
           <div>
-            <p className="card-eyebrow">Current opportunity intelligence</p>
-            <h2>Strategic Current Opportunities</h2>
+            <p className="card-eyebrow">Opportunity search</p>
+            <h1>Current opportunities</h1>
           </div>
-          <a
-            className="secondary-button"
-            href={currentOpportunityOperationsUrl()}
-            onClick={(event) => navigate(event, currentOpportunityOperationsUrl())}
-          >
-            Data operations
-          </a>
+          <span className="opportunity-result-count">{filteredMatches.length}<small>matching results</small></span>
         </div>
         <p className="lead-copy">
-          Matches are ranked by the backend using Career Identity, decisions, strategic reviews, and governed current opportunity data.
+          Search 24 illustrative opportunities across eight markets.
         </p>
+        <p className="demo-data-note"><strong>Demo opportunities:</strong> synthetic, simulated freshness, and not live listings.</p>
         <div className="opportunity-link-row">
           {initialState?.returnTo ? <a href={initialState.returnTo} onClick={(event) => navigate(event, initialState.returnTo!)}>← Back to Explore context</a> : null}
+          <a href={recommendationsUrl()} onClick={(event) => navigate(event, recommendationsUrl())}>View recommendations</a>
           <a href={careerIdentityUrl()} onClick={(event) => navigate(event, careerIdentityUrl())}>Career Identity</a>
           <a href={decisionsUrl()} onClick={(event) => navigate(event, decisionsUrl())}>Decision Workspace</a>
         </div>
@@ -272,7 +306,7 @@ export default function CurrentOpportunitiesPage({
       <OpportunityFiltersPanel filters={filters} onChange={setFilters} />
       <CoveragePanel coverage={coverage} loading={coverageState.loading} error={coverageState.error} />
 
-      {hasDegradedData ? <DegradedNotice coverage={coverage} matches={filteredMatches} /> : null}
+      {hasDegradedData ? <DegradedNotice matches={filteredMatches} /> : null}
       {matchesState.loading || opportunitiesState.loading ? <LoadingBlock label="Loading current opportunity matches" /> : null}
       {matchesState.error ? <ErrorBlock title="Matches unavailable" message={matchesState.error} /> : null}
       {opportunitiesState.error ? <ErrorBlock title="Opportunity inventory unavailable" message={opportunitiesState.error} /> : null}
@@ -353,7 +387,7 @@ function OperationsView({
           </span>
         </div>
         <p className="lead-copy">
-          This view renders Layer 38 diagnostics and refresh receipts. It does not recompute source health in the frontend.
+          This advanced view renders governed source diagnostics and refresh receipts. It does not recompute source health in the frontend.
         </p>
       </section>
 
@@ -458,29 +492,29 @@ function OpportunityFiltersPanel({
           <p className="card-eyebrow">Scope</p>
           <h3>{compact ? "Coverage scope" : "Opportunity filters"}</h3>
         </div>
-        <span className="badge badge-unknown">Backend coverage governs completeness</span>
+        {!compact ? <button className="text-button" onClick={() => onChange({ ...DEFAULT_FILTERS })} type="button">Reset filters</button> : null}
       </div>
       <div className="opportunity-filter-grid">
         <label>
           Market
-          <input
+          <select
             value={filters.market}
             onChange={(event) => onChange({ ...filters, market: event.target.value })}
-          />
+          >{MARKET_OPTIONS.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select>
         </label>
         <label>
           Role family
-          <input
+          <select
             value={filters.roleFamily}
             onChange={(event) => onChange({ ...filters, roleFamily: event.target.value })}
-          />
+          >{ROLE_OPTIONS.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select>
         </label>
         <label>
           Type
-          <input
+          <select
             value={filters.opportunityType}
             onChange={(event) => onChange({ ...filters, opportunityType: event.target.value })}
-          />
+          >{OPPORTUNITY_TYPES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select>
         </label>
         {!compact ? (
           <>
@@ -543,46 +577,43 @@ function CoveragePanel({
     <section className={`coverage-panel current-coverage-panel coverage-${presentation.tone}`}>
       <div className="card-header compact-header">
         <div>
-          <p className="card-eyebrow">{operator ? "Coverage contract" : "Coverage and limitations"}</p>
+          <p className="card-eyebrow">{operator ? "Coverage contract" : "Coverage"}</p>
           <h3>{presentation.label}</h3>
         </div>
         <span className={`badge badge-${presentation.tone}`}>{labelFor(coverage.effective_status)}</span>
       </div>
       <p>{presentation.copy}</p>
-      <p className="meta-copy">{publicSafeText(coverage.rationale, "Coverage rationale unavailable.")}</p>
-      {coverage.limitations.length ? (
-        <ul className="compact-list">
-          {coverage.limitations.map((limitation) => (
-            <li key={limitation}>{publicSafeText(limitation)}</li>
-          ))}
-        </ul>
-      ) : null}
-      <div className="metadata-row">
-        <span>Scope: {coverage.market_key} / {coverage.role_family} / {coverage.opportunity_type}</span>
-        <span>Expected sources: {coverage.minimum_expected_sources}</span>
-        <span>Evaluated: {dateTimeLabel(coverage.last_evaluated_at)}</span>
-      </div>
+      <details className="evidence-disclosure compact-disclosure">
+        <summary>Coverage details</summary>
+        <p className="meta-copy">{publicSafeText(coverage.rationale, "Coverage rationale unavailable.")}</p>
+        {coverage.limitations.length ? (
+          <ul className="compact-list">
+            {coverage.limitations.map((limitation) => (
+              <li key={limitation}>{publicSafeText(limitation)}</li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="metadata-row">
+          <span>Scope: {coverage.market_key} / {coverage.role_family} / {coverage.opportunity_type}</span>
+          <span>Expected sources: {coverage.minimum_expected_sources}</span>
+          <span>Evaluated: {dateTimeLabel(coverage.last_evaluated_at)}</span>
+        </div>
+      </details>
     </section>
   );
 }
 
 function DegradedNotice({
-  coverage,
   matches,
 }: {
-  coverage: CurrentOpportunityCoveragePayload | null;
   matches: CurrentOpportunityMatchPayload[];
 }) {
   const staleCount = matches.filter((match) => ["stale", "unknown"].includes(match.opportunity.freshness_state)).length;
   const ineligibleCount = matches.filter((match) => !match.ranking_eligible).length;
+  if (!staleCount && !ineligibleCount) return null;
   return (
     <section className="notice-state current-opportunity-state">
-      <strong>Opportunity intelligence is qualified</strong>
-      <p>
-        {coverage && coverage.effective_status !== "production_ready"
-          ? coveragePresentation(coverage.effective_status).copy
-          : "Some returned opportunities carry freshness, source, or ranking limitations."}
-      </p>
+      <strong>Some results need review</strong>
       <div className="badge-stack">
         {staleCount ? <span className="badge badge-warning">{staleCount} stale or unknown freshness</span> : null}
         {ineligibleCount ? <span className="badge badge-warning">{ineligibleCount} not ranking eligible</span> : null}
@@ -607,7 +638,7 @@ function OpportunityEmptyState({
     return (
       <section className="empty-state current-opportunity-state">
         <strong>Current coverage is not supported for this scope</strong>
-        <p>The backend cannot make an exhaustive claim about current opportunities for the selected market, role family, and type.</p>
+        <p>No complete current-opportunity view is available for these filters.</p>
       </section>
     );
   }
@@ -623,7 +654,7 @@ function OpportunityEmptyState({
     return (
       <section className="empty-state current-opportunity-state">
         <strong>Opportunities exist but none are eligible strategic matches</strong>
-        <p>Visible current opportunities are not ranking eligible or do not align with the current backend Career Identity, decision, and strategy inputs.</p>
+        <p>Visible opportunities are ineligible for ranking or do not match the current Career Identity and decision context.</p>
       </section>
     );
   }
@@ -631,7 +662,7 @@ function OpportunityEmptyState({
     return (
       <section className="empty-state current-opportunity-state">
         <strong>No matches after filters</strong>
-        <p>Filters narrow the backend-returned match set. Coverage status remains the authority for whether the selected scope is complete or partial.</p>
+        <p>Reset or broaden the filters. The coverage label above shows whether this view is complete or partial.</p>
       </section>
     );
   }
@@ -732,7 +763,7 @@ function OpportunityDetailPanel({
       <TagSection title="Requirements" values={opportunity.requirements} empty="No normalized requirements returned." />
       {match?.contributing_factors.length ? (
         <section className="opportunity-section">
-          <h3>Strategic explanation</h3>
+        <h3>Why it matches</h3>
           <ul className="compact-list">
             {match.contributing_factors.map((factor) => <li key={factor}>{factorLabel(factor)}</li>)}
           </ul>
@@ -750,13 +781,13 @@ function ProvenanceSummary({ opportunity }: { opportunity: CurrentOpportunityPay
     <section className="opportunity-section">
       <h3>Source summary</h3>
       <p className="meta-copy">
-        Observed from {sources.length || opportunity.provenance.source_count || 0} governed source link(s). Last observed {dateTimeLabel(opportunity.last_observed_at)}.
+        {sources.length || opportunity.provenance.source_count || 0} source link(s) · Last observed {dateTimeLabel(opportunity.last_observed_at)}.
       </p>
       {sources.length ? (
         <ul className="compact-list">
           {sources.slice(0, 3).map((source) => (
             <li key={`${source.source_id}:${source.provider_record_id ?? "record"}`}>
-              {source.source_id} · trust {labelFor(source.source_trust ?? "unknown")} · last collected {dateTimeLabel(source.last_collected_at ?? null)}
+              {source.source_name ?? source.source_id} · {labelFor(source.data_origin ?? "unknown origin")} · trust {labelFor(source.source_trust ?? "unknown")} · last collected {dateTimeLabel(source.last_collected_at ?? null)}
             </li>
           ))}
         </ul>
@@ -766,6 +797,9 @@ function ProvenanceSummary({ opportunity }: { opportunity: CurrentOpportunityPay
 }
 
 function ApplicationLink({ opportunity }: { opportunity: CurrentOpportunityPayload }) {
+  if (isIllustrativeApplicationUrl(opportunity.application_url)) {
+    return <span className="badge">Illustrative route only</span>;
+  }
   const safeUrl = safeApplicationUrl(opportunity.application_url);
   if (!safeUrl) {
     return <span className="badge badge-warning">Application route unavailable</span>;
@@ -787,11 +821,12 @@ function WarningList({ warnings }: { warnings: string[] }) {
   const uniqueWarnings = Array.from(new Set(warnings.filter(Boolean))).slice(0, 5);
   if (!uniqueWarnings.length) return null;
   return (
-    <section className="opportunity-warning-list" aria-label="Opportunity warnings and limitations">
-      {uniqueWarnings.map((warning) => (
-        <span className="badge badge-warning" key={warning}>{publicSafeText(warning)}</span>
-      ))}
-    </section>
+    <details className="opportunity-warning-list evidence-disclosure" aria-label="Opportunity warnings and limitations">
+      <summary>{uniqueWarnings.length} {uniqueWarnings.length === 1 ? "limitation" : "limitations"}</summary>
+      <ul className="compact-list">{uniqueWarnings.map((warning) => (
+        <li key={warning}>{publicSafeText(warning)}</li>
+      ))}</ul>
+    </details>
   );
 }
 
@@ -866,7 +901,7 @@ function coveragePresentation(status: string) {
   if (status === "production_ready") {
     return {
       label: "Strong current view",
-      copy: "The backend has sufficient governed coverage to treat results as a strong current view for this scope.",
+      copy: "Coverage is sufficient for a strong current view of these filters.",
       tone: "success",
     };
   }
@@ -887,13 +922,13 @@ function coveragePresentation(status: string) {
   if (status === "unsupported") {
     return {
       label: "Unsupported coverage",
-      copy: "Current opportunity coverage is not supported for this scope; the product cannot make an exhaustive claim.",
+      copy: "A complete current-opportunity view is not supported for these filters.",
       tone: "error",
     };
   }
   return {
     label: "Unknown coverage",
-    copy: "The backend returned an unfamiliar coverage status, so this view treats completeness as unknown.",
+    copy: "Completeness is unknown for these filters.",
     tone: "unknown",
   };
 }
@@ -920,11 +955,21 @@ function freshnessLabel(opportunity: CurrentOpportunityPayload): string {
 }
 
 function factorLabel(value: string): string {
+  const normalized = value.replaceAll("_", " ").toLowerCase();
+  if (normalized === "current and ranking eligible") {
+    return "Current and eligible for ranking.";
+  }
+  if (normalized === "fresh source observation") {
+    return "Fresh source observation.";
+  }
+  if (normalized === "limited coverage") {
+    return "Coverage is limited.";
+  }
   if (value === "career identity and decision term overlap") {
     return "Career Identity and active decision terms overlap with this opportunity.";
   }
   if (value === "strategy term overlap") {
-    return "Layer 37 strategy terms align with this opportunity.";
+    return "Your current recommendation strategy aligns with this opportunity.";
   }
   return publicSafeText(labelFor(value), "Match factor unavailable.");
 }
@@ -966,9 +1011,20 @@ function safeApplicationUrl(value: string | null): string | null {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
     const hostname = parsed.hostname.toLowerCase();
     if (hostname === "localhost" || hostname === "127.0.0.1" || hostname.startsWith("127.")) return null;
+    if (hostname === "example" || hostname.endsWith(".example")) return null;
     return parsed.toString();
   } catch {
     return null;
+  }
+}
+
+function isIllustrativeApplicationUrl(value: string | null): boolean {
+  if (!value) return false;
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === "example" || hostname.endsWith(".example");
+  } catch {
+    return false;
   }
 }
 

@@ -41,11 +41,21 @@ export function ImportedMarketBadges({
 
   return (
     <div className="metadata-row imported-market-badges" data-testid="imported-market-badges">
-      {labels.map((label) => (
+      {labels.slice(0, 2).map((label) => (
         <span className={labelBadgeClass(label)} key={label}>
           {label}
         </span>
       ))}
+      {labels.length > 2 ? (
+        <details className="imported-market-details">
+          <summary>Data details</summary>
+          <div className="metadata-row">
+            {labels.slice(2).map((label) => (
+              <span className={labelBadgeClass(label)} key={label}>{label}</span>
+            ))}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -59,7 +69,7 @@ export function ImportedMarketCoveragePanel({
     return (
       <div className="empty-state">
         <strong>No imported markets loaded</strong>
-        <p>Coverage summaries are unavailable for the current backend response.</p>
+        <p>Coverage summaries are unavailable.</p>
       </div>
     );
   }

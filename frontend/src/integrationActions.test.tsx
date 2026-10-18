@@ -348,6 +348,17 @@ function responseFor(input: RequestInfo | URL, init?: RequestInit) {
   if (value === "/api/integrations/career-platform-exports" && method === "POST") {
     return careerPlatformExportPayload(JSON.parse(String(init?.body)));
   }
+  if (value === "/me/explanations/region" && method === "POST") {
+    return {
+      provider_mode: "deterministic_structured_guidance",
+      status: "ok",
+      entity_type: "region",
+      subject_refs: { region_id: "greater_boston" },
+      sections: [],
+      limitations: [],
+      evidence_refs: [],
+    };
+  }
   return {};
 }
 
@@ -375,11 +386,8 @@ describe("integration actions UI", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Export and reminder actions" })).toBeTruthy();
-    expect(screen.getByText("No OAuth")).toBeTruthy();
-    expect(screen.getByText("No live sync")).toBeTruthy();
-    expect(screen.getByText("No external writes")).toBeTruthy();
-    expect(screen.getByText(/Google Calendar and Outlook direct writes remain deferred/i)).toBeTruthy();
+    expect(await screen.findByText("Exports and reminders")).toBeTruthy();
+    expect(screen.getByText(/Files and previews only; no external accounts are changed/i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "CSV" }));
     await waitFor(() => {
@@ -413,6 +421,15 @@ describe("integration actions UI", () => {
       product_object_id: "greater_boston",
     });
     expect(await screen.findByText(/No ATS application status or calendar write was created/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Explain guidance" }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => url === "/me/explanations/region")).toBe(true);
+    });
+    const explanationCall = fetchMock.mock.calls.find(([url]) => url === "/me/explanations/region");
+    const explanationBody = JSON.parse(String((explanationCall?.[1] as RequestInit).body));
+    expect(explanationBody.evidence.canonical_scores).not.toHaveProperty("raw_total_score");
+    expect(explanationBody.evidence.canonical_scores).toHaveProperty("objective_opportunity_score", 0.8);
   });
 
   test("company view renders manual career platform actions safely", async () => {
@@ -421,11 +438,10 @@ describe("integration actions UI", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Export and reminder actions" })).toBeTruthy();
+    expect(await screen.findByText("Exports and reminders")).toBeTruthy();
     expect(screen.getByRole("button", { name: "LinkedIn manual search" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Handshake manual lookup" })).toBeTruthy();
-    expect(screen.getByText("No scraping")).toBeTruthy();
-    expect(screen.getByText("No ATS state")).toBeTruthy();
+    expect(screen.getByText(/Files and previews only; no external accounts are changed/i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "LinkedIn manual search" }));
     await waitFor(() => {

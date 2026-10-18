@@ -17,6 +17,7 @@ import type {
   ExploreSessionOverrides,
 } from "./types";
 import {
+  currentOpportunitiesUrl,
   decisionsUrl,
   exploreComparisonUrl,
   exploreUrl,
@@ -42,6 +43,17 @@ function pretty(value: string | null | undefined): string {
   return value
     ? value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
     : "Not available";
+}
+
+function readableSummary(value: string): string {
+  return value
+    .replace(" signal signal", " signal")
+    .replace(/([^.!?]*(?:,| and )[^.!?]*) has the strongest/g, "$1 have the strongest")
+    .replace(/\bgoverned\b/gi, "observed")
+    .replace(/ is supported by canonical metric value [\d.]+/gi, " is supported by available evidence")
+    .replace(/current jobs and company counts did not affect this result/gi, "Current opportunities are shown separately")
+    .replace(/Unknown count facts/gi, "some market counts")
+    .replace(/are missing some market counts evidence/gi, "have incomplete market-count evidence");
 }
 
 function sessionOverrides(state: ExploreUrlState): ExploreSessionOverrides {
@@ -90,7 +102,7 @@ function marketFitLabel(market: ExploreComparisonMarket): string {
   return pretty(market.fit.state);
 }
 
-function MarketComparisonCard({ market }: { market: ExploreComparisonMarket }) {
+function MarketComparisonCard({ market, onNavigate }: { market: ExploreComparisonMarket; onNavigate: Props["onNavigate"] }) {
   const jobs = market.fit.opportunity_coverage;
   return (
     <article className="comparison-market-card">
@@ -108,20 +120,27 @@ function MarketComparisonCard({ market }: { market: ExploreComparisonMarket }) {
       </header>
       <section>
         <h4>Strongest reason to choose it</h4>
-        <p>{market.key_advantages[0] ?? "No distinct governed advantage was returned."}</p>
+        <p>{market.key_advantages[0] ? readableSummary(market.key_advantages[0]) : "No distinct advantage is supported."}</p>
       </section>
       <section>
         <h4>Biggest tradeoff</h4>
-        <p>{market.key_tradeoffs[0]}</p>
+        <p>{readableSummary(market.key_tradeoffs[0])}</p>
       </section>
-      <p className="comparison-caveat">{market.confidence_caveat}</p>
+      <p className="comparison-caveat">{readableSummary(market.confidence_caveat)}</p>
+      <button
+        className="secondary-button comparison-opportunity-action"
+        onClick={() => onNavigate(currentOpportunitiesUrl({ market: market.fit.region.region_id }))}
+        type="button"
+      >
+        {`View opportunities in ${market.fit.region.primary_city ?? market.fit.region.display_name}`}
+      </button>
       <details>
         <summary>Evidence and coverage</summary>
         <p>{market.fit.market_coverage.summary}</p>
         {market.missing_evidence.length ? (
           <p>Missing: {market.missing_evidence.map(pretty).join(", ")}.</p>
         ) : (
-          <p>No governed evidence areas were marked missing.</p>
+          <p>No evidence areas were marked missing.</p>
         )}
         <h4>Current opportunities — supporting evidence only</h4>
         <p>
@@ -319,13 +338,12 @@ export default function ExploreComparisonPage({
       <section aria-labelledby="comparison-title" className={`comparison-hero comparison-state-${result.recommendation_state}`}>
         <p className="eyebrow">{savedComparisonId ? "Saved comparison" : "Explore comparison"}</p>
         <h1 id="comparison-title">{stateHeading(result)}</h1>
-        <p>{result.recommendation_summary}</p>
+        <p>{readableSummary(result.abstention_reason ?? result.recommendation_summary)}</p>
         <div className="comparison-summary-meta">
           <span>{pretty(result.confidence)} confidence</span>
           <span>{result.compared_markets.length} markets</span>
           <span>Generated {new Date(result.generated_at).toLocaleString()}</span>
         </div>
-        {result.abstention_reason ? <p className="material-limitation"><strong>Why we abstained:</strong> {result.abstention_reason}</p> : null}
         <div className="comparison-primary-actions">
           {!savedComparisonId ? <button disabled={Boolean(savedId) || saving} onClick={() => void save()} type="button">{savedId ? "Saved ✓" : saving ? "Saving…" : "Save comparison"}</button> : null}
           <button className="secondary-button" onClick={() => setConfirming(true)} ref={prioritizeButtonRef} type="button">Prioritize</button>
@@ -334,30 +352,30 @@ export default function ExploreComparisonPage({
         </div>
       </section>
 
-      <section aria-labelledby="difference-title" className="comparison-factors">
-        <div><p className="eyebrow">What separates them</p><h2 id="difference-title">Biggest differentiators</h2></div>
-        {result.differentiating_factors.length ? <ul>{result.differentiating_factors.slice(0, 4).map((factor) => <li key={factor.code}><strong>{factor.label}</strong><span>{factor.summary}</span></li>)}</ul> : <p>The governed evidence does not support a meaningful differentiator.</p>}
-      </section>
+      {result.differentiating_factors.length ? <section aria-labelledby="difference-title" className="comparison-factors">
+        <div><p className="eyebrow">Key differences</p><h2 id="difference-title">Biggest differentiators</h2></div>
+        <ul>{result.differentiating_factors.slice(0, 4).map((factor) => <li key={factor.code}><strong>{factor.label}</strong><span>{readableSummary(factor.summary)}</span></li>)}</ul>
+      </section> : null}
 
       {result.shared_strengths.length || result.shared_weaknesses.length ? (
         <section className="comparison-shared" aria-labelledby="shared-title">
           <h2 id="shared-title">Where the markets are similar</h2>
-          <ul>{[...result.shared_strengths, ...result.shared_weaknesses].map((factor) => <li key={factor.code}>{factor.summary}</li>)}</ul>
+          <ul>{[...result.shared_strengths, ...result.shared_weaknesses].map((factor) => <li key={factor.code}>{readableSummary(factor.summary)}</li>)}</ul>
         </section>
       ) : null}
 
       <section aria-labelledby="market-cards-title">
         <h2 id="market-cards-title">Market tradeoffs</h2>
-        <div className="comparison-market-cards">{result.compared_markets.map((market) => <MarketComparisonCard key={market.fit.region.region_id} market={market} />)}</div>
+        <div className="comparison-market-cards">{result.compared_markets.map((market) => <MarketComparisonCard key={market.fit.region.region_id} market={market} onNavigate={onNavigate} />)}</div>
       </section>
 
       <section className="comparison-table-section" aria-labelledby="compact-title">
-        <h2 id="compact-title">Compact comparison</h2>
+        <h2 id="compact-title">At a glance</h2>
         <div className="comparison-table-wrap">
           <table>
-            <caption>Fit, evidence confidence, tradeoffs, and separate current-opportunity coverage for selected markets.</caption>
+            <caption className="sr-only">Fit, confidence, tradeoffs, and current-opportunity coverage for selected markets.</caption>
             <thead><tr><th scope="col">Market</th><th scope="col">Fit</th><th scope="col">Confidence</th><th scope="col">Key driver</th><th scope="col">Tradeoff</th><th scope="col">Current-job coverage</th></tr></thead>
-            <tbody>{result.compared_markets.map((market) => <tr key={market.fit.region.region_id}><th scope="row">{market.fit.region.display_name}</th><td>{marketFitLabel(market)}</td><td>{pretty(market.fit.confidence)}</td><td>{market.key_advantages[0] ?? "No distinct advantage"}</td><td>{market.key_tradeoffs[0]}</td><td>{pretty(market.fit.opportunity_coverage.status)} · {market.fit.opportunity_coverage.active_opportunity_count} observed</td></tr>)}</tbody>
+            <tbody>{result.compared_markets.map((market) => <tr key={market.fit.region.region_id}><th scope="row">{market.fit.region.display_name}</th><td>{marketFitLabel(market)}</td><td>{pretty(market.fit.confidence)}</td><td>{market.key_advantages[0] ? readableSummary(market.key_advantages[0]) : "No distinct advantage"}</td><td>{readableSummary(market.key_tradeoffs[0])}</td><td>{pretty(market.fit.opportunity_coverage.status)} · {market.fit.opportunity_coverage.active_opportunity_count} observed</td></tr>)}</tbody>
           </table>
         </div>
       </section>
@@ -365,7 +383,7 @@ export default function ExploreComparisonPage({
       {confirming ? (
         <section aria-labelledby="prioritize-title" aria-modal="true" className="prioritize-confirmation" role="dialog">
           <h2 id="prioritize-title">Choose a market to prioritize</h2>
-          <p>This creates or links a durable active decision in My Search. It does not change the system recommendation.</p>
+          <p>Add one market to My Search. The comparison result will remain unchanged.</p>
           <label>Market<select autoFocus onChange={(event) => setPriorityTarget(event.target.value)} value={priorityTarget}><option value="">Select a market</option>{result.compared_markets.filter((market) => market.fit.state !== "hard_constraint_excluded").map((market) => <option key={market.fit.region.region_id} value={market.fit.region.region_id}>{market.fit.region.display_name}</option>)}</select></label>
           {chosen ? <p><strong>Prioritize {chosen.fit.region.display_name}?</strong> This will add it to My Search as an active decision.{result.winner_region_ids.length === 0 ? ` You’re choosing ${chosen.fit.region.display_name} even though the comparison did not recommend a single market.` : recommendationMatches === false ? " Your choice differs from the system recommendation and both will be preserved." : ""}</p> : <p>Select the market you want to pursue.</p>}
           <div><button disabled={!priorityTarget || prioritizing} onClick={() => void prioritize()} type="button">{prioritizing ? "Prioritizing…" : chosen ? `Prioritize ${chosen.fit.region.display_name}` : "Prioritize"}</button><button className="secondary-button" onClick={closeConfirmation} type="button">Cancel</button></div>
@@ -374,7 +392,7 @@ export default function ExploreComparisonPage({
 
       {prioritization ? <section className="comparison-success" role="status"><h2 ref={successHeadingRef} tabIndex={-1}>Added to My Search</h2><p>{prioritization.created ? "A durable active decision was created." : "Your existing equivalent active decision was reused."}</p><div><button onClick={() => onNavigate(mySearchUrl())} type="button">Open My Search</button><button className="secondary-button" onClick={() => onNavigate(decisionsUrl(prioritization.decision_id))} type="button">Open Decision</button></div></section> : null}
 
-      <details className="comparison-methodology"><summary>Comparison authority and versions</summary><p>Fit, rank, ties, and abstention come from Explore Fit over governed Layer 34 evidence. Layer 38 opportunities and company evidence are displayed separately and cannot change the recommendation.</p><dl><dt>Context fingerprint</dt><dd>{result.context_fingerprint}</dd><dt>Fit algorithm</dt><dd>{result.algorithm_version}</dd><dt>Evidence authority</dt><dd>{result.evidence_authority_version}</dd><dt>Calibration</dt><dd>{result.calibration_version}</dd></dl></details>
+      <details className="comparison-methodology"><summary>Method and evidence</summary><p>Fit, rank, ties, and abstention use market evidence. Current opportunities and employer evidence are shown separately.</p><dl><dt>Context fingerprint</dt><dd>{result.context_fingerprint}</dd><dt>Fit algorithm</dt><dd>{result.algorithm_version}</dd><dt>Evidence authority</dt><dd>{result.evidence_authority_version}</dd><dt>Calibration</dt><dd>{result.calibration_version}</dd></dl></details>
     </div>
   );
 }

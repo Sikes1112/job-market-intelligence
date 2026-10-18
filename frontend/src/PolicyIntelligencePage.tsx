@@ -109,9 +109,8 @@ export default function PolicyIntelligencePage({
         <section className="notice-state">
           <strong>Policy intelligence is not available in public demo</strong>
           <p>
-            The public-demo backend intentionally blocks Layer 24 policy routes.
-            Use public reports, benchmarks, forecasts, and market exploration for
-            externally viewable demo workflows.
+            Policy workspaces are not included in the public demo. Public reports,
+            benchmarks, forecasts, and market exploration remain available.
           </p>
         </section>
       </div>
@@ -140,7 +139,7 @@ export default function PolicyIntelligencePage({
         />
         <PolicyEmpty
           title="Missing region"
-          body="Choose a known region before opening Layer 24 policy dashboards."
+          body="Choose a known region before opening a policy dashboard."
         />
       </div>
     );
@@ -149,7 +148,7 @@ export default function PolicyIntelligencePage({
   return (
     <div className="policy-page">
       <PolicyHeader
-        eyebrow="Layer 24 policy intelligence"
+        eyebrow="Policy intelligence"
         title={policyTitle(policyView)}
         summary={policySummary(policyView)}
         onNavigate={onNavigate}
@@ -207,12 +206,11 @@ function PolicyLanding({
     <div className="policy-page">
       <section className="section-hero policy-hero">
         <div>
-          <p className="eyebrow">Layer 24</p>
+          <p className="eyebrow">Regional intelligence</p>
           <h2>Policy, workforce, and economic intelligence</h2>
           <p>
-            Backend-generated regional signals for workforce teams, economic development
-            groups, university career offices, chambers, workforce nonprofits, policy
-            researchers, and education funders.
+            Regional signals for workforce teams, economic development groups, university
+            career offices, chambers, nonprofits, and policy researchers.
           </p>
         </div>
         <div className="hero-actions">
@@ -240,8 +238,7 @@ function PolicyLanding({
           <article className="signal-card" key={label}>
             <h3>{label}</h3>
             <p>
-              Use Layer 24 outputs as bounded, public-safe interpretation of available
-              market signals.
+              Review available market signals with their confidence and limitations.
             </p>
           </article>
         ))}
@@ -249,8 +246,8 @@ function PolicyLanding({
       <section className="notice-state">
         <strong>Methodology notice</strong>
         <p>
-          Dashboards read backend policy payloads. Metrics, findings, warnings,
-          confidence, freshness, and limitations are not generated in the frontend.
+          Metrics, findings, warnings, confidence, freshness, and limitations come from
+          the same governed evidence shown throughout the product.
         </p>
       </section>
     </div>
@@ -459,7 +456,7 @@ function PolicyReportDashboard({ state }: { state: LoadState<PublicReport> }) {
       {(report) => (
         <>
           <section className="signal-card">
-            <p className="eyebrow">Layer 24 report</p>
+            <p className="eyebrow">Regional report</p>
             <h3>{report.title}</h3>
             <p>{report.summary}</p>
             <BadgeRow
@@ -513,13 +510,13 @@ function PolicyLoadFrame<T>({
   emptyTitle: string;
   children: (value: T) => ReactNode;
 }) {
-  if (state.loading) return <PolicyLoading label="Loading Layer 24 policy intelligence" />;
+  if (state.loading) return <PolicyLoading label="Loading policy intelligence" />;
   if (state.error) return <PolicyError message={state.error} />;
   if (!state.envelope?.data) {
     return (
       <PolicyEmpty
         title={emptyTitle}
-        body="The backend did not return a payload for this policy surface."
+        body="No policy data is available for this view."
       />
     );
   }
@@ -642,7 +639,7 @@ function MetricMini({ metric }: { metric: PolicyMetric }) {
 function PeerComparisonList({ peers }: { peers: PeerMetroComparison[] }) {
   return (
     <PolicyList
-      emptyBody="No peer metros were returned. Low-coverage warnings remain visible above when provided by the backend."
+      emptyBody="No peer metros are available. Any low-coverage warning remains visible above."
       items={peers}
       renderItem={(peer) => (
         <article className="signal-card">
@@ -718,12 +715,7 @@ function MetadataPanel({
           {payload.freshness.notes.map((note) => <li key={note}>{note}</li>)}
         </ul>
       ) : null}
-      {payload.public_safety ? (
-        <p className="meta-copy">
-          Public-safe payload. Student-level data exposed:{" "}
-          {String(payload.public_safety.student_level_data_exposed)}.
-        </p>
-      ) : null}
+      {payload.public_safety && !payload.public_safety.student_level_data_exposed ? <p className="meta-copy">Aggregate data only; no student-level records.</p> : null}
     </section>
   );
 }
@@ -763,17 +755,11 @@ function SourceSafetyPanel({
   payload: WorkforceDashboardPayload;
 }) {
   return (
-    <section className="signal-card">
-      <h3>Public-safe metadata</h3>
-      <p>
-        Partner submission internals exposed:{" "}
-        {String(payload.public_safety.partner_submission_internals_exposed)}.
-      </p>
-      <p>
-        Private review fields exposed: {String(payload.public_safety.private_review_fields_exposed)}.
-      </p>
+    <details className="signal-card evidence-disclosure">
+      <summary>Privacy safeguards</summary>
+      <p>Partner submission internals and private review fields are excluded.</p>
       <BadgeRow values={payload.public_safety.redacted_internal_fields} />
-    </section>
+    </details>
   );
 }
 
@@ -883,24 +869,24 @@ function policyTitle(view: PolicyView): string {
   if (view === "economic-development") return "Economic development dashboard";
   if (view === "education-alignment") return "Education-to-workforce alignment";
   if (view === "peer-comparison") return "Peer metro comparison";
-  if (view === "report") return "Layer 24 public report";
+  if (view === "report") return "Regional workforce report";
   return "Regional policy dashboard";
 }
 
 function policySummary(view: PolicyView): string {
   if (view === "economic-development") {
-    return "Sector gaps, employer-base risk, peer comparisons, and strategy-analysis candidates from backend Layer 24 payloads.";
+    return "Sector gaps, employer-base risk, peer comparisons, and strategy candidates.";
   }
   if (view === "education-alignment") {
-    return "Aggregate institution, program-area, internship, and local absorption signals from backend Layer 24 payloads.";
+    return "Aggregate institution, program-area, internship, and local absorption signals.";
   }
   if (view === "peer-comparison") {
-    return "Explainable comparison against peer metros using available Layer 24 policy metrics.";
+    return "Compare peer metros using available regional policy metrics.";
   }
   if (view === "report") {
-    return "A representative public report generated from backend Layer 24 workforce dashboard data.";
+    return "A representative public report based on regional workforce data.";
   }
-  return "Regional workforce, access, concentration, diversity, and talent export risk metrics from backend Layer 24 payloads.";
+  return "Regional workforce access, concentration, diversity, and talent export risk metrics.";
 }
 
 function policyListKey(item: unknown, index: number): string {

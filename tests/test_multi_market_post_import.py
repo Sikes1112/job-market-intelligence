@@ -56,7 +56,7 @@ def test_generic_post_import_refresh_works_for_nyc_and_seattle(
         output_type=OutputType.REGION_OUTPUT,
         subject_id="greater_nyc",
     ).cached_payload["region"]["import_metadata"]["imported_data_label"] == (
-        "Real imported data"
+        "Demonstration data"
     )
     seattle_output = _output(
         session,
@@ -66,7 +66,7 @@ def test_generic_post_import_refresh_works_for_nyc_and_seattle(
     assert seattle_output.cached_payload["region"]["region_id"] == "greater_seattle"
     assert seattle_output.cached_payload["region"]["import_metadata"][
         "source_label"
-    ] == "Source-backed"
+    ] == "Synthetic fixture-backed"
 
     comparison_id = canonical_comparison_id("greater_nyc", "greater_seattle")
     comparison = _output(

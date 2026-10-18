@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, ".", "");
+  const devApiTarget = env.VITE_DEV_API_TARGET?.trim() || "http://127.0.0.1:8000";
   const deploymentMode = env.VITE_DEPLOYMENT_MODE?.trim();
   const deployedBuild = command === "build"
     && (env.VERCEL === "1" || ["beta", "production"].includes(deploymentMode));
@@ -34,16 +35,12 @@ export default defineConfig(({ command, mode }) => {
     plugins: [react()],
     server: {
       proxy: {
-        "/health": "http://127.0.0.1:8000",
-        "/regions": "http://127.0.0.1:8000",
-        "/companies": "http://127.0.0.1:8000",
-        "/compare": "http://127.0.0.1:8000",
-        "/discover": "http://127.0.0.1:8000",
-        "/recommendations": "http://127.0.0.1:8000",
-        "/current-opportunities": "http://127.0.0.1:8000",
-        "/user-intelligence": "http://127.0.0.1:8000",
-        "/monetization": "http://127.0.0.1:8000",
-        "/me": "http://127.0.0.1:8000",
+        "^/(?:health|ready)$": devApiTarget,
+        "^/compare(?:\\?|$)": devApiTarget,
+        "^/markets/imported(?:/|\\?|$)": devApiTarget,
+        "^/api(?:/|\\?|$)": devApiTarget,
+        "^/data-standards/": devApiTarget,
+        "^/(?:regions|companies|discover|recommendations|market-intelligence|market-comparisons|career-goal-comparisons|public|policy|platform|trust|user-reports|opportunities|current-opportunities|user-intelligence|career-agent|billing|monetization|me|exceptions|automated-rechecks|metadata)(?:/|\\?|$)": devApiTarget,
       },
     },
   };

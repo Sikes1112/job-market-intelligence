@@ -55,6 +55,7 @@ def _link(
 def test_layer5_metadata_vocabularies_are_stable() -> None:
     assert ApiFreshnessStatus.values() == {
         "fresh",
+        "simulated_current",
         "stale",
         "partial",
         "unknown",

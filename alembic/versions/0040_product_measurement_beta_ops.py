@@ -67,19 +67,37 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["action_id"], ["career_actions.action_id"]),
         sa.ForeignKeyConstraint(["application_id"], ["career_applications.application_id"]),
         sa.ForeignKeyConstraint(["career_identity_id"], ["career_identities.career_identity_id"]),
-        sa.ForeignKeyConstraint(["current_opportunity_id"], ["current_opportunities.current_opportunity_id"]),
+        sa.ForeignKeyConstraint(
+            ["current_opportunity_id"], ["current_opportunities.current_opportunity_id"]
+        ),
         sa.ForeignKeyConstraint(["decision_id"], ["career_decisions.decision_id"]),
         sa.ForeignKeyConstraint(["outcome_id"], ["career_outcomes.outcome_id"]),
-        sa.ForeignKeyConstraint(["recommendation_id"], ["decision_recommendations.recommendation_id"]),
+        sa.ForeignKeyConstraint(
+            ["recommendation_id"], ["decision_recommendations.recommendation_id"]
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.user_id"]),
         sa.PrimaryKeyConstraint("event_id"),
     )
-    op.create_index("ix_product_events_cohort_type", "product_analytics_events", ["cohort_key", "event_type"])
-    op.create_index("ix_product_events_decision", "product_analytics_events", ["decision_id", "occurred_at"])
-    op.create_index("ix_product_events_experiment", "product_analytics_events", ["experiment_key", "variant_key"])
-    op.create_index("ix_product_events_recommendation", "product_analytics_events", ["recommendation_id"])
-    op.create_index("ix_product_events_type_time", "product_analytics_events", ["event_type", "occurred_at"])
-    op.create_index("ix_product_events_user_time", "product_analytics_events", ["user_id", "occurred_at"])
+    op.create_index(
+        "ix_product_events_cohort_type", "product_analytics_events", ["cohort_key", "event_type"]
+    )
+    op.create_index(
+        "ix_product_events_decision", "product_analytics_events", ["decision_id", "occurred_at"]
+    )
+    op.create_index(
+        "ix_product_events_experiment",
+        "product_analytics_events",
+        ["experiment_key", "variant_key"],
+    )
+    op.create_index(
+        "ix_product_events_recommendation", "product_analytics_events", ["recommendation_id"]
+    )
+    op.create_index(
+        "ix_product_events_type_time", "product_analytics_events", ["event_type", "occurred_at"]
+    )
+    op.create_index(
+        "ix_product_events_user_time", "product_analytics_events", ["user_id", "occurred_at"]
+    )
 
     op.create_table(
         "product_user_visits",
@@ -99,9 +117,17 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("visit_id"),
     )
     op.create_index("ix_product_user_visits_cohort", "product_user_visits", ["cohort_key"])
-    op.create_index("ix_product_user_visits_return_event", "product_user_visits", ["returned_event_id"])
-    op.create_index("ix_product_user_visits_user_last_seen", "product_user_visits", ["user_id", "last_seen_at"])
-    op.create_index("ix_product_user_visits_user_started", "product_user_visits", ["user_id", "visit_started_at"])
+    op.create_index(
+        "ix_product_user_visits_return_event", "product_user_visits", ["returned_event_id"]
+    )
+    op.create_index(
+        "ix_product_user_visits_user_last_seen", "product_user_visits", ["user_id", "last_seen_at"]
+    )
+    op.create_index(
+        "ix_product_user_visits_user_started",
+        "product_user_visits",
+        ["user_id", "visit_started_at"],
+    )
 
     op.create_table(
         "beta_cohorts",
@@ -166,8 +192,12 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("membership_id"),
         sa.UniqueConstraint("user_id", "cohort_id", name="uq_beta_memberships_user_cohort"),
     )
-    op.create_index("ix_beta_memberships_cohort_status", "beta_cohort_memberships", ["cohort_id", "status"])
-    op.create_index("ix_beta_memberships_user_status", "beta_cohort_memberships", ["user_id", "status"])
+    op.create_index(
+        "ix_beta_memberships_cohort_status", "beta_cohort_memberships", ["cohort_id", "status"]
+    )
+    op.create_index(
+        "ix_beta_memberships_user_status", "beta_cohort_memberships", ["user_id", "status"]
+    )
 
     op.create_table(
         "experiment_assignments",
@@ -191,7 +221,11 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("assignment_id"),
         sa.UniqueConstraint("user_id", "experiment_key", name="uq_experiment_user_key"),
     )
-    op.create_index("ix_experiment_assignments_experiment", "experiment_assignments", ["experiment_key", "variant_key"])
+    op.create_index(
+        "ix_experiment_assignments_experiment",
+        "experiment_assignments",
+        ["experiment_key", "variant_key"],
+    )
     op.create_index("ix_experiment_assignments_user", "experiment_assignments", ["user_id"])
 
     op.create_table(
@@ -217,14 +251,26 @@ def upgrade() -> None:
             name="ck_recommendation_feedback_calibration",
         ),
         sa.ForeignKeyConstraint(["decision_id"], ["career_decisions.decision_id"]),
-        sa.ForeignKeyConstraint(["recommendation_id"], ["decision_recommendations.recommendation_id"]),
+        sa.ForeignKeyConstraint(
+            ["recommendation_id"], ["decision_recommendations.recommendation_id"]
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.user_id"]),
         sa.PrimaryKeyConstraint("feedback_id"),
     )
     op.create_index("ix_recommendation_feedback_cohort", "recommendation_feedback", ["cohort_key"])
-    op.create_index("ix_recommendation_feedback_decision", "recommendation_feedback", ["decision_id"])
-    op.create_index("ix_recommendation_feedback_recommendation", "recommendation_feedback", ["recommendation_id"])
-    op.create_index("ix_recommendation_feedback_user_created", "recommendation_feedback", ["user_id", "created_at"])
+    op.create_index(
+        "ix_recommendation_feedback_decision", "recommendation_feedback", ["decision_id"]
+    )
+    op.create_index(
+        "ix_recommendation_feedback_recommendation",
+        "recommendation_feedback",
+        ["recommendation_id"],
+    )
+    op.create_index(
+        "ix_recommendation_feedback_user_created",
+        "recommendation_feedback",
+        ["user_id", "created_at"],
+    )
 
     op.create_table(
         "decision_reflections",
@@ -254,13 +300,19 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["decision_id"], ["career_decisions.decision_id"]),
         sa.ForeignKeyConstraint(["outcome_id"], ["career_outcomes.outcome_id"]),
-        sa.ForeignKeyConstraint(["recommendation_id"], ["decision_recommendations.recommendation_id"]),
+        sa.ForeignKeyConstraint(
+            ["recommendation_id"], ["decision_recommendations.recommendation_id"]
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.user_id"]),
         sa.PrimaryKeyConstraint("reflection_id"),
     )
     op.create_index("ix_decision_reflections_decision", "decision_reflections", ["decision_id"])
-    op.create_index("ix_decision_reflections_recommendation", "decision_reflections", ["recommendation_id"])
-    op.create_index("ix_decision_reflections_user_created", "decision_reflections", ["user_id", "created_at"])
+    op.create_index(
+        "ix_decision_reflections_recommendation", "decision_reflections", ["recommendation_id"]
+    )
+    op.create_index(
+        "ix_decision_reflections_user_created", "decision_reflections", ["user_id", "created_at"]
+    )
 
     op.create_table(
         "strategy_changes",
@@ -282,13 +334,17 @@ def upgrade() -> None:
             name="ck_strategy_changes_type",
         ),
         sa.ForeignKeyConstraint(["decision_id"], ["career_decisions.decision_id"]),
-        sa.ForeignKeyConstraint(["recommendation_id"], ["decision_recommendations.recommendation_id"]),
+        sa.ForeignKeyConstraint(
+            ["recommendation_id"], ["decision_recommendations.recommendation_id"]
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.user_id"]),
         sa.PrimaryKeyConstraint("strategy_change_id"),
     )
     op.create_index("ix_strategy_changes_decision", "strategy_changes", ["decision_id"])
     op.create_index("ix_strategy_changes_recommendation", "strategy_changes", ["recommendation_id"])
-    op.create_index("ix_strategy_changes_user_occurred", "strategy_changes", ["user_id", "occurred_at"])
+    op.create_index(
+        "ix_strategy_changes_user_occurred", "strategy_changes", ["user_id", "occurred_at"]
+    )
 
     op.create_table(
         "support_cases",
@@ -320,9 +376,13 @@ def upgrade() -> None:
             "status IN ('open', 'investigating', 'awaiting_user', 'resolved', 'closed')",
             name="ck_support_cases_status",
         ),
-        sa.ForeignKeyConstraint(["current_opportunity_id"], ["current_opportunities.current_opportunity_id"]),
+        sa.ForeignKeyConstraint(
+            ["current_opportunity_id"], ["current_opportunities.current_opportunity_id"]
+        ),
         sa.ForeignKeyConstraint(["decision_id"], ["career_decisions.decision_id"]),
-        sa.ForeignKeyConstraint(["recommendation_id"], ["decision_recommendations.recommendation_id"]),
+        sa.ForeignKeyConstraint(
+            ["recommendation_id"], ["decision_recommendations.recommendation_id"]
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.user_id"]),
         sa.PrimaryKeyConstraint("support_case_id"),
     )
@@ -346,7 +406,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("support_case_event_id"),
     )
     op.create_index("ix_support_case_events_actor", "support_case_events", ["actor_user_id"])
-    op.create_index("ix_support_case_events_case", "support_case_events", ["support_case_id", "created_at"])
+    op.create_index(
+        "ix_support_case_events_case", "support_case_events", ["support_case_id", "created_at"]
+    )
 
     op.create_table(
         "product_entitlement_grants",
@@ -374,9 +436,17 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.user_id"]),
         sa.PrimaryKeyConstraint("entitlement_grant_id"),
     )
-    op.create_index("ix_product_entitlements_source", "product_entitlement_grants", ["source_type", "source_ref_id"])
+    op.create_index(
+        "ix_product_entitlements_source",
+        "product_entitlement_grants",
+        ["source_type", "source_ref_id"],
+    )
     op.create_index("ix_product_entitlements_status", "product_entitlement_grants", ["status"])
-    op.create_index("ix_product_entitlements_user_feature", "product_entitlement_grants", ["user_id", "feature_key"])
+    op.create_index(
+        "ix_product_entitlements_user_feature",
+        "product_entitlement_grants",
+        ["user_id", "feature_key"],
+    )
 
     op.create_table(
         "commercial_experiment_signals",
@@ -405,9 +475,19 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.user_id"]),
         sa.PrimaryKeyConstraint("signal_id"),
     )
-    op.create_index("ix_commercial_signals_experiment", "commercial_experiment_signals", ["experiment_key", "variant_key"])
-    op.create_index("ix_commercial_signals_offer", "commercial_experiment_signals", ["offer_key", "signal_type"])
-    op.create_index("ix_commercial_signals_user_created", "commercial_experiment_signals", ["user_id", "created_at"])
+    op.create_index(
+        "ix_commercial_signals_experiment",
+        "commercial_experiment_signals",
+        ["experiment_key", "variant_key"],
+    )
+    op.create_index(
+        "ix_commercial_signals_offer", "commercial_experiment_signals", ["offer_key", "signal_type"]
+    )
+    op.create_index(
+        "ix_commercial_signals_user_created",
+        "commercial_experiment_signals",
+        ["user_id", "created_at"],
+    )
 
 
 def downgrade() -> None:

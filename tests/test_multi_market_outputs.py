@@ -64,7 +64,7 @@ def test_bulk_output_rebuild_processes_all_registered_markets(
         assert output.cached_payload["region"]["summary"]["present_company_count"] == 3
         assert output.cached_payload["region"]["import_metadata"][
             "imported_data_label"
-        ] == "Real imported data"
+        ] == "Demonstration data"
 
 
 def test_bulk_output_rebuild_is_idempotent(session: Session) -> None:
@@ -141,8 +141,8 @@ def test_shared_companies_are_canonical_with_market_specific_facts(
         "austin",
         "chicago",
     }
-    assert _hiring(session, "cmp_google", "sf_bay_area").active_posting_count_now == 8
-    assert _hiring(session, "cmp_google", "chicago").active_posting_count_now == 6
+    assert _hiring(session, "cmp_google", "sf_bay_area").active_posting_count_now == 12
+    assert _hiring(session, "cmp_google", "chicago").active_posting_count_now == 8
 
 
 def test_region_specific_fact_source_links_do_not_cross_markets(
@@ -212,6 +212,8 @@ def test_output_payloads_preserve_unknown_and_zero_across_markets(
     assert import_all_curated_market_datasets(session, as_of=AS_OF).ok
     assert rebuild_all_curated_market_outputs(session, as_of=AS_OF).ok
 
+    observed_statuses: set[str] = set()
+    entry_summary_statuses: set[str] = set()
     for region_id in ALL_REGION_IDS:
         payload = _output(
             session,
@@ -222,12 +224,22 @@ def test_output_payloads_preserve_unknown_and_zero_across_markets(
             item["active_posting_count_now_status"]: item["active_posting_count_now"]
             for item in payload["region"]["top_companies_hiring"]
         }
-        assert hiring_statuses["zero_observed"] == 0
-        assert hiring_statuses["unknown"] is None
+        observed_statuses.update(hiring_statuses)
+        if "zero_observed" in hiring_statuses:
+            assert hiring_statuses["zero_observed"] == 0
+        if "unknown" in hiring_statuses:
+            assert hiring_statuses["unknown"] is None
         entry_summary = payload["region"]["entry_level_summary"]
-        assert entry_summary["internship_count_total"] is None
-        assert entry_summary["internship_count_total_status"] == "unknown"
+        entry_summary_statuses.add(entry_summary["internship_count_total_status"])
+        if entry_summary["internship_count_total_status"] == "unknown":
+            assert entry_summary["internship_count_total"] is None
         _assert_public_payload_safe(payload)
+
+    # The portfolio fixture deliberately varies its observation pattern rather
+    # than repeating positive/zero/unknown in every market, while retaining all
+    # three semantics across the seeded universe.
+    assert {"positive_observed", "zero_observed", "unknown"} <= observed_statuses
+    assert {"positive_observed", "unknown"} <= entry_summary_statuses
 
 
 def test_bulk_output_rebuild_introduces_no_manual_approval_workflows(

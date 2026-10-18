@@ -144,8 +144,10 @@ def assemble_region_recommendation_explanation(
         confidence_summary=confidence,
         freshness_summary=freshness,
         provenance_refs=tuple(provenance_refs),
-        coverage_warnings=_coverage_warning_refs(_field(body, "coverage")),
-        data_quality_warnings=_metadata_warning_codes(metadata),
+        coverage_warnings=_bounded_warnings(
+            _coverage_warning_refs(_field(body, "coverage")),
+        ),
+        data_quality_warnings=_bounded_warnings(_metadata_warning_codes(metadata)),
     )
 
 
@@ -236,12 +238,13 @@ def assemble_company_recommendation_explanation(
         confidence_summary=confidence,
         freshness_summary=freshness,
         provenance_refs=tuple(provenance_refs),
-        coverage_warnings=tuple(
-            warning
-            for coverage in _company_coverages(body)
-            for warning in _coverage_warning_refs(coverage)
+        coverage_warnings=_bounded_warnings(
+            *(
+                _coverage_warning_refs(coverage)
+                for coverage in _company_coverages(body)
+            ),
         ),
-        data_quality_warnings=_metadata_warning_codes(metadata),
+        data_quality_warnings=_bounded_warnings(_metadata_warning_codes(metadata)),
     )
 
 
@@ -976,6 +979,16 @@ def _coverage_warning_refs(coverage: Any) -> tuple[str, ...]:
     return tuple(dict.fromkeys(warnings))
 
 
+def _bounded_warnings(*groups: tuple[str, ...], limit: int = 30) -> tuple[str, ...]:
+    warnings: dict[str, None] = {}
+    for group in groups:
+        for warning in group:
+            warnings.setdefault(warning, None)
+            if len(warnings) == limit:
+                return tuple(warnings)
+    return tuple(warnings)
+
+
 def _coverage_detail(coverage: Any) -> str:
     tier = _enum_or_string(_field(coverage, "coverage_tier") or _field(coverage, "tier"))
     label = _string_or_none(_field(coverage, "coverage_label") or _field(coverage, "label"))
@@ -1020,6 +1033,8 @@ def _freshness_strength(
     status = (freshness.freshness_status or "unknown").casefold()
     if status == "fresh":
         return RecommendationEvidenceStrength.STRONG
+    if status == "simulated_current":
+        return RecommendationEvidenceStrength.MODERATE
     if status in {"partial", "seeded_demo"}:
         return RecommendationEvidenceStrength.WEAK
     if status == "stale":

@@ -206,10 +206,7 @@ export function MarketIntelligencePage({
             </span>
           ) : null}
         </div>
-        <p className="lead-copy">
-          Compare current curated market evidence by career goal. Rankings are
-          confidence-aware and include limitations; they are not guarantees of outcomes.
-        </p>
+        <p className="lead-copy">Compare eight illustrative markets by career goal. Results are directional, not live market claims.</p>
         <label className="market-intelligence-goal">
           Career goal
           <select
@@ -230,11 +227,11 @@ export function MarketIntelligencePage({
         {platformState.loading ? <LoadingBlock label="Loading market intelligence" /> : null}
         {platformState.error ? <ErrorState message={platformState.error} /> : null}
         {invalidGoal ? (
-          <ErrorState message="The selected career goal is not supported by the current backend response." />
+          <ErrorState message="The selected career goal is not available." />
         ) : null}
         {platform ? (
           <div className="market-intelligence-summary">
-            <p>{safePublicText(platform.public_summary)}</p>
+            <p>{intelligenceText(platform.public_summary)}</p>
             <LimitationList limitations={platform.limitations} />
           </div>
         ) : null}
@@ -246,11 +243,11 @@ export function MarketIntelligencePage({
             <p className="card-eyebrow">Goal ranking</p>
             <h2>{goalLabel(selectedGoal, goalDefinitions)}</h2>
           </div>
-          {ranking ? <span className="badge">{safePublicText(ranking.tie_breaker)}</span> : null}
+          {ranking ? <span className="badge">Confidence-aware order</span> : null}
         </div>
         {ranking ? (
           <>
-            <p className="meta-copy">{safePublicText(ranking.explanation)}</p>
+            <p className="meta-copy">{rankingSummary(ranking, goalLabel(selectedGoal, goalDefinitions))}</p>
             <ContradictionList
               findings={ranking.contradictions}
               status={ranking.contradiction_status}
@@ -263,7 +260,7 @@ export function MarketIntelligencePage({
               <div
                 className="market-intelligence-ranking"
                 aria-label={isAbstentionSufficiency(ranking.evidence_sufficiency)
-                  ? "Diagnostic market ordering"
+                  ? "Evidence-only market ordering"
                   : "Ranked markets"}
               >
                 {rankedMarkets.map((item) => (
@@ -282,7 +279,7 @@ export function MarketIntelligencePage({
               </div>
             ) : (
               <EmptyState
-                body="The backend returned no ranked markets and the frontend did not invent one."
+                body="No markets have enough evidence for this goal."
                 title="No ranking available"
               />
             )}
@@ -290,7 +287,7 @@ export function MarketIntelligencePage({
           </>
         ) : !platformState.loading && !platformState.error ? (
           <EmptyState
-            body="No ranking payload was returned for the selected career goal."
+            body="No ranking is available for the selected career goal."
             title="No market ranking loaded"
           />
         ) : null}
@@ -387,67 +384,70 @@ function DecisionUsefulnessPanel({
           <h3>{decision.label}</h3>
           <p className="meta-copy">{marketName}</p>
         </div>
-        <div className="decision-state-row" aria-label="Backend decision states">
+        <div className="decision-state-row" aria-label="Decision states">
           <span className={decision.className}>{decision.label}</span>
           <span className={sufficiency.className}>{sufficiency.label}</span>
           <span className={stability.className}>{stability.label}</span>
         </div>
       </div>
-      <p className="decision-state-help">{decision.help}</p>
-      <div className="decision-section-grid">
-        <DecisionSection
-          title={abstains ? "Why the backend abstains" : "Why this market"}
-          empty={abstains
-            ? "The backend did not return an abstention reason."
-            : "The backend did not return a market-specific reason."}
-          items={whyThisMarket(ranking, item, abstains)}
-        />
-        <DecisionSection
-          title={abstains ? "Decision limitations" : "Why not this market"}
-          empty={abstains
-            ? "The backend did not return limitations for this abstention."
-            : "The backend did not return limitations or weaknesses for this market."}
-          items={whyNotThisMarket(ranking, item)}
-        />
-        <DecisionSection
-          title={abstains ? "Diagnostic evidence shown" : "Evidence strongest here"}
-          empty="The backend did not return strongest-evidence details."
-          items={strongestEvidence(item, grounding)}
-        />
-        <DecisionSection
-          title={abstains ? "Missing evidence" : "Evidence weakest here"}
-          empty="The backend did not return missing-evidence details."
-          items={weakestEvidence(ranking, item, grounding)}
-        />
-        <DecisionSection
-          title="Direct vs proxy evidence"
-          empty="The backend did not return direct/proxy evidence details."
-          items={[
-            `${evidenceBasis.label}: ${evidenceBasis.help}`,
-            ...(grounding?.direct_evidence_summary ?? []),
-            ...(grounding?.proxy_evidence_summary ?? []),
-          ]}
-        />
-        <DecisionSection
-          title={abstains ? "Diagnostic ordering constraints" : "What could change this ranking"}
-          empty="The backend did not return ranking-change constraints."
-          items={rankingChangeFactors(ranking, grounding)}
-        />
-        <DecisionSection
-          title="Stability"
-          empty="The backend did not return stability details."
-          items={[
-            `${stability.label}: ${stability.help}`,
-            scoreMarginLabel(grounding?.score_margin),
-            ...stabilityScenarioItems(grounding),
-          ]}
-        />
-        <DecisionSection
-          title="Abstention explanation"
-          empty="The backend did not return abstention details."
-          items={abstentionExplanation(evidenceSufficiency, abstentionReason)}
-        />
-      </div>
+      <p className="decision-state-help">{intelligenceText(decision.help)}</p>
+      <details className="method-details intelligence-evidence-details">
+        <summary>Evidence and stability</summary>
+        <div className="decision-section-grid">
+          <DecisionSection
+            title={abstains ? "Why no recommendation" : "Why this market"}
+            empty={abstains
+              ? "No abstention reason is available."
+              : "No market-specific reason is available."}
+            items={whyThisMarket(ranking, item, abstains)}
+          />
+          <DecisionSection
+            title={abstains ? "Decision limitations" : "Why not this market"}
+            empty={abstains
+              ? "No additional limitations are available."
+              : "No additional trade-offs are available."}
+            items={whyNotThisMarket(ranking, item)}
+          />
+          <DecisionSection
+            title={abstains ? "Available evidence" : "Evidence strongest here"}
+            empty="No strongest-evidence details are available."
+            items={strongestEvidence(item, grounding)}
+          />
+          <DecisionSection
+            title={abstains ? "Missing evidence" : "Evidence weakest here"}
+            empty="No missing-evidence details are available."
+            items={weakestEvidence(ranking, item, grounding)}
+          />
+          <DecisionSection
+            title="Direct vs proxy evidence"
+            empty="No direct/proxy evidence details are available."
+            items={[
+              `${evidenceBasis.label}: ${evidenceBasis.help}`,
+              ...(grounding?.direct_evidence_summary ?? []),
+              ...(grounding?.proxy_evidence_summary ?? []),
+            ]}
+          />
+          <DecisionSection
+            title={abstains ? "Ordering constraints" : "What could change this ranking"}
+            empty="No ranking-change details are available."
+            items={rankingChangeFactors(ranking, grounding)}
+          />
+          <DecisionSection
+            title="Stability"
+            empty="No stability details are available."
+            items={[
+              `${stability.label}: ${stability.help}`,
+              scoreMarginLabel(grounding?.score_margin),
+              ...stabilityScenarioItems(grounding),
+            ]}
+          />
+          <DecisionSection
+            title="Abstention explanation"
+            empty="No additional abstention details are available."
+            items={abstentionExplanation(evidenceSufficiency, abstentionReason)}
+          />
+        </div>
+      </details>
     </section>
   );
 }
@@ -462,7 +462,7 @@ function DecisionSection({
   title: string;
 }) {
   const publicItems = items
-    .map((item) => safePublicText(item, ""))
+    .map((item) => intelligenceText(item))
     .filter(Boolean)
     .slice(0, 5);
   return (
@@ -572,12 +572,12 @@ function abstentionExplanation(
 ) {
   if (abstentionReason) return [abstentionReason];
   if (sufficiency === "not_supported") {
-    return ["The backend marked this result as not supported and did not return a separate abstention reason."];
+    return ["This result is not supported; no separate reason is available."];
   }
   if (sufficiency === "insufficient_evidence") {
-    return ["The backend marked this result as insufficient evidence and did not return a separate abstention reason."];
+    return ["Evidence is insufficient; no separate reason is available."];
   }
-  return ["The backend is not abstaining for this ranking."];
+  return ["This ranking includes a supported result."];
 }
 
 function RankingCard({
@@ -603,7 +603,7 @@ function RankingCard({
   return (
     <article className={selected ? "market-card market-card-static intelligence-rank-card selected-rank-card" : "market-card market-card-static intelligence-rank-card"}>
       <div className="market-card-topline">
-        <span>{abstains ? "Diagnostic" : "Rank"} #{item.rank}</span>
+        <span>{abstains ? "Evidence order" : "Rank"} #{item.rank}</span>
         <span className={decision.className}>{decision.label}</span>
         <span className={confidence.className}>{confidence.label}</span>
         <span className={freshness.className}>{freshness.label}</span>
@@ -611,7 +611,7 @@ function RankingCard({
       <strong>{safePublicText(item.market_name, item.market_key)}</strong>
       <small>
         {scoreLabel(item.score)} · {basis.label} · {abstains
-          ? "diagnostic ordering, not a recommendation"
+          ? "evidence order, not a recommendation"
           : "comparative, not a probability"}
       </small>
       <ContradictionList
@@ -619,9 +619,19 @@ function RankingCard({
         findings={item.contradictions}
         status={item.contradiction_status}
       />
-      <DriverList drivers={item.ranking_drivers} />
-      <InlineList title="Strengths" items={item.strengths} />
-      <InlineList title="Caveats" items={item.limitations.length ? item.limitations : item.weaknesses} />
+      {item.ranking_drivers.length ? (
+        <p className="meta-copy">
+          Top signals: {item.ranking_drivers.slice(0, 2).map((driver) => (
+            intelligenceText(driver.label || humanizeKey(driver.code))
+          )).join(" · ")}
+        </p>
+      ) : null}
+      <details className="method-details rank-evidence-details">
+        <summary>Evidence details</summary>
+        <DriverList drivers={item.ranking_drivers} />
+        <InlineList title="Strengths" items={item.strengths} />
+        <InlineList title="Caveats" items={item.limitations.length ? item.limitations : item.weaknesses} />
+      </details>
       <div className="hero-actions">
         <button type="button" onClick={onOpenProfile}>Open profile</button>
         <button className="secondary-button" type="button" onClick={onCompare}>Compare</button>
@@ -666,8 +676,8 @@ function MarketProfileSection({
       {error ? <ErrorState message={error} /> : null}
       <p className="lead-copy">{safePublicText(profile.overview)}</p>
       <div className="split-grid">
-        <InsightSection title="Key strengths" insights={profile.strengths} empty="No backend-derived strengths were returned." />
-        <InsightSection title="Known weaknesses" insights={profile.weaknesses} empty="No backend-derived weaknesses were returned." />
+        <InsightSection title="Key strengths" insights={profile.strengths} empty="No distinct strengths are available." />
+        <InsightSection title="Known weaknesses" insights={profile.weaknesses} empty="No distinct weaknesses are available." />
       </div>
       <section className="opportunity-environment" aria-label="Opportunity environment">
         <h3>Opportunity environment</h3>
@@ -680,21 +690,16 @@ function MarketProfileSection({
           <EnvironmentRow label="Hiring momentum" value={profile.opportunity_environment.hiring_momentum} />
         </div>
       </section>
-      <section>
-        <h3>Supporting evidence</h3>
+      <p className="meta-copy">{confidence.help} {freshness.help}</p>
+      <details className="method-details intelligence-evidence-details">
+        <summary>Supporting evidence and coverage</summary>
         <MetricGrid metrics={profile.supporting_metrics} />
         <p className="meta-copy">
-          Unknown facts and observed-zero facts are displayed separately. Unavailable evidence
-          is not converted to zero.
+          Unknown and observed-zero facts remain distinct; unavailable evidence is not treated as zero.
         </p>
-      </section>
-      <section className="confidence-block">
-        <h3>Confidence and freshness</h3>
-        <p>{confidence.help}</p>
-        <p>{freshness.help}</p>
-        <p>{safePublicText(profile.coverage_summary)}</p>
-      </section>
-      <LimitationList limitations={profile.limitations} />
+        <p>{intelligenceText(profile.coverage_summary)}</p>
+        <LimitationList limitations={profile.limitations} />
+      </details>
     </section>
   );
 }
@@ -719,11 +724,11 @@ function ComparisonPanel({ comparison }: { comparison: MarketComparisonReport | 
   const stability = stabilityPresentation(comparison.grounding?.stability_status);
   const abstains = isAbstentionSufficiency(comparison.evidence_sufficiency);
   const outcome = abstains
-    ? "The backend abstains from naming a normal winner for this comparison."
+    ? "There is not enough evidence to name a winner."
     : comparison.outcome === "tie"
-    ? "These markets are currently tied for this goal based on available evidence."
+    ? "These demonstration markets are tied for this goal based on the fixture evidence."
     : comparison.winner_market_key
-      ? `${winnerName(comparison)} is the stronger fit based on current data.`
+      ? `${winnerName(comparison)} is the stronger fit within the demonstration dataset.`
       : comparisonOutcomeLabel(comparison.outcome);
   return (
     <div className="market-comparison-panel">
@@ -737,7 +742,7 @@ function ComparisonPanel({ comparison }: { comparison: MarketComparisonReport | 
           </div>
           <h3>{abstains ? "No supported winner" : comparisonOutcomeLabel(comparison.outcome)}</h3>
           <p className="lead-copy">{outcome}</p>
-          <p className="meta-copy">{safePublicText(comparison.explanation)}</p>
+          <p className="meta-copy">{intelligenceText(comparison.explanation)}</p>
           <AbstentionNotice
             abstentionReason={comparison.abstention_reason}
             sufficiency={comparison.evidence_sufficiency}
@@ -752,16 +757,19 @@ function ComparisonPanel({ comparison }: { comparison: MarketComparisonReport | 
           <MetricValue label={comparison.market_b.market_name} value={scoreLabel(comparison.market_b.score)} />
         </div>
       </div>
-      <div className="split-grid">
-        <ComparisonSide side={comparison.market_a} title="Market A" />
-        <ComparisonSide side={comparison.market_b} title="Market B" />
-      </div>
-      <InlineList
-        title="Stability scenarios"
-        items={stabilityScenarioItems(comparison.grounding)}
-      />
-      <MetricGrid metrics={comparison.supporting_metrics} />
-      <LimitationList limitations={comparison.limitations} />
+      <details className="method-details intelligence-evidence-details">
+        <summary>Comparison evidence</summary>
+        <div className="split-grid">
+          <ComparisonSide side={comparison.market_a} title="Market A" />
+          <ComparisonSide side={comparison.market_b} title="Market B" />
+        </div>
+        <InlineList
+          title="Stability scenarios"
+          items={stabilityScenarioItems(comparison.grounding)}
+        />
+        <MetricGrid metrics={comparison.supporting_metrics} />
+        <LimitationList limitations={comparison.limitations} />
+      </details>
     </div>
   );
 }
@@ -783,8 +791,8 @@ function AbstentionNotice({
         {safePublicText(
           abstentionReason,
           sufficiency === "not_supported"
-            ? "The backend marked this comparison as not supported."
-            : "The backend marked this comparison as insufficient evidence.",
+            ? "This comparison is not supported."
+            : "This comparison has insufficient evidence.",
         )}
       </p>
     </section>
@@ -828,7 +836,7 @@ function DriverList({ drivers }: { drivers: ExplainableRankingItem["ranking_driv
         <li key={`${driver.code}-${driver.label}`}>
           <strong>{safePublicText(driver.label, humanizeKey(driver.code))}</strong>
           <span>{contributionLabel(driver.contribution)}</span>
-          <p>{safePublicText(driver.evidence)}</p>
+          <p>{intelligenceText(driver.evidence)}</p>
         </li>
       ))}
     </ol>
@@ -864,7 +872,7 @@ function ContradictionList({
           ))}
         </ul>
       ) : (
-        <p className="meta-copy">The backend returned contradiction status without finding details.</p>
+        <p className="meta-copy">Contradiction details are unavailable.</p>
       )}
     </section>
   );
@@ -886,9 +894,10 @@ function InsightSection({
         <div className="stack-list">
           {insights.map((insight) => (
             <div className="stack-row" key={insight.code}>
-              <strong>{safePublicText(insight.message)}</strong>
-              <span>{safePublicText(insight.evidence)}</span>
-              <small>{safePublicText(insight.impact)}</small>
+              <strong>{intelligenceText(insight.message)}</strong>
+              {insight.impact && intelligenceText(insight.impact).toLowerCase() !== "coverage" ? (
+                <small>{intelligenceText(insight.impact)}</small>
+              ) : null}
             </div>
           ))}
         </div>
@@ -906,7 +915,7 @@ function InlineList({ title, items }: { title: string; items: string[] }) {
       <span>{title}</span>
       <ul>
         {items.slice(0, 3).map((item, index) => (
-          <li key={`${title}-${index}-${item}`}>{safePublicText(item)}</li>
+          <li key={`${title}-${index}-${item}`}>{intelligenceText(item)}</li>
         ))}
       </ul>
     </div>
@@ -915,17 +924,17 @@ function InlineList({ title, items }: { title: string; items: string[] }) {
 
 function LimitationList({ limitations }: { limitations: string[] }) {
   if (!limitations.length) {
-    return <p className="meta-copy">No limitations were returned for this surface.</p>;
+    return null;
   }
   return (
-    <section className="limitations-block" aria-label="Important limitations">
-      <h3>Important limitations</h3>
+    <details className="method-details limitations-block" aria-label="Important limitations">
+      <summary>{limitations.length} evidence limitation{limitations.length === 1 ? "" : "s"}</summary>
       <ul>
         {limitations.map((limitation, index) => (
-          <li key={`limitation-${index}-${limitation}`}>{safePublicText(limitation)}</li>
+          <li key={`limitation-${index}-${limitation}`}>{intelligenceText(limitation)}</li>
         ))}
       </ul>
-    </section>
+    </details>
   );
 }
 
@@ -1031,6 +1040,29 @@ function winnerName(comparison: MarketComparisonReport): string {
     return comparison.market_b.market_name;
   }
   return "No market";
+}
+
+function rankingSummary(ranking: ExplainableRankingReport, goal: string): string {
+  const top = topDecisionItem(ranking);
+  if (!top) {
+    return intelligenceText(
+      ranking.abstention_reason || `There is not enough evidence for a ${goal} recommendation.`,
+    );
+  }
+  const suffix = ranking.is_provisional
+    ? " Confidence is limited, so treat the order as provisional."
+    : "";
+  return `${safePublicText(top.market_name, top.market_key)} currently leads for ${goal.toLowerCase()}.${suffix}`;
+}
+
+function intelligenceText(value: string | null | undefined): string {
+  return safePublicText(value, "")
+    .replace(/\bThe backend reports\b/gi, "Available evidence shows")
+    .replace(/\bBackend score margin\b/gi, "Score margin")
+    .replace(/\bbackend confidence\b/gi, "confidence")
+    .replace(/\bis supported by canonical metric value\b/gi, "is based on an observed value of")
+    .replace(/\bcanonical metric value\b/gi, "observed value")
+    .replace(/\bbackend stability analysis\b/gi, "stability analysis");
 }
 
 function isAbstentionSufficiency(

@@ -94,23 +94,19 @@ export default function DataStandardsPage() {
   return (
     <div className="public-page public-document data-standards-page">
       <section className="public-intro public-document-intro">
-        <p className="eyebrow">Layer 27 standards surface</p>
+        <p className="eyebrow">Transparency</p>
         <h1>Data standards and partner governance</h1>
         <p className="public-lead">
-          Layer 27 defines standards and intake quality. Layer 28 adds controlled
-          reviewer-approved canonical merge for eligible candidate facts, but
-          partner-submitted data never mutates canonical truth directly and quality
-          labels do not currently alter rankings, recommendations, forecasts, policy
-          outputs, career-agent outputs, public reports, or market scores.
+          Published definitions, quality labels, and review requirements for contributed data.
+          Partner submissions never become canonical records without review.
         </p>
         <div className="metadata-row">
-          <span className="badge badge-real">Backend standards API</span>
+          <span className="badge badge-real">Published standards</span>
           <span className="badge badge-warning">Controlled merge only</span>
-          <span className="badge badge-unknown">Admin API review path</span>
         </div>
       </section>
 
-      {state.loading ? <p className="meta-copy">Loading Layer 27 standards metadata...</p> : null}
+      {state.loading ? <p className="meta-copy">Loading standards…</p> : null}
       {state.error ? (
         <div className="error-state">
           <strong>Unable to load standards metadata</strong>
@@ -118,14 +114,12 @@ export default function DataStandardsPage() {
         </div>
       ) : null}
 
-      <section className="public-document-list" aria-label="Layer 27 data standards">
+      <section className="public-document-list" aria-label="Data standards">
         <article className="public-section">
           <h2>Standard Definitions</h2>
           <p>
-            Canonical terms are metadata for shared understanding. Layer 27 validation
-            does not mutate canonical company, region, opportunity, recommendation,
-            forecast, policy, career-agent, public report, contribution, or market-score
-            records; Layer 28 merge requires internal review and provenance binding.
+            These terms keep company, market, opportunity, and evidence records consistent.
+            Accepted contributions require review and provenance.
           </p>
           <div className="standards-grid">
             {definitions.map((definition) => (
@@ -260,7 +254,7 @@ export default function DataStandardsPage() {
           {activeBoardClaim ? (
             <div className="error-state">
               <strong>Unsafe governance claim detected</strong>
-              <p>The backend returned board-active language for a framework-only page.</p>
+              <p>The current data conflicts with the published framework status.</p>
             </div>
           ) : null}
           <div className="standards-grid">

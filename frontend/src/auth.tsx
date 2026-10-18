@@ -34,13 +34,19 @@ export type FrontendAuthContextValue = {
 const authConfig = readAuthConfig();
 const localAuthEnabled = import.meta.env.DEV && import.meta.env.VITE_LOCAL_AUTH === "true";
 
+async function openUnavailableAuthNotice() {
+  if (localAuthEnabled) return;
+  window.history.pushState({}, document.title, "/markets/account");
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 const missingAuthValue: FrontendAuthContextValue = {
-  isConfigured: false,
+  isConfigured: localAuthEnabled,
   isAuthenticated: localAuthEnabled,
   isLoading: false,
   error: null,
   user: localAuthEnabled ? { sub: "local|explorer", name: "Local explorer" } : null,
-  login: async () => undefined,
+  login: openUnavailableAuthNotice,
   logout: () => undefined,
   getAccessTokenSilently: async () => null,
 };

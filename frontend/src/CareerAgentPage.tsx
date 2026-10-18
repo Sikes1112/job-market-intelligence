@@ -249,7 +249,7 @@ export default function CareerAgentPage({
   const submit = useCallback(async (request: CareerAgentRequest) => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
-      const envelope = await getCareerAgentAnswer(request);
+      const envelope = await getCareerAgentAnswer(request, protectedOptions);
       setState({ loading: false, envelope, error: null });
     } catch (error) {
       setState({
@@ -258,7 +258,7 @@ export default function CareerAgentPage({
         error: error instanceof Error ? error.message : "Career agent is unavailable",
       });
     }
-  }, []);
+  }, [protectedOptions]);
 
   useEffect(() => {
     void submit(DEFAULT_CAREER_AGENT_REQUEST);
@@ -472,9 +472,8 @@ export default function CareerAgentPage({
         <div className="card-header">
           <div>
             <p className="card-eyebrow">Career agent</p>
-            <h2>Grounded Career Agent</h2>
+            <h2>Career planning</h2>
           </div>
-          <span className="badge badge-success">Evidence contract</span>
         </div>
 
         <form className="career-agent-form-grid" onSubmit={handleSubmit}>
@@ -663,7 +662,7 @@ export default function CareerAgentPage({
             {toolState.loading ? "Preparing" : "Preview tool action"}
           </button>
           <p className="meta-copy">
-            Tool actions are protected previews. Approval records intent only unless a real backend runtime exists.
+            Tool actions are previews. Approval records your intent but does not contact an external service.
           </p>
         </div>
       </section>
@@ -784,7 +783,7 @@ function CareerAgentToolPanel({
       <ToolPreviewContent preview={preview} />
 
       <section className="route-section">
-        <h3>Evidence refs</h3>
+        <h3>Supporting evidence</h3>
         <div className="career-agent-evidence-list">
           {preview.evidence_refs.map((ref) => (
             <EvidenceRow key={ref.ref_id} evidenceRef={ref} />
@@ -854,7 +853,7 @@ function ToolPreviewContent({ preview }: { preview: CareerAgentToolPreview }) {
       ) : null}
       {exportPayload ? (
         <div className="career-agent-preview-block">
-          <strong>Export-safe payload</strong>
+          <strong>Export preview</strong>
           <PreviewRecord value={exportPayload} />
           {"private_memory_payload" in preview.user_visible_preview ? (
             <p className="meta-copy">Private memory is redacted from this public-safe preview.</p>
@@ -962,7 +961,7 @@ function CareerAgentAnswerPanel({ answer }: { answer: CareerAgentAnswer }) {
     <>
       <section className="notice-state career-agent-summary">
         <strong>{displayLabel(answer.question_type)}</strong>
-        <p>{answer.summary}</p>
+        <p>{careerAgentText(answer.summary)}</p>
         <div className="career-agent-meta-grid">
           <MetaTile label="Freshness" value={displayLabel(answer.freshness.freshness_status)} />
           <MetaTile label="Sources" value={String(answer.freshness.source_count)} />
@@ -986,22 +985,22 @@ function CareerAgentAnswerPanel({ answer }: { answer: CareerAgentAnswer }) {
         ) : null}
       </section>
 
-      <section className="card career-agent-guardrails">
+      <details className="card career-agent-guardrails evidence-disclosure">
+        <summary>Evidence and limitations</summary>
         <div className="card-header">
           <div>
-            <p className="card-eyebrow">Guardrails</p>
-            <h2>Evidence Status</h2>
+            <p className="card-eyebrow">Evidence</p>
+            <h2>Quality checks</h2>
           </div>
           <span className={`badge badge-${answer.guardrails.passed ? "success" : "error"}`}>
             {answer.guardrails.passed ? "Passed" : "Blocked"}
           </span>
         </div>
         <div className="badge-stack">
-          <span className="badge">Evidence refs: {String(answer.guardrails.evidence_requirement_met)}</span>
-          <span className="badge">Openings blocked: {String(answer.guardrails.fabricated_openings_blocked)}</span>
-          <span className="badge">Preferences excluded: {String(answer.guardrails.preferences_excluded_from_evidence)}</span>
-          <span className="badge">Forecasts bounded: {String(answer.guardrails.forecast_claims_bounded)}</span>
-          <span className="badge">Private fields redacted: {String(answer.guardrails.private_fields_redacted)}</span>
+          <span className="badge">Evidence {answer.guardrails.evidence_requirement_met ? "present" : "limited"}</span>
+          <span className="badge">No invented openings</span>
+          <span className="badge">Forecasts bounded</span>
+          <span className="badge">Private fields protected</span>
         </div>
         {answer.limitations.length || answer.guardrails.warnings.length ? (
           <ul className="warning-list career-agent-warning-list">
@@ -1012,7 +1011,7 @@ function CareerAgentAnswerPanel({ answer }: { answer: CareerAgentAnswer }) {
             ))}
           </ul>
         ) : null}
-      </section>
+      </details>
     </>
   );
 }
@@ -1032,7 +1031,7 @@ function CareerActionPlanPanel({ plan }: { plan: CareerActionPlan }) {
         <MetaTile label="Freshness" value={displayLabel(plan.freshness.freshness_status)} />
         <MetaTile label="Confidence" value={displayLabel(plan.uncertainty.confidence_level)} />
         <MetaTile label="Uncertainty" value={displayLabel(plan.uncertainty.uncertainty_level)} />
-        <MetaTile label="Evidence refs" value={String(plan.evidence_refs.length)} />
+        <MetaTile label="Sources" value={String(plan.evidence_refs.length)} />
       </div>
 
       {plan.memory_personalization.length ? (
@@ -1087,18 +1086,18 @@ function CareerPlanStepCard({ step }: { step: CareerPlanStep }) {
         <MetaTile label="Milestone" value={step.milestone.summary} />
         <MetaTile label="Freshness" value={displayLabel(step.freshness.freshness_status)} />
         <MetaTile label="Confidence" value={displayLabel(step.uncertainty.confidence_level)} />
-        <MetaTile label="Evidence refs" value={String(step.evidence_refs.length)} />
+        <MetaTile label="Sources" value={String(step.evidence_refs.length)} />
       </div>
       <p className="meta-copy">{step.milestone.outcome}</p>
 
-      <section className="route-section">
-        <h3>Evidence refs</h3>
+      <details className="route-section evidence-disclosure">
+        <summary>Supporting evidence</summary>
         <div className="career-agent-evidence-list">
           {step.evidence_refs.map((ref) => (
             <EvidenceRow key={ref.ref_id} evidenceRef={ref} />
           ))}
         </div>
-      </section>
+      </details>
 
       {step.warnings.length || step.risks.length ? (
         <section className="route-section">
@@ -1145,14 +1144,14 @@ function CareerMemoryPanel({
       <div className="card-header">
         <div>
           <p className="card-eyebrow">Career memory</p>
-          <h2>Progress Memory</h2>
+          <h2>Career context</h2>
         </div>
         <span className={`badge badge-${memoryProfile?.memory_enabled ? "success" : "muted"}`}>
           {memoryProfile?.memory_enabled ? "Opted in" : "Off"}
         </span>
       </div>
       <p className="meta-copy">
-        Memory is optional. Saved career context is private, user-provided, and never counted as market evidence.
+        Optional, private details used to personalize future answers. They do not change market evidence.
       </p>
       {!authenticated ? (
         <p className="meta-copy">Sign in to save or clear career memory.</p>
@@ -1247,7 +1246,7 @@ function CareerAgentRecommendationCard({
       ) : null}
 
       <section className="route-section">
-        <h3>Evidence refs</h3>
+        <h3>Supporting evidence</h3>
         <div className="career-agent-evidence-list">
           {recommendation.evidence_refs.map((ref) => (
             <EvidenceRow key={ref.ref_id} evidenceRef={ref} />
@@ -1298,6 +1297,12 @@ function EvidenceRow({ evidenceRef }: { evidenceRef: CareerAgentEvidenceRef }) {
 
 function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+function careerAgentText(value: string): string {
+  return value
+    .replace(/Layer \d+ durable Decision supplied \d+ grounded result\(s\)\./gi, "Based on your saved decision.")
+    .replace(/Layer \d+/gi, "Available evidence");
 }
 
 function displayLabel(value: string): string {

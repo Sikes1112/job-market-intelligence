@@ -130,12 +130,12 @@ in a separately versioned static asset keyed by state code. Viewport,
 selection, hover, zoom, and other map interaction state belong only in the
 frontend.
 
-The repository did not contain a trustworthy, licensed coordinate/bounds or
-state-boundary source. The curated registry therefore leaves centroids and
-bounds null, rather than fabricating values. `data/geography/README.md`
-defines the provenance and asset contract for a future
-`us_states_simplified.geojson`. That licensed asset is the remaining map-data
-prerequisite; it is not a second identity layer.
+The curated registry uses rounded U.S. Census Bureau Gazetteer representative
+points as display proxies and leaves focus bounds null rather than fabricating
+metro boundaries. The checked-in `us_states_simplified.geojson` is derived
+from the public-domain U.S. Census Bureau 2024 Cartographic Boundary File.
+`data/geography/README.md` records its source and rendering contract. This
+static asset is not a second identity layer.
 
 ## SQLite upgrade integrity boundary
 

@@ -1,4 +1,4 @@
 company_id,region_id,internship_count,internship_count_status,coop_count,coop_count_status,entry_level_full_time_count,entry_level_full_time_count_status,formal_early_career_program_flag,student_season_recurrence_signal,source_ref
-cmp_google,austin,3,positive_observed,,not_applicable,2,positive_observed,true,strong,src_austin_entry_level_2026_06
+cmp_google,austin,5,positive_observed,0,zero_observed,4,positive_observed,true,strong,src_austin_entry_level_2026_06
 cmp_deloitte,austin,0,zero_observed,,not_collected,1,positive_observed,true,weak,src_austin_entry_level_2026_06
-cmp_lone_star_cloud,austin,,unknown,,not_applicable,,unknown,unknown,unknown,src_austin_entry_level_2026_06
+cmp_lone_star_cloud,austin,2,positive_observed,,not_applicable,3,positive_observed,true,moderate,src_austin_entry_level_2026_06

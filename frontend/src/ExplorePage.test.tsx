@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import ExplorePage from "./ExplorePage";
 import type { FrontendAuthContextValue } from "./auth";
@@ -101,7 +102,7 @@ describe("Layer 42A Explore experience", () => {
   test("renders the same Fit universe in the accessible list and map, then opens honest detail", async () => {
     const navigate = vi.fn();
     const { rerender } = render(<ExplorePage auth={auth} onNavigate={navigate} state={state} />);
-    expect(await screen.findByRole("heading", { name: "Ranked markets" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Ranked results" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Greater Boston: Strong, High confidence/i })).toBeInTheDocument();
     const listButton = screen.getAllByText("Greater Boston").find((element) => element.tagName === "STRONG")?.closest("button");
     expect(listButton).toBeInTheDocument();
@@ -115,6 +116,17 @@ describe("Layer 42A Explore experience", () => {
     expect(screen.getByText(/Current opportunity counts do not change market Fit/i)).toBeInTheDocument();
     await waitFor(() => expect(mocks.event).toHaveBeenCalledWith(expect.objectContaining({ event_type: "coverage_limitation_viewed", coverage_status: "unsupported" }), expect.anything()));
     expect(mocks.event).not.toHaveBeenCalledWith(expect.objectContaining({ event_type: "recommendation_viewed" }), expect.anything());
+  });
+
+  test("deduplicates the initial evaluation when React Strict Mode replays effects", async () => {
+    render(
+      <StrictMode>
+        <ExplorePage auth={auth} onNavigate={vi.fn()} state={state} />
+      </StrictMode>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Ranked results" })).toBeInTheDocument();
+    expect(mocks.evaluate).toHaveBeenCalledTimes(1);
   });
 
   test("uses session overrides without a Profile mutation and limits comparison groundwork to four", async () => {
@@ -131,7 +143,7 @@ describe("Layer 42A Explore experience", () => {
     mocks.evaluate.mockResolvedValue(envelope(payload("general_market_intelligence")));
     render(<ExplorePage auth={auth} onNavigate={vi.fn()} state={state} />);
     expect(await screen.findByText("General market intelligence")).toBeInTheDocument();
-    expect(screen.getByText(/Personalization is off/i)).toBeInTheDocument();
+    expect(screen.getByText("Personalization off")).toBeInTheDocument();
     expect(screen.getByText("General market intelligence", { selector: ".map-legend strong" })).toBeInTheDocument();
   });
 
@@ -149,7 +161,7 @@ describe("Layer 42A Explore experience", () => {
     expect(await screen.findByText("Ai Ml")).toBeInTheDocument();
     expect(screen.getByText("Internship opportunities · Hybrid work · Entry Level")).toBeInTheDocument();
     expect(screen.getByText("Compensation")).toBeInTheDocument();
-    expect(screen.getByText("Unsupported", { selector: ".context-summary span" })).toBeInTheDocument();
+    expect(screen.getByText("Not applied", { selector: ".context-summary span" })).toBeInTheDocument();
   });
 
   test("distinguishes missing Profile from consent-off and prioritizes contradiction abstention", async () => {
@@ -158,7 +170,7 @@ describe("Layer 42A Explore experience", () => {
     noProfile.context.career_identity_version = null;
     mocks.evaluate.mockResolvedValue(envelope(noProfile));
     const { unmount } = render(<ExplorePage auth={auth} onNavigate={vi.fn()} state={state} />);
-    expect(await screen.findByText(/Tell us what kind of role you're looking for/i)).toBeInTheDocument();
+    expect(await screen.findByText("Profile not set")).toBeInTheDocument();
     unmount();
 
     const conflicted = payload();
@@ -181,10 +193,14 @@ describe("Layer 42A Explore experience", () => {
     expect(screen.getByText(/Current opportunity counts do not change market Fit/i)).toBeInTheDocument();
     expect(mocks.getOpportunities).toHaveBeenCalledWith(expect.objectContaining({
       market: "greater_boston",
-      role_family: "ai_ml",
+      role_family: "applied_ai",
       opportunity_type: "internship",
       work_arrangement: "hybrid",
     }), expect.anything());
+    expect(screen.getByRole("link", { name: "View all observed opportunities" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("role=applied_ai"),
+    );
   });
 
   test("saves canonical Region identity once and disables repeated Save", async () => {

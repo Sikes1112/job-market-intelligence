@@ -1437,6 +1437,37 @@ legend {
   gap: 0;
 }
 
+.demo-disclosure details > summary,
+.career-secondary-panel > summary,
+.integration-actions-disclosure > summary {
+  color: var(--green);
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.demo-disclosure details[open] > summary,
+.career-secondary-panel[open] > summary,
+.integration-actions-disclosure[open] > summary {
+  margin-bottom: 0.75rem;
+}
+
+.career-secondary-panel > :not(summary) {
+  margin-top: 0;
+}
+
+.integration-actions-disclosure {
+  background: rgb(255 255 255 / 55%);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  padding: 0.8rem 1rem;
+}
+
+.integration-action-content {
+  display: grid;
+  gap: 0.35rem;
+}
+
 .public-shell {
   background: linear-gradient(135deg, #f5f0df 0%, #e7ebdd 62%, #dfe7d9 100%);
   color: var(--ink);
@@ -3178,6 +3209,23 @@ legend {
   gap: 0.55rem;
 }
 
+.sector-coverage-panel > summary,
+.imported-market-details > summary {
+  color: var(--green);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.sector-coverage-panel[open] > summary,
+.imported-market-details[open] > summary {
+  margin-bottom: 0.55rem;
+}
+
+.imported-market-details {
+  width: 100%;
+}
+
 .sector-coverage-list {
   display: grid;
   gap: 0.45rem;
@@ -3362,6 +3410,30 @@ legend {
 
 .decision-usefulness-panel {
   gap: 0.85rem;
+}
+
+.method-details > summary {
+  color: var(--green);
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.method-details[open] > summary {
+  margin-bottom: 0.75rem;
+}
+
+.intelligence-evidence-details {
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+
+.rank-evidence-details {
+  margin-top: 0.15rem;
+}
+
+.limitations-block > ul {
+  margin-bottom: 0;
 }
 
 .decision-panel-header {
@@ -4735,4 +4807,740 @@ legend {
 .beta-feedback form div {
   display: flex;
   gap: 0.5rem;
+}
+
+/* Portfolio product experience: flagship shell, recommendations, and progressive evidence. */
+.product-header {
+  gap: clamp(0.55rem, 1.2vw, 1.15rem);
+  grid-template-columns: minmax(205px, auto) minmax(180px, 1fr) auto auto auto;
+}
+
+.brand-copy {
+  display: grid;
+  line-height: 1.08;
+}
+
+.brand-copy strong {
+  font-size: 0.9rem;
+  letter-spacing: -0.015em;
+}
+
+.brand-copy small {
+  color: var(--muted);
+  font-size: 0.67rem;
+  margin-top: 0.2rem;
+}
+
+.product-brand .brand-mark {
+  align-items: center;
+  background: linear-gradient(145deg, #173f31, #2c6750);
+  box-shadow: 0 7px 18px rgb(23 63 49 / 20%);
+  color: white;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 950;
+  justify-content: center;
+  letter-spacing: 0.04em;
+}
+
+.shell-popover {
+  position: relative;
+}
+
+.shell-popover summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.shell-popover summary::-webkit-details-marker {
+  display: none;
+}
+
+.tools-menu > summary {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--green);
+  font-size: 0.82rem;
+  font-weight: 900;
+  padding: 0.55rem 0.75rem;
+}
+
+.shell-popover > div {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 0.18rem;
+  min-width: 15rem;
+  padding: 0.65rem;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.65rem);
+  z-index: 50;
+}
+
+.shell-popover > div p {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  margin: 0.45rem 0.45rem 0.15rem;
+  text-transform: uppercase;
+}
+
+.shell-popover > div a,
+.shell-popover > div button {
+  border-radius: 0.55rem;
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 750;
+  padding: 0.48rem 0.55rem;
+  text-align: left;
+  text-decoration: none;
+}
+
+.shell-popover > div a:hover,
+.shell-popover > div button:hover {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.account-menu > div {
+  top: calc(100% + 0.65rem);
+}
+
+.demo-data-note {
+  background: #f6edda;
+  border: 1px solid #e8d2a8;
+  border-radius: 0.7rem;
+  color: #5f4b25;
+  font-size: 0.84rem;
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+}
+
+.explore-scope-note {
+  margin: -0.5rem 0 1rem;
+  max-width: 68rem;
+}
+
+.comparison-opportunity-action {
+  align-self: start;
+  margin-top: auto;
+}
+
+.evidence-disclosure {
+  background: rgb(248 245 234 / 70%);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  padding: 0.8rem;
+}
+
+.evidence-disclosure > summary {
+  color: var(--green);
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.evidence-disclosure > :not(summary) {
+  margin-top: 0.8rem;
+}
+
+.current-opportunity-hero {
+  background: linear-gradient(130deg, #173f31, #295d47);
+  border: 0;
+  color: white;
+  padding: clamp(1.2rem, 3vw, 2rem);
+}
+
+.current-opportunity-hero h1 {
+  font-size: clamp(2.25rem, 5vw, 4.25rem);
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+  margin-bottom: 0.25rem;
+}
+
+.current-opportunity-hero .card-eyebrow,
+.current-opportunity-hero .lead-copy {
+  color: rgb(255 255 255 / 78%);
+}
+
+.current-opportunity-hero .demo-data-note {
+  background: rgb(255 255 255 / 10%);
+  border-color: rgb(255 255 255 / 24%);
+  color: rgb(255 255 255 / 88%);
+}
+
+.current-opportunity-hero .opportunity-link-row a {
+  color: white;
+  text-decoration-color: rgb(255 255 255 / 45%);
+  text-underline-offset: 0.2rem;
+}
+
+.opportunity-result-count {
+  align-items: center;
+  background: rgb(255 255 255 / 12%);
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 0.9rem;
+  display: grid;
+  font-size: 1.8rem;
+  font-weight: 950;
+  min-width: 7.5rem;
+  padding: 0.7rem;
+  text-align: center;
+}
+
+.opportunity-result-count small {
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.current-opportunity-filters {
+  position: sticky;
+  top: 5.75rem;
+  z-index: 4;
+}
+
+.opportunity-warning-list {
+  display: block;
+}
+
+.recommendation-experience,
+.decision-workspace,
+.career-identity-page {
+  margin: 0 auto;
+  max-width: 1440px;
+  padding: clamp(1rem, 2.4vw, 2.4rem);
+}
+
+.recommendation-experience {
+  display: grid;
+  gap: 1.15rem;
+}
+
+.recommendation-view-tabs {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: 1fr 1fr;
+  justify-self: start;
+  padding: 0.3rem;
+}
+
+.recommendation-view-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--ink);
+  font-weight: 850;
+  padding: 0.65rem 1rem;
+}
+
+.recommendation-view-tabs button[aria-pressed="true"] {
+  background: var(--green);
+  color: white;
+}
+
+.personalized-market-grid,
+.personalized-company-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.recommendation-personalized-empty {
+  min-height: 16rem;
+}
+
+.recommendation-hero,
+.decision-workspace-hero {
+  align-items: end;
+  background: linear-gradient(128deg, #173f31 0%, #245b43 68%, #876129 145%);
+  border-radius: 1.25rem;
+  color: white;
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: clamp(1.35rem, 4vw, 3rem);
+}
+
+.recommendation-hero h1,
+.decision-workspace-hero h2 {
+  font-size: clamp(2.2rem, 5vw, 4.5rem);
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+  margin: 0.2rem 0 0.65rem;
+  max-width: 60rem;
+}
+
+.recommendation-hero p:not(.eyebrow),
+.decision-workspace-hero p:not(.eyebrow) {
+  color: rgb(255 255 255 / 78%);
+  margin: 0;
+  max-width: 55rem;
+}
+
+.recommendation-hero-actions,
+.recommendation-next-actions > div:last-child {
+  align-items: stretch;
+  display: grid;
+  gap: 0.55rem;
+  min-width: 13rem;
+}
+
+.recommendation-hero-actions a,
+.recommendation-next-actions a {
+  text-align: center;
+  text-decoration: none;
+}
+
+.recommendation-hero-actions .primary-button {
+  background: #f2c36e;
+  color: #253329;
+}
+
+.recommendation-goal-selector,
+.recommendation-goal-panel,
+.recommendation-strategy,
+.recommendation-ranking,
+.recommendation-warning-summary,
+.recommendation-next-actions {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  padding: clamp(1rem, 2vw, 1.4rem);
+}
+
+.recommendation-goal-panel {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.recommendation-goal-panel > label {
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.recommendation-goal-panel > select {
+  min-height: 2.8rem;
+}
+
+.recommendation-goal-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.recommendation-goal-options button {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  padding: 0.55rem 0.75rem;
+}
+
+.recommendation-goal-options button[aria-pressed="true"] {
+  background: var(--green);
+  border-color: var(--green);
+  color: white;
+}
+
+.strategy-targets,
+.recommendation-rank-list,
+.recommendation-evidence-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.strategy-target,
+.recommendation-rank-card {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.9rem;
+}
+
+.strategy-target-primary {
+  border-top: 4px solid var(--green);
+}
+
+.strategy-target-secondary {
+  border-top: 4px solid #628873;
+}
+
+.strategy-target-fallback {
+  border-top: 4px solid var(--ochre);
+}
+
+.strategy-target header,
+.recommendation-rank-card > header {
+  align-items: start;
+  display: flex;
+  gap: 0.8rem;
+  justify-content: space-between;
+}
+
+.strategy-target-score,
+.recommendation-rank-score {
+  text-align: right;
+}
+
+.strategy-target-score {
+  align-items: baseline;
+  display: flex;
+  gap: 0.3rem;
+  justify-content: end;
+}
+
+.recommendation-result-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.recommendation-result-card {
+  align-items: start;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 0.95rem;
+}
+
+.recommendation-result-rank {
+  align-items: center;
+  background: var(--green);
+  border-radius: 999px;
+  color: white;
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 950;
+  height: 2.2rem;
+  justify-content: center;
+  width: 2.2rem;
+}
+
+.recommendation-result-main,
+.recommendation-result-main > .section-title-row > div {
+  min-width: 0;
+}
+
+.recommendation-score {
+  display: grid;
+  justify-items: end;
+  min-width: 6.5rem;
+}
+
+.recommendation-score strong {
+  color: var(--green);
+  font-size: 1.3rem;
+}
+
+.recommendation-score small {
+  color: var(--muted);
+}
+
+.recommendation-rationale {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.recommendation-key-limitation {
+  border-left: 3px solid var(--ochre);
+  color: #665126;
+  font-size: 0.84rem;
+  padding-left: 0.65rem;
+}
+
+.recommendation-next-actions {
+  align-items: center;
+  background: #e7eee3;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.recommendation-warning-summary.material-warning {
+  border-left: 5px solid var(--ochre);
+}
+
+.recommendation-company-disclosure,
+.recommendation-technical-summary {
+  background: white;
+}
+
+.decision-workspace-hero {
+  align-items: center;
+}
+
+.decision-workspace-hero .secondary-button {
+  background: transparent;
+  border-color: rgb(255 255 255 / 55%);
+  color: white;
+}
+
+.decision-identity-bridge,
+.decision-panel {
+  background: white;
+  border-radius: 1rem;
+}
+
+.decision-disclosure {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  overflow: hidden;
+}
+
+.decision-disclosure > summary {
+  color: var(--green);
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 950;
+  padding: 0.85rem 1rem;
+}
+
+.decision-disclosure[open] > summary {
+  background: var(--green-soft);
+  border-bottom: 1px solid var(--line);
+}
+
+.decision-disclosure > .decision-panel,
+.decision-disclosure > .decision-form {
+  border: 0;
+  border-radius: 0;
+}
+
+.decision-disclosure > .decision-panel + .decision-panel {
+  border-top: 1px solid var(--line);
+}
+
+.decision-option-editor {
+  margin-top: 0.2rem;
+}
+
+.decision-option-editor .scenario-form {
+  margin-top: 0.9rem;
+}
+
+.decision-evidence-disclosure .scenario-comparison,
+.decision-evidence-disclosure .decision-evidence-grid {
+  margin-top: 1rem;
+}
+
+.career-identity-hero {
+  background: linear-gradient(135deg, #e3ecdf, #edf1e4);
+  border-radius: 1.1rem;
+  padding: clamp(1.15rem, 3vw, 2rem);
+}
+
+.career-completeness-meter {
+  background: rgb(255 255 255 / 72%);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  padding: 1rem;
+}
+
+.career-progress-track {
+  background: #d8dfd2;
+}
+
+.career-progress-track span {
+  background: linear-gradient(90deg, var(--green), #4c8a6e);
+}
+
+.career-state-explicit { color: #23538b; }
+.career-state-imported { color: #7a5612; }
+.career-state-inferred { color: #6d3e8a; }
+.career-state-confirmed { color: #24613b; }
+.danger-button { color: var(--red); }
+
+@media (max-width: 1180px) {
+  .product-header {
+    grid-template-columns: minmax(205px, auto) auto auto auto;
+  }
+
+  .product-header .global-search {
+    display: none;
+  }
+
+  .primary-nav-item {
+    padding-inline: 0.65rem;
+  }
+
+  .beta-feedback {
+    bottom: auto;
+    margin: 0 auto 5rem;
+    position: relative;
+    right: auto;
+    width: max-content;
+  }
+
+  .beta-feedback form {
+    bottom: calc(100% + 0.5rem);
+    position: absolute;
+  }
+}
+
+@media (max-width: 900px) {
+  .product-header {
+    gap: 0.65rem;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    min-height: 4rem;
+    padding: 0.55rem 0.75rem;
+  }
+
+  .primary-product-nav {
+    display: none;
+  }
+
+  .product-header .global-search {
+    display: none;
+  }
+
+  .mobile-product-nav {
+    background: rgb(255 255 255 / 97%);
+    border-top: 1px solid var(--line);
+    bottom: 0;
+    box-shadow: 0 -8px 25px rgb(29 40 34 / 9%);
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    left: 0;
+    position: fixed;
+    right: 0;
+    z-index: 35;
+  }
+
+  .mobile-product-nav a {
+    align-items: center;
+    color: var(--muted);
+    display: grid;
+    font-size: clamp(0.6rem, 2.5vw, 0.72rem);
+    font-weight: 850;
+    gap: 0.2rem;
+    min-width: 0;
+    padding: 0.55rem 0.1rem 0.65rem;
+    text-align: center;
+    text-decoration: none;
+  }
+
+  .mobile-product-nav a[aria-current="page"] {
+    box-shadow: inset 0 3px var(--green);
+    color: var(--green);
+  }
+
+  .mobile-nav-icon {
+    background: currentColor;
+    border-radius: 999px;
+    height: 0.42rem;
+    justify-self: center;
+    opacity: 0.65;
+    width: 0.42rem;
+  }
+
+  .redesigned-content-shell,
+  .recommendation-experience,
+  .decision-workspace,
+  .career-identity-page {
+    padding-bottom: 5.5rem;
+  }
+
+  .beta-feedback {
+    bottom: auto;
+    margin: 0 auto 5rem;
+    position: relative;
+    right: auto;
+    width: max-content;
+  }
+
+  .beta-feedback > button {
+    font-size: 0.72rem;
+    padding: 0.45rem 0.6rem;
+  }
+
+  .beta-feedback form {
+    bottom: calc(100% + 0.5rem);
+    position: absolute;
+  }
+
+  .current-opportunity-filters {
+    position: static;
+  }
+
+  .recommendation-hero,
+  .decision-workspace-hero,
+  .recommendation-next-actions {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .recommendation-hero-actions,
+  .recommendation-next-actions > div:last-child {
+    display: flex;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .brand-copy small {
+    display: none;
+  }
+
+  .brand-copy strong {
+    font-size: 0.8rem;
+  }
+
+  .tools-menu > summary {
+    padding-inline: 0.6rem;
+  }
+
+  .current-opportunity-hero .card-header,
+  .recommendation-rank-card > header {
+    align-items: start;
+    display: grid;
+  }
+
+  .opportunity-result-count {
+    justify-self: start;
+  }
+
+  .strategy-targets,
+  .recommendation-rank-list,
+  .recommendation-evidence-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-target-score,
+  .recommendation-rank-score {
+    text-align: left;
+  }
+
+  .strategy-target-score {
+    justify-content: start;
+  }
+
+  .recommendation-result-card {
+    grid-template-columns: 1fr;
+  }
+
+  .recommendation-score {
+    justify-items: start;
+  }
+
+  .shell-popover > div {
+    max-height: calc(100vh - 10rem);
+    overflow-y: auto;
+    width: min(18rem, calc(100vw - 1.5rem));
+  }
 }

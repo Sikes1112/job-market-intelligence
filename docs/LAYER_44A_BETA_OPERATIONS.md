@@ -48,7 +48,9 @@ python -m scripts.beta_reference_data report
 
 All operations are rerunnable. Bootstrap validates every repository dataset before opening its transaction, then performs canonical import and post-import trust/output refresh. A non-current schema or failed market validation exits nonzero. The 2026-10-10 quality run classifies all eight June 2026 datasets as current under the repository's governed freshness policy; operators must rerun the gate at every release and refresh rather than override it when it later expires.
 
-Current Opportunity reporting records enabled provider count, observed record count, and either `real_provider` or `coverage_unavailable`. Never describe it as exhaustive, complete, or real-time.
+Current Opportunity reporting records real-provider and synthetic-demo source counts,
+observed record count, and one of `real_provider`, `synthetic_demo`, `mixed`, or
+`coverage_unavailable`. Never describe it as exhaustive, complete, or real-time.
 
 ## Beta Access and Invitation
 

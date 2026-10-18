@@ -80,7 +80,7 @@ export function EvidenceExplanationPanel({ explanation }: ExplanationProps) {
     return (
       <div className="trust-evidence-panel trust-empty-state">
         <strong>Evidence explanation unavailable</strong>
-        <p>No backend explanation payload was returned for this item.</p>
+        <p>No explanation is available for this item.</p>
       </div>
     );
   }
@@ -115,7 +115,7 @@ export function TrustExplanationPanel({ explanation, compact = false }: Explanat
     return (
       <section className="trust-explanation-panel trust-empty-state">
         <strong>Trust explanation unavailable</strong>
-        <p>No backend-provided trust explanation is available for this item.</p>
+        <p>No evidence explanation is available for this item.</p>
       </section>
     );
   }

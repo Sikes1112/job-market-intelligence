@@ -313,6 +313,56 @@ def test_company_targets_are_not_invented_when_company_rankings_missing() -> Non
     )
 
 
+def test_strategy_evidence_warnings_are_bounded_to_response_contract() -> None:
+    outputs = [
+        _region_output(
+            region_id=f"region_{index}",
+            display_name=f"Region {index}",
+            early_access=0.7,
+            prestige=0.4,
+            present_companies=6,
+            internships=3,
+        )
+        for index in range(30)
+    ]
+    rankings = rank_region_recommendations(
+        outputs,
+        goal_mode=RecommendationGoalMode.MAXIMIZE_ENTRY_LEVEL_ACCESS,
+    )
+
+    plan = generate_market_strategy_plan(rankings)
+
+    assert len(plan.evidence_warnings) == 50
+
+
+def test_company_category_evidence_refs_are_bounded_to_response_contract() -> None:
+    company_ids = tuple(f"prestige_company_{index}" for index in range(10))
+    rankings = rank_company_recommendations(
+        [
+            _company_output(
+                company_id=company_id,
+                company_name=f"Prestige Company {index}",
+                sector_primary="software",
+                prestige=0.95,
+                entry_access=0.6,
+                region_count=3,
+            )
+            for index, company_id in enumerate(company_ids)
+        ],
+        goal_mode=RecommendationGoalMode.MAXIMIZE_PRESTIGE,
+        source_summaries=_company_source_map(*company_ids),
+    )
+
+    plan = generate_market_strategy_plan(rankings, company_rankings=rankings)
+
+    category = next(
+        target
+        for target in plan.company_category_targets
+        if target.target.target_id == "high_prestige_ranked_companies"
+    )
+    assert len(category.evidence_refs) == 25
+
+
 def test_strategy_validation_rejects_free_floating_advice() -> None:
     with pytest.raises(ValidationError):
         StrategyTimingGuidance(
