@@ -2,11 +2,32 @@ class UserIdentityError(RuntimeError):
     """Base error for internal user identity mapping failures."""
 
 
+class ExternalIdentityNotFound(UserIdentityError):
+    """Raised when a read-only identity lookup has no existing mapping."""
+
+    def __init__(self, provider: str, issuer: str, subject: str) -> None:
+        super().__init__(
+            "external auth identity not found for "
+            f"provider={provider!r}, issuer={issuer!r}, subject={subject!r}"
+        )
+        self.provider = provider
+        self.issuer = issuer
+        self.subject = subject
+
+
 class MissingUserForExternalIdentity(UserIdentityError):
     """Raised when an auth identity points at a missing internal user."""
 
     def __init__(self, user_id: str) -> None:
         super().__init__(f"external auth identity references missing user {user_id!r}")
+        self.user_id = user_id
+
+
+class MissingProfileForExternalIdentity(UserIdentityError):
+    """Raised when an existing identity has no required internal profile."""
+
+    def __init__(self, user_id: str) -> None:
+        super().__init__(f"external auth identity references missing profile {user_id!r}")
         self.user_id = user_id
 
 

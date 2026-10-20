@@ -959,7 +959,18 @@ def test_eight_market_evaluation_has_bounded_composition_queries(
 
     assert len(result.markets) == 8
     assert [item.rank for item in result.markets] == list(range(1, 9))
-    assert len(statements) <= 8
+    transaction_controls = [
+        statement
+        for statement in statements
+        if statement.lstrip().upper().startswith(
+            ("SAVEPOINT", "RELEASE SAVEPOINT", "ROLLBACK TO SAVEPOINT")
+        )
+    ]
+    composition_statements = [
+        statement for statement in statements if statement not in transaction_controls
+    ]
+    assert len(composition_statements) <= 8
+    assert len(transaction_controls) <= 4
 
 
 def test_real_eight_market_layer34_path_is_category_bounded(

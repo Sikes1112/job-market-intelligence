@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 
 from backend.api.app import create_app
 from backend.config.settings import AppEnv, Settings
@@ -20,7 +24,7 @@ from backend.public_guest.service import (
     VerifiedGuestPrincipal,
 )
 from backend.shared.db import create_all, make_engine, make_session_factory
-from backend.users.models import ExternalAuthIdentity
+from backend.users.models import ExternalAuthIdentity, User, UserProfile
 from seeds.mvp_seed import run_seed
 from seeds.portfolio_seed import run_portfolio_seed
 from seeds.reviewer_scenarios import LOCAL_DEMO_ISSUER, LOCAL_DEMO_SUBJECT
@@ -228,15 +232,206 @@ def test_concurrent_guest_reads_do_not_contend_on_session_touch(tmp_path: Path) 
 
     factory = make_session_factory(engine)
     with factory() as session:
-        before = session.scalar(select(PublicGuestSession)).last_seen_at
+        session_before = session.scalar(select(PublicGuestSession)).last_seen_at
+        identity_before = session.scalar(
+            select(ExternalAuthIdentity).where(
+                ExternalAuthIdentity.provider == PUBLIC_GUEST_PROVIDER
+            )
+        ).last_seen_at
+
+    writes: list[str] = []
+    writes_lock = threading.Lock()
+
+    def capture_writes(
+        _connection, _cursor, statement, _parameters, _context, _executemany
+    ) -> None:
+        operation = statement.lstrip().split(None, 1)[0].upper()
+        if operation in {"INSERT", "UPDATE", "DELETE"}:
+            with writes_lock:
+                writes.append(statement)
+
+    event.listen(engine, "before_cursor_execute", capture_writes)
 
     paths = ["/me", "/me/preferences", "/me/recommendation-snapshots"] * 4
-    with ThreadPoolExecutor(max_workers=6) as executor:
-        responses = list(executor.map(client.get, paths))
+    try:
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            responses = list(executor.map(client.get, paths))
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_writes)
 
     assert [response.status_code for response in responses] == [200] * len(paths)
+    assert writes == []
     with factory() as session:
-        assert session.scalar(select(PublicGuestSession)).last_seen_at == before
+        assert session.scalar(select(PublicGuestSession)).last_seen_at == session_before
+        assert (
+            session.scalar(
+                select(ExternalAuthIdentity).where(
+                    ExternalAuthIdentity.provider == PUBLIC_GUEST_PROVIDER
+                )
+            ).last_seen_at
+            == identity_before
+        )
+
+
+def test_missing_guest_identity_mapping_fails_closed_without_recreation(
+    tmp_path: Path,
+) -> None:
+    app, engine = _app(tmp_path)
+    client = TestClient(app, base_url=ORIGIN)
+    _bootstrap(client)
+    factory = make_session_factory(engine)
+    with factory() as session:
+        identity = session.scalar(
+            select(ExternalAuthIdentity).where(
+                ExternalAuthIdentity.provider == PUBLIC_GUEST_PROVIDER
+            )
+        )
+        assert identity is not None
+        session.delete(identity)
+        session.commit()
+
+    response = client.get("/me")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["type"] == "guest_session_invalid"
+    with factory() as session:
+        assert session.scalar(select(ExternalAuthIdentity)) is None
+
+
+def test_inconsistent_guest_identity_mapping_fails_closed(tmp_path: Path) -> None:
+    app, engine = _app(tmp_path)
+    client = TestClient(app, base_url=ORIGIN)
+    _bootstrap(client)
+    factory = make_session_factory(engine)
+    with factory() as session:
+        identity = session.scalar(
+            select(ExternalAuthIdentity).where(
+                ExternalAuthIdentity.provider == PUBLIC_GUEST_PROVIDER
+            )
+        )
+        assert identity is not None
+        other_user = User(user_id="user_inconsistent_guest_mapping")
+        session.add(other_user)
+        session.flush()
+        session.add(UserProfile(user_id=other_user.user_id))
+        identity.user_id = other_user.user_id
+        session.commit()
+
+    response = client.get("/me")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["type"] == "guest_session_invalid"
+
+
+def test_authenticated_guest_read_stays_responsive_during_independent_write(
+    tmp_path: Path,
+) -> None:
+    app, engine = _file_app(tmp_path, "read-during-write.db")
+    client = TestClient(app, base_url=ORIGIN)
+    _bootstrap(client)
+    blocker = engine.raw_connection()
+    blocker.cursor().execute("BEGIN IMMEDIATE")
+    try:
+        started = time.perf_counter()
+        response = client.get("/me")
+        elapsed = time.perf_counter() - started
+    finally:
+        blocker.rollback()
+        blocker.close()
+
+    assert response.status_code == 200
+    assert elapsed < 1.0
+
+
+def test_guest_sqlite_wait_does_not_block_independent_safe_request(
+    tmp_path: Path,
+) -> None:
+    app, engine = _file_app(tmp_path, "threadpool-wait.db")
+    bootstrap_client = TestClient(app, base_url=ORIGIN)
+    csrf = _bootstrap(bootstrap_client)
+    token = bootstrap_client.cookies.get(PUBLIC_GUEST_COOKIE_NAME)
+    assert token is not None
+
+    quota_write_attempted = threading.Event()
+
+    def detect_quota_write(
+        _connection, _cursor, statement, _parameters, _context, _executemany
+    ) -> None:
+        normalized = " ".join(statement.lower().split())
+        if normalized.startswith("update public_guest_sessions"):
+            quota_write_attempted.set()
+
+    event.listen(engine, "before_cursor_execute", detect_quota_write)
+    blocker = engine.raw_connection()
+    blocker.cursor().execute("BEGIN IMMEDIATE")
+
+    async def exercise() -> tuple[httpx.Response, httpx.Response, float]:
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            httpx.AsyncClient(
+                transport=transport,
+                base_url=ORIGIN,
+                cookies={PUBLIC_GUEST_COOKIE_NAME: token},
+            ) as authenticated,
+            httpx.AsyncClient(transport=transport, base_url=ORIGIN) as independent,
+        ):
+            mutation = asyncio.create_task(
+                authenticated.post(
+                    "/me/decisions",
+                    headers=_unsafe_headers(csrf),
+                    json={"decision_type": "career_path", "title": "Threaded quota"},
+                )
+            )
+            assert await asyncio.to_thread(quota_write_attempted.wait, 2.0)
+            started = time.perf_counter()
+            health = await asyncio.wait_for(independent.get("/health"), timeout=1.0)
+            elapsed = time.perf_counter() - started
+            blocker.rollback()
+            result = await asyncio.wait_for(mutation, timeout=2.0)
+            return health, result, elapsed
+
+    try:
+        health, mutation, elapsed = asyncio.run(exercise())
+    finally:
+        blocker.rollback()
+        blocker.close()
+        event.remove(engine, "before_cursor_execute", detect_quota_write)
+
+    assert health.status_code == 200
+    assert elapsed < 1.0
+    assert mutation.status_code == 201
+
+
+def test_concurrent_guest_mutation_quota_is_atomic(tmp_path: Path) -> None:
+    app, engine = _file_app(
+        tmp_path,
+        "atomic-quota.db",
+        guest_max_mutations_per_session=1,
+    )
+    async def exercise() -> list[httpx.Response]:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url=ORIGIN) as client:
+            bootstrap = await client.post("/guest/session", headers={"Origin": ORIGIN})
+            assert bootstrap.status_code == 201
+            csrf = bootstrap.json()["data"]["csrf_token"]
+
+            async def mutate(role: str) -> httpx.Response:
+                return await client.put(
+                    "/me/preferences",
+                    headers=_unsafe_headers(csrf),
+                    json={"role_interests": [role]},
+                )
+
+            return list(await asyncio.gather(mutate("product"), mutate("engineering")))
+
+    responses = asyncio.run(exercise())
+
+    assert sorted(response.status_code for response in responses) == [200, 429]
+    factory = make_session_factory(engine)
+    with factory() as session:
+        guest = session.scalar(select(PublicGuestSession))
+        assert guest is not None
+        assert guest.mutation_count == 1
 
 
 def test_verified_guest_state_is_ignored_outside_guest_environment() -> None:
@@ -578,6 +773,68 @@ def test_public_guest_startup_failure_prevents_service_start(
             pass
 
 
+def test_four_guest_mixed_explore_and_write_workload_is_consistent(
+    tmp_path: Path,
+) -> None:
+    app, engine = _file_app(tmp_path, "mixed-four-guest.db", seed_portfolio=True)
+    clients = [TestClient(app, base_url=ORIGIN) for _ in range(4)]
+    csrf_tokens = [_bootstrap(client) for client in clients]
+    expected_titles: dict[int, set[str]] = {index: set() for index in range(4)}
+    observations: list[tuple[int, int, float, float]] = []
+
+    def visitor_round(index: int, round_number: int) -> tuple[int, int, float, float]:
+        client = clients[index]
+        title = f"Visitor {index} decision {round_number}"
+        expected_titles[index].add(title)
+        explore_started = time.perf_counter()
+        explore = client.post(
+            "/me/explore/markets",
+            headers=_unsafe_headers(csrf_tokens[index]),
+            json={"session_overrides": {}},
+        )
+        explore_seconds = time.perf_counter() - explore_started
+        write_started = time.perf_counter()
+        decision = client.post(
+            "/me/decisions",
+            headers=_unsafe_headers(csrf_tokens[index]),
+            json={"decision_type": "career_path", "title": title},
+        )
+        write_seconds = time.perf_counter() - write_started
+        return explore.status_code, decision.status_code, explore_seconds, write_seconds
+
+    for round_number in range(3):
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [
+                executor.submit(visitor_round, index, round_number)
+                for index in range(4)
+            ]
+            observations.extend(future.result() for future in futures)
+
+    assert [(explore, write) for explore, write, _er, _wr in observations] == [
+        (200, 201)
+    ] * 12
+
+    seen_ids: set[str] = set()
+    for index, client in enumerate(clients):
+        response = client.get("/me/decisions")
+        assert response.status_code == 200
+        decisions = response.json()["data"]["decisions"]
+        assert {decision["title"] for decision in decisions} == expected_titles[index]
+        ids = {decision["decision_id"] for decision in decisions}
+        assert len(ids) == 3
+        assert seen_ids.isdisjoint(ids)
+        seen_ids.update(ids)
+        client.close()
+
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA integrity_check").scalar_one() == "ok"
+        assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
+        assert connection.exec_driver_sql(
+            "SELECT COUNT(*) FROM career_decisions"
+        ).scalar_one() == 12
+    assert engine.pool.checkedout() == 0
+
+
 def _settings(tmp_path: Path, **overrides) -> Settings:
     dist = tmp_path / "dist"
     assets = dist / "assets"
@@ -613,6 +870,34 @@ def _app(tmp_path: Path, *, seed_portfolio: bool = False, **setting_overrides):
             )
             session.commit()
     return create_app(engine=engine, settings=_settings(tmp_path, **setting_overrides)), engine
+
+
+def _file_app(
+    tmp_path: Path,
+    database_name: str,
+    *,
+    seed_portfolio: bool = False,
+    **setting_overrides,
+):
+    database_path = tmp_path / database_name
+    database_url = f"sqlite:///{database_path}"
+    engine = make_engine(database_url)
+    create_all(engine)
+    if seed_portfolio:
+        factory = make_session_factory(engine)
+        with factory() as session:
+            now = datetime.now(UTC)
+            seed_result = run_seed(session, demo_now=now)
+            run_portfolio_seed(
+                session,
+                seed_result,
+                as_of=now.date(),
+                demo_now=now,
+                include_reviewer=False,
+            )
+            session.commit()
+    settings = _settings(tmp_path, database_url=database_url, **setting_overrides)
+    return create_app(engine=engine, settings=settings), engine
 
 
 def _bootstrap(client: TestClient) -> str:

@@ -96,6 +96,10 @@ def _observe_authenticated_product_visit(
     session: Session,
     user_id: str,
 ) -> None:
+    if request.app.state.settings.is_public_guest_demo:
+        # Guest bootstrap is the bounded activity record for this environment.
+        # A normal informational read must not become a long-lived SQLite writer.
+        return
     try:
         with session.begin_nested():
             ProductMeasurementService(session).observe_authenticated_product_visit(

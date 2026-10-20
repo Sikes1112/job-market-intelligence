@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -87,6 +89,8 @@ def test_user_model_maps_external_identity_to_internal_user(session: Session) ->
 def test_same_external_identity_reuses_internal_user(session: Session) -> None:
     svc = _service(session)
     first = svc.resolve_external_principal(_principal())
+    first.identity.last_seen_at = datetime(2000, 1, 1, tzinfo=UTC)
+    session.flush()
     second = svc.resolve_external_principal(
         _principal(email="renamed@example.com", display_name="Renamed")
     )
@@ -96,7 +100,35 @@ def test_same_external_identity_reuses_internal_user(session: Session) -> None:
     assert second.user.user_id == first.user.user_id
     assert second.identity.external_identity_id == first.identity.external_identity_id
     assert second.identity.email == "renamed@example.com"
+    assert second.identity.last_seen_at > datetime(2000, 1, 1, tzinfo=UTC)
     assert second.profile.display_name == "Renamed"
+
+
+def test_existing_identity_read_only_resolution_does_not_sync_or_touch(
+    session: Session,
+) -> None:
+    svc = _service(session)
+    created = svc.resolve_external_principal(_principal())
+    old_last_seen = created.identity.last_seen_at
+    session.flush()
+
+    resolved = svc.resolve_existing_external_principal_read_only(
+        _principal(
+            email="untrusted-change@example.com",
+            email_verified=False,
+            display_name="Untrusted Change",
+            avatar_url="https://evil.example/avatar.png",
+        )
+    )
+
+    assert resolved.user.user_id == created.user.user_id
+    assert resolved.created_user is False
+    assert resolved.created_identity is False
+    assert resolved.identity.last_seen_at == old_last_seen
+    assert resolved.identity.email == "person@example.com"
+    assert resolved.identity.email_verified is True
+    assert resolved.profile.display_name == "Example Person"
+    assert resolved.profile.avatar_url == "https://cdn.example.com/avatar.png"
 
 
 def test_deactivated_user_identity_cannot_recreate_or_resync_account(

@@ -192,8 +192,16 @@ class ProductMeasurementService:
         user_id: str | None,
         request: ProductEventCreate,
     ) -> ProductAnalyticsEvent | None:
+        # Session.begin_nested() flushes pending state before opening its
+        # savepoint. Optional telemetry must never flush unrelated business
+        # work, so skip it when the caller has unflushed changes. When the
+        # session is clean, the savepoint contains a telemetry flush failure
+        # and leaves the outer transaction usable.
+        if self._session.new or self._session.dirty or self._session.deleted:
+            return None
         try:
-            return self.record_event(user_id, request)
+            with self._session.begin_nested():
+                return self.record_event(user_id, request)
         except Exception:
             return None
 

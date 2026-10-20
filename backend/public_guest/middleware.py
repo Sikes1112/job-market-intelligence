@@ -10,6 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.routing import compile_path
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -157,7 +158,7 @@ class PublicGuestSessionMiddleware:
             return
 
         token = _cookie_value(scope, PUBLIC_GUEST_COOKIE_NAME)
-        principal = self._resolve_principal(scope, token)
+        principal = await run_in_threadpool(self._resolve_principal, scope, token)
         if principal is not None:
             state = scope.setdefault("state", {})
             state["verified_guest_principal"] = principal
@@ -181,13 +182,21 @@ class PublicGuestSessionMiddleware:
                 await self._deny(scope, receive, send, 403, "guest_origin_denied", "Forbidden")
                 return
             csrf_token = Headers(scope=scope).get(PUBLIC_GUEST_CSRF_HEADER)
-            if not self._csrf_valid(scope, principal, csrf_token):
+            if not await run_in_threadpool(
+                self._csrf_valid, scope, principal, csrf_token
+            ):
                 await self._deny(scope, receive, send, 403, "guest_csrf_invalid", "Forbidden")
                 return
 
             lock = self._mutation_locks.setdefault(principal.session_id, asyncio.Lock())
             async with lock:
-                quota_error = self._consume_mutation(scope, principal, method, path)
+                quota_error = await run_in_threadpool(
+                    self._consume_mutation,
+                    scope,
+                    principal,
+                    method,
+                    path,
+                )
                 if quota_error is not None:
                     await self._deny(
                         scope,

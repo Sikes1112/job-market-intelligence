@@ -22,7 +22,9 @@ from backend.shared.redaction import redact_sensitive
 from backend.users.exceptions import (
     CrossUserAccessBlocked,
     DeactivatedUserAuthenticationBlocked,
+    ExternalIdentityNotFound,
     InvalidSavedMarketArtifactType,
+    MissingProfileForExternalIdentity,
     MissingUserForExternalIdentity,
     PreferenceProfileNotFound,
     RecommendationSnapshotNotFound,
@@ -273,6 +275,41 @@ class UserIdentityService:
             profile=profile,
             created_user=True,
             created_identity=True,
+        )
+
+    def resolve_existing_external_principal_read_only(
+        self, principal: ExternalAuthPrincipal
+    ) -> UserIdentityResolution:
+        """Resolve a pre-provisioned identity without changing authentication state.
+
+        This deliberately narrow path is used only after public-guest middleware
+        has verified the server-issued guest credential. It neither creates a
+        mapping nor trusts mutable browser claims enough to synchronize stored
+        identity/profile fields.
+        """
+
+        provider, issuer, subject = principal.identity_key
+        identity = self._repo.get_external_identity(
+            provider=provider,
+            issuer=issuer,
+            subject=subject,
+        )
+        if identity is None:
+            raise ExternalIdentityNotFound(provider, issuer, subject)
+        user = self._repo.get_user(identity.user_id)
+        if user is None:
+            raise MissingUserForExternalIdentity(identity.user_id)
+        if user.status != "active":
+            raise DeactivatedUserAuthenticationBlocked(user.user_id)
+        profile = self._repo.get_profile(user.user_id)
+        if profile is None:
+            raise MissingProfileForExternalIdentity(user.user_id)
+        return UserIdentityResolution(
+            user=user,
+            identity=identity,
+            profile=profile,
+            created_user=False,
+            created_identity=False,
         )
 
     def _get_or_create_profile(

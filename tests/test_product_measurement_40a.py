@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import event, select, text
 from sqlalchemy.orm import Session
 
 from backend.admin.models import AdminEventLog
@@ -62,6 +64,7 @@ from backend.product_measurement.service import (
 from backend.recommendations.models import RecommendationGoalMode
 from backend.recommendations.ranking import rank_region_recommendations
 from backend.scoring.repository import RegionScoreRepository
+from backend.shared.db import create_all, make_engine, make_session_factory
 from backend.users.exceptions import CrossUserAccessBlocked
 from backend.users.models import User
 from backend.users.repository import UserRepository
@@ -573,6 +576,98 @@ def test_get_me_automatically_emits_return_and_isolates_telemetry_failure(
     )
     isolated = api_client.get("/me", headers=_auth_headers("auth0|return_failure"))
     assert isolated.status_code == 200
+
+
+def test_best_effort_event_flush_failure_keeps_outer_transaction_usable(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = _seed_user(session, "user_telemetry_savepoint")
+    service = _service(session)
+    request = ProductEventCreate(event_type=ProductEventType.ONBOARDING_STARTED)
+    first = service.record_event(user_id, request)
+    session.commit()
+    first_event_id = first.event_id
+    session.expunge(first)
+
+    monkeypatch.setattr(
+        "backend.product_measurement.service._new_id",
+        lambda _prefix: first_event_id,
+    )
+    assert service.best_effort_record_event(user_id, request) is None
+
+    # The duplicate-key flush failed inside the telemetry savepoint. The
+    # caller can still read and commit unrelated work without PendingRollbackError.
+    assert session.get(User, user_id) is not None
+    session.add(User(user_id="user_business_after_telemetry_failure"))
+    session.commit()
+    assert session.get(User, "user_business_after_telemetry_failure") is not None
+    assert session.query(ProductAnalyticsEvent).count() == 1
+
+
+def test_best_effort_event_does_not_preflush_pending_business_state(
+    session: Session,
+) -> None:
+    pending = User(user_id="user_pending_business_state")
+    session.add(pending)
+
+    result = _service(session).best_effort_record_event(
+        pending.user_id,
+        ProductEventCreate(event_type=ProductEventType.ONBOARDING_STARTED),
+    )
+
+    assert result is None
+    assert pending in session.new
+    assert session.query(ProductAnalyticsEvent).count() == 0
+
+
+def test_sqlite_locked_telemetry_flush_does_not_poison_caller_session(
+    tmp_path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'telemetry-lock.db'}"
+    engine = make_engine(database_url)
+    create_all(engine)
+    database_errors: list[BaseException] = []
+
+    @event.listens_for(engine, "handle_error")
+    def capture_database_error(context) -> None:
+        database_errors.append(context.original_exception)
+
+    factory = make_session_factory(engine)
+    with factory() as setup:
+        setup.add(User(user_id="user_sqlite_telemetry_lock"))
+        setup.commit()
+
+    blocker = engine.raw_connection()
+    blocker.cursor().execute("BEGIN IMMEDIATE")
+    caller = factory()
+    try:
+        caller.execute(text("PRAGMA busy_timeout=100"))
+        request = ProductEventCreate(event_type=ProductEventType.ONBOARDING_STARTED)
+        result = ProductMeasurementService(caller).best_effort_record_event(
+            "user_sqlite_telemetry_lock",
+            request,
+        )
+
+        assert result is None
+        assert any(
+            isinstance(error, sqlite3.OperationalError)
+            and "locked" in str(error).lower()
+            for error in database_errors
+        )
+        assert caller.scalar(
+            select(User).where(User.user_id == "user_sqlite_telemetry_lock")
+        ) is not None
+        blocker.rollback()
+        caller.add(User(user_id="user_after_sqlite_telemetry_lock"))
+        caller.commit()
+        assert caller.get(User, "user_after_sqlite_telemetry_lock") is not None
+        assert caller.query(ProductAnalyticsEvent).count() == 0
+    finally:
+        blocker.rollback()
+        blocker.close()
+        caller.close()
+        engine.dispose()
 
 
 def test_complete_funnel_counts_order_conversion_and_return_without_duplicate_inflation(

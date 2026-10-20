@@ -42,7 +42,12 @@ from backend.outputs.service import OutputAssemblyService
 from backend.presence.repository import PresenceRepository
 from backend.public_guest.service import VerifiedGuestPrincipal
 from backend.scoring.repository import RegionScoreRepository
-from backend.users.exceptions import DeactivatedUserAuthenticationBlocked
+from backend.users.exceptions import (
+    DeactivatedUserAuthenticationBlocked,
+    ExternalIdentityNotFound,
+    MissingProfileForExternalIdentity,
+    MissingUserForExternalIdentity,
+)
 from backend.users.models import ExternalAuthIdentity, User, UserProfile
 from backend.users.repository import UserRepository
 from backend.users.service import UserIdentityService
@@ -135,14 +140,30 @@ def get_current_user(
                 detail="Invalid verified auth claims",
             ) from exc
 
+    identity_service = UserIdentityService(UserRepository(session))
     try:
-        resolved = UserIdentityService(UserRepository(session)).resolve_external_principal(
-            principal
-        )
+        if verified_guest is not None:
+            resolved = identity_service.resolve_existing_external_principal_read_only(
+                principal
+            )
+        else:
+            resolved = identity_service.resolve_external_principal(principal)
     except DeactivatedUserAuthenticationBlocked as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
+        ) from exc
+    except (
+        ExternalIdentityNotFound,
+        MissingProfileForExternalIdentity,
+        MissingUserForExternalIdentity,
+    ) as exc:
+        if verified_guest is None:
+            raise
+        raise SafeHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            error_type="guest_session_invalid",
+            message="Guest session is invalid",
         ) from exc
     if settings.app_env == AppEnv.PUBLIC_GUEST_DEMO:
         if resolved.user.user_id != verified_guest.user_id:
