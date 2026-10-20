@@ -12,6 +12,7 @@ import {
 } from "./api";
 import type { FrontendAuthContextValue } from "./auth";
 import { canonicalizeExploreGeography } from "./exploreGeography";
+import { runtimeConfig } from "./runtimeConfig";
 import type {
   CurrentOpportunityPayload,
   ExploreFitResult,
@@ -419,7 +420,7 @@ export default function ExplorePage({ auth, state, onNavigate }: Props) {
     setDetailLoading(true);
     const hasCoverage = !["unsupported", "unavailable", "unknown"].includes(focusedMarket.opportunity_coverage.status);
     const inspectedEventKey = `inspected:${results?.context.context_fingerprint}:${focusedMarket.region.region_id}`;
-    if (!emittedEvents.current.has(inspectedEventKey)) {
+    if (!runtimeConfig.isPublicGuestDemo && !emittedEvents.current.has(inspectedEventKey)) {
       emittedEvents.current.add(inspectedEventKey);
       void recordProductEvent({
         event_type: "market_inspected",
@@ -439,17 +440,19 @@ export default function ExplorePage({ auth, state, onNavigate }: Props) {
     );
     Promise.allSettled([
       getRegion(focusedMarket.region.region_id),
-      listSavedMarketArtifacts(protectedOptions, "region"),
+      runtimeConfig.isPublicGuestDemo
+        ? Promise.resolve(null)
+        : listSavedMarketArtifacts(protectedOptions, "region"),
       ...(hasCoverage ? [getCurrentOpportunities({ market: focusedMarket.region.region_id, role_family: roleFamily, opportunity_type: opportunityType, work_arrangement: workArrangement, limit: 3 }, protectedOptions)] : []),
     ]).then((settled) => {
       if (!active) return;
       if (settled[0]?.status === "fulfilled") setRegionDetail(settled[0].value.data);
-      if (settled[1]?.status === "fulfilled") setSaved(Boolean(settled[1].value.data?.saved_market_artifacts.some((item) => item.artifact_type === "region" && item.artifact_ref === focusedMarket.region.region_id)));
+      if (settled[1]?.status === "fulfilled" && settled[1].value) setSaved(Boolean(settled[1].value.data?.saved_market_artifacts.some((item) => item.artifact_type === "region" && item.artifact_ref === focusedMarket.region.region_id)));
       if (settled[2]?.status === "fulfilled") setOpportunities(settled[2].value.data?.opportunities ?? []);
       setDetailLoading(false);
     });
     const coverageEventKey = `coverage:${results?.context.context_fingerprint}:${focusedMarket.region.region_id}:${focusedMarket.opportunity_coverage.status}`;
-    if (!hasCoverage && !emittedEvents.current.has(coverageEventKey)) {
+    if (!runtimeConfig.isPublicGuestDemo && !hasCoverage && !emittedEvents.current.has(coverageEventKey)) {
       emittedEvents.current.add(coverageEventKey);
       void recordProductEvent({
         event_type: "coverage_limitation_viewed", event_source: "frontend", product_surface: "explore_market_detail",
@@ -482,7 +485,7 @@ export default function ExplorePage({ auth, state, onNavigate }: Props) {
     update({ selected });
     if (!exists && selected.length >= 2) {
       const eventKey = `selection-ready:${results?.context.context_fingerprint}:${[...selected].sort().join(",")}`;
-      if (!emittedEvents.current.has(eventKey)) {
+      if (!runtimeConfig.isPublicGuestDemo && !emittedEvents.current.has(eventKey)) {
         emittedEvents.current.add(eventKey);
         void recordProductEvent({
           event_type: "comparison_selection_ready",
@@ -662,8 +665,8 @@ export default function ExplorePage({ auth, state, onNavigate }: Props) {
           <section><h3>Tradeoffs</h3>{focusedMarket.tradeoffs.length ? <ul>{focusedMarket.tradeoffs.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul> : <p>No material tradeoff was returned for this result.</p>}</section>
           <section><h3>Employers that explain this market</h3>{!detailLoading && companyEvidence.length ? <p className="evidence-kind">{companyEvidenceKind}</p> : null}{detailLoading ? <p>Loading company evidence…</p> : companyEvidence.slice(0, 4).map((company) => <a className="evidence-link" href={companyGeographyUrl(company.company_id)} key={company.company_id}>{company.company_name}<span>View company →</span></a>)}{!detailLoading && !companyEvidence.length ? <p>Company evidence is not available for this market.</p> : null}</section>
           <section><h3>Current opportunities</h3>{["unsupported", "unavailable", "unknown"].includes(focusedMarket.opportunity_coverage.status) ? <p className="coverage-unavailable">Current job coverage is unsupported for this search; no zero-job claim is being made.</p> : <><p>{focusedMarket.opportunity_coverage.active_opportunity_count} observed active · {focusedMarket.opportunity_coverage.ranking_eligible_opportunity_count} matching and ranking-eligible</p><p>Coverage: {label(focusedMarket.opportunity_coverage.status)} · {focusedMarket.opportunity_coverage.fresh_opportunity_count} fresh</p>{opportunities.map((opportunity) => <a className="evidence-link" href={`${currentOpportunitiesUrl()}/${opportunity.opportunity_id}`} key={opportunity.opportunity_id}>{opportunity.normalized_title || opportunity.original_title}<span>{opportunity.company_name}</span></a>)}<a className="text-link" href={opportunityUrl}>View all observed opportunities</a></>}</section>
-          <details onToggle={(event) => { const key = `trust:${results?.context.context_fingerprint}:${focusedMarket.region.region_id}`; if (event.currentTarget.open && !emittedEvents.current.has(key)) { emittedEvents.current.add(key); void recordProductEvent({ event_type: "trust_explanation_viewed", event_source: "frontend", product_surface: "explore_market_detail", confidence_bucket: focusedMarket.confidence, payload: { region_id: focusedMarket.region.region_id } }, protectedOptions).catch(() => undefined); } }}><summary>Why and evidence</summary><p>{focusedMarket.market_coverage.summary}</p><p>Freshness: {label(focusedMarket.freshness)}. Evidence sufficiency: {label(focusedMarket.evidence_sufficiency)}.</p><p>Current opportunity counts do not change market Fit.</p></details>
-          <div className="detail-actions"><button disabled={saved} onClick={() => void saveMarket()} type="button">{saved ? "Saved ✓" : "Save market"}</button><button className="secondary-button" onClick={() => toggleCompare(focusedMarket)} type="button">{selectedRegionIds.has(focusedMarket.region.region_id) ? "Remove from compare" : "Add to compare"}</button></div>
+          <details onToggle={(event) => { const key = `trust:${results?.context.context_fingerprint}:${focusedMarket.region.region_id}`; if (!runtimeConfig.isPublicGuestDemo && event.currentTarget.open && !emittedEvents.current.has(key)) { emittedEvents.current.add(key); void recordProductEvent({ event_type: "trust_explanation_viewed", event_source: "frontend", product_surface: "explore_market_detail", confidence_bucket: focusedMarket.confidence, payload: { region_id: focusedMarket.region.region_id } }, protectedOptions).catch(() => undefined); } }}><summary>Why and evidence</summary><p>{focusedMarket.market_coverage.summary}</p><p>Freshness: {label(focusedMarket.freshness)}. Evidence sufficiency: {label(focusedMarket.evidence_sufficiency)}.</p><p>Current opportunity counts do not change market Fit.</p></details>
+          <div className="detail-actions">{!runtimeConfig.isPublicGuestDemo ? <button disabled={saved} onClick={() => void saveMarket()} type="button">{saved ? "Saved ✓" : "Save market"}</button> : null}<button className="secondary-button" onClick={() => toggleCompare(focusedMarket)} type="button">{selectedRegionIds.has(focusedMarket.region.region_id) ? "Remove from compare" : "Add to compare"}</button></div>
         </aside>
       ) : null}
 

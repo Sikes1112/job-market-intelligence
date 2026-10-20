@@ -194,6 +194,11 @@ import type { GeographicResolution } from "./geography";
 import { isFreshnessStatus, isRecord } from "./dataQuality";
 import { reportFrontendError } from "./errorMonitoring";
 import { runtimeConfig } from "./runtimeConfig";
+import {
+  guestCsrfToken,
+  initializeGuestSession,
+  recoverGuestSession,
+} from "./guestSession";
 
 const configuredBaseUrl = runtimeConfig.apiBaseUrl || undefined;
 
@@ -291,17 +296,37 @@ async function request<T>(
   path: string,
   options?: RequestInit,
 ): Promise<ApiEnvelope<T>> {
+  if (runtimeConfig.isPublicGuestDemo && path !== "/guest/session") {
+    await initializeGuestSession();
+  }
+  return requestAttempt<T>(path, options, false);
+}
+
+async function requestAttempt<T>(
+  path: string,
+  options: RequestInit | undefined,
+  recovered: boolean,
+): Promise<ApiEnvelope<T>> {
   let response: Response;
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), 15_000);
+  const method = (options?.method ?? "GET").toUpperCase();
+  const unsafeGuestRequest = runtimeConfig.isPublicGuestDemo
+    && !["GET", "HEAD", "OPTIONS"].includes(method)
+    && path !== "/guest/session";
+  const csrfToken = unsafeGuestRequest ? guestCsrfToken() : null;
 
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
       headers: {
         "Content-Type": "application/json",
+        ...(csrfToken
+          ? { "X-CSRF-Token": csrfToken }
+          : {}),
         ...options?.headers,
       },
-      ...options,
+      credentials: runtimeConfig.isPublicGuestDemo ? "same-origin" : options?.credentials,
       signal: options?.signal ?? controller.signal,
     });
   } catch (error) {
@@ -316,9 +341,9 @@ async function request<T>(
     globalThis.clearTimeout(timeout);
   }
 
-  let envelope: ApiEnvelope<T>;
+  let rawResponse: unknown;
   try {
-    envelope = normalizeEnvelope<T>(await response.json(), response.ok);
+    rawResponse = await response.json();
   } catch (error) {
     const requestId = response.headers.get("x-request-id") ?? undefined;
     const message = error instanceof ApiError
@@ -331,6 +356,20 @@ async function request<T>(
     reportApiFailure(path, apiError);
     throw apiError;
   }
+
+  const rawErrorType = isRecord(rawResponse) && isRecord(rawResponse.error)
+    ? optionalString(rawResponse.error.type)
+    : null;
+  if (
+    runtimeConfig.isPublicGuestDemo
+    && !recovered
+    && ["guest_session_required", "guest_session_expired", "guest_csrf_invalid"].includes(rawErrorType ?? "")
+  ) {
+    await recoverGuestSession(rawErrorType === "guest_csrf_invalid" ? "csrf" : "session");
+    return requestAttempt<T>(path, options, true);
+  }
+
+  const envelope = normalizeEnvelope<T>(rawResponse, response.ok);
 
   if (!response.ok || envelope.status === "error") {
     const requestId = apiErrorRequestId(envelope, response);
@@ -363,7 +402,9 @@ function publicApiErrorMessage(
   statusCode?: number,
 ): string {
   const safeMessage = statusCode === 401
-    ? "Your session expired. Sign in again, then retry."
+    ? runtimeConfig.isPublicGuestDemo
+      ? "Your temporary session expired. Retry to start a new workspace."
+      : "Your session expired. Sign in again, then retry."
     : message;
   return requestId ? `${safeMessage} Reference ID: ${requestId}` : safeMessage;
 }
@@ -404,7 +445,7 @@ async function protectedRequest<T>(
 
   const token = await auth.getAccessToken();
   const localAuthEnabled = import.meta.env.DEV && import.meta.env.VITE_LOCAL_AUTH === "true";
-  if (!token && !localAuthEnabled) {
+  if (!token && !localAuthEnabled && !runtimeConfig.isPublicGuestDemo) {
     throw new ApiError("Authentication required for account request", { statusCode: 401 });
   }
 
@@ -1705,6 +1746,9 @@ export function recordProductEvent(
   body: ProductEventCreateInput,
   auth: ProtectedRequestOptions,
 ) {
+  if (runtimeConfig.isPublicGuestDemo) {
+    return Promise.resolve();
+  }
   return protectedRequest<{ event: Record<string, unknown> }>("/me/product-events", auth, {
     method: "POST",
     body: JSON.stringify(body),

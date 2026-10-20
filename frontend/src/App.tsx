@@ -81,6 +81,7 @@ import {
   type ProtectedRequestOptions,
 } from "./api";
 import { useFrontendAuth, type FrontendAuthContextValue } from "./auth";
+import { runtimeConfig } from "./runtimeConfig";
 import { ProductShell } from "./ProductShell";
 import { PublicFooter } from "./PublicNavigation";
 import {
@@ -567,7 +568,15 @@ function emptyLoadState<T>(): LoadState<T> {
 }
 
 function readCurrentRoute(): RouteState {
-  return parseRoute(window.location.pathname, window.location.search);
+  const route = parseRoute(window.location.pathname, window.location.search);
+  if (
+    runtimeConfig.isPublicGuestDemo
+    && (["institution", "plans", "current-opportunity-operations", "discovery"] as AppPage[]).includes(route.page)
+  ) {
+    window.history.replaceState(null, "", exploreUrl());
+    return parseRoute(window.location.pathname, window.location.search);
+  }
+  return route;
 }
 
 function currentUrl(): string {
@@ -1793,6 +1802,23 @@ function LoadingBlock({ label = "Loading data" }: { label?: string }) {
   );
 }
 
+function PublicGuestRuntimeNotice({ auth }: { auth: FrontendAuthContextValue }) {
+  if (!runtimeConfig.isPublicGuestDemo) return null;
+  return (
+    <div className="public-guest-notice" role={auth.error ? "alert" : "status"}>
+      <span>Live portfolio demo. Changes are temporary and may reset.</span>
+      {auth.isLoading ? <small>Starting the demo service…</small> : null}
+      {auth.sessionMessage ? <small>{auth.sessionMessage}</small> : null}
+      {auth.error ? (
+        <span>
+          <small>{auth.error.message}</small>
+          <button className="secondary-button" onClick={() => void auth.retrySession?.()} type="button">Retry</button>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 // Retained for legacy surfaces until the later retirement batch.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AuthStatusPanel({
@@ -2198,6 +2224,7 @@ function AccountView({
   onCreateCareerPlatformExport,
   onDeactivate,
   onDeactivateConfirmed,
+  guestMode = false,
 }: {
   auth: FrontendAuthContextValue;
   currentUserState: LoadState<CurrentUserProfile>;
@@ -2238,6 +2265,7 @@ function AccountView({
   onCreateCareerPlatformExport: (request: CareerPlatformExportRequest) => void;
   onDeactivate: () => void;
   onDeactivateConfirmed: (confirmed: boolean) => void;
+  guestMode?: boolean;
 }) {
   const currentUser = currentUserState.envelope?.data;
   const preferences = preferenceState.envelope?.data;
@@ -2312,12 +2340,13 @@ function AccountView({
             </div>
           ) : null}
           <p className="meta-copy">
-            Auth0 identity is mapped to this internal user. Saved overlays use the internal user id,
-            not the Auth0 subject, as their durable owner.
+            {guestMode
+              ? "This temporary workspace has its own internal owner. Other visitors cannot access its records."
+              : "Auth0 identity is mapped to this internal user. Saved overlays use the internal user id, not the Auth0 subject, as their durable owner."}
           </p>
         </ShellCard>
 
-        <ShellCard title="Privacy controls" eyebrow="App-owned data only">
+        {!guestMode ? <ShellCard title="Privacy controls" eyebrow="App-owned data only">
           <p className="meta-copy">
             Export and deactivation operate on private account data. They do not delete or change
             canonical regions, companies, objective scores, source freshness, ingestion records, or
@@ -2345,10 +2374,10 @@ function AccountView({
             </button>
           </div>
           {deactivationResult ? <JsonBlock value={deactivationResult} /> : null}
-        </ShellCard>
+        </ShellCard> : null}
       </div>
 
-      <ApiAccessAndCareerPlatformPanel
+      {!guestMode ? <ApiAccessAndCareerPlatformPanel
         apiClientCreateState={apiClientCreateState}
         apiClientListState={apiClientListState}
         apiKeyCreateState={apiKeyCreateState}
@@ -2362,9 +2391,9 @@ function AccountView({
         onRefreshApiClients={onRefreshApiClients}
         onRefreshCareerPlatforms={onRefreshCareerPlatforms}
         onRevokeApiKey={onRevokeApiKey}
-      />
+      /> : null}
 
-      <ShellCard title="Alerts" eyebrow="In-app change feed">
+      {!guestMode ? <ShellCard title="Alerts" eyebrow="In-app change feed">
         {alertsState.loading ? <LoadingBlock label="Loading alerts" /> : null}
         {alertsState.error ? <ErrorState message={alertsState.error} /> : null}
         <AlertSummaryVisualization alerts={alerts} />
@@ -2431,7 +2460,7 @@ function AccountView({
             body="Alerts appear here when structured market changes match saved watchlists or preferences."
           />
         )}
-      </ShellCard>
+      </ShellCard> : null}
 
       <ShellCard title="Saved preferences" eyebrow="User-owned inputs">
         {preferenceState.loading ? <LoadingBlock label="Loading preferences" /> : null}
@@ -2588,7 +2617,7 @@ function AccountView({
         ) : null}
       </ShellCard>
 
-      <ShellCard title="Watchlist" eyebrow="Saved references">
+      {!guestMode ? <ShellCard title="Watchlist" eyebrow="Saved references">
         {artifactsState.loading ? <LoadingBlock label="Loading saved artifacts" /> : null}
         {artifactsState.error ? <ErrorState message={artifactsState.error} /> : null}
         {groupedWatchlists.length ? (
@@ -2624,7 +2653,7 @@ function AccountView({
         ) : (
           <EmptyState title="No watchlist items" body="Save a visible region, company, role family, or comparison set." />
         )}
-      </ShellCard>
+      </ShellCard> : null}
 
       <ShellCard title="Recommendation snapshots" eyebrow="Persisted derived overlays">
         {snapshotsState.loading ? <LoadingBlock label="Loading snapshots" /> : null}
@@ -2651,12 +2680,12 @@ function AccountView({
         )}
       </ShellCard>
 
-      {exportState.envelope?.data ? (
+      {!guestMode && exportState.envelope?.data ? (
         <ShellCard title="Export preview" eyebrow="Current user-owned data">
           <JsonBlock value={exportState.envelope.data} />
         </ShellCard>
       ) : null}
-      {exportState.error ? <ErrorState message={exportState.error} /> : null}
+      {!guestMode && exportState.error ? <ErrorState message={exportState.error} /> : null}
     </div>
   );
 }
@@ -7666,8 +7695,11 @@ function App() {
         ? false
         : !selfContainedPages.includes(route.page)
   );
-  const needsGlobalAccountData = !isExploreComparison
-    && (["account", "region", "company", "compare", "discovery", "recommendations", "plans"] as AppPage[]).includes(route.page);
+  const needsGlobalAccountData = !isExploreComparison && (
+    runtimeConfig.isPublicGuestDemo
+      ? route.page === "account"
+      : (["account", "region", "company", "compare", "discovery", "recommendations", "plans"] as AppPage[]).includes(route.page)
+  );
   const [health, setHealth] = useState<LoadState<{ service: string }>>(emptyLoadState);
   const [regions, setRegions] = useState<LoadState<{ regions: RegionListItem[] }>>(emptyLoadState);
   const [marketCoverageState, setMarketCoverageState] =
@@ -7865,9 +7897,10 @@ function App() {
   }, [artifactsState.envelope]);
   const comparisonArtifactRef = comparisonState.envelope?.data?.comparison_id
     ?? canonicalComparisonRef(comparisonA, comparisonB);
-  const canSavePersonalOverlays = auth.isConfigured && auth.isAuthenticated && !accountDeactivated;
-  const canExplainGuidance = canSavePersonalOverlays;
-  const canUseIntegrations = canSavePersonalOverlays;
+  const canUseOwnedFeatures = auth.isConfigured && auth.isAuthenticated && !accountDeactivated;
+  const canSavePersonalOverlays = canUseOwnedFeatures && !runtimeConfig.isPublicGuestDemo;
+  const canExplainGuidance = canUseOwnedFeatures;
+  const canUseIntegrations = canUseOwnedFeatures && !runtimeConfig.isPublicGuestDemo;
   const regionSourceIdsNeeded = useMemo(() => {
     const ids: string[] = [];
     if (needsLegacyProductData && selectedRegionId && selectedRegionIsKnown) ids.push(selectedRegionId);
@@ -8072,6 +8105,30 @@ function App() {
 
   const loadAccountData = useCallback(async () => {
     if (!auth.isAuthenticated || accountDeactivated) return;
+
+    if (runtimeConfig.isPublicGuestDemo) {
+      setCurrentUserState((current) => ({ ...current, loading: true, error: null }));
+      setPreferenceState((current) => ({ ...current, loading: true, error: null }));
+      setSnapshotsState((current) => ({ ...current, loading: true, error: null }));
+      const [userResult, preferenceResult, snapshotResult] = await Promise.allSettled([
+        getCurrentUser(protectedOptions),
+        getPreferences(protectedOptions),
+        listRecommendationSnapshots(protectedOptions),
+      ]);
+      setCurrentUserState(userResult.status === "fulfilled"
+        ? { loading: false, envelope: userResult.value, error: null }
+        : { loading: false, envelope: null, error: userResult.reason instanceof Error ? userResult.reason.message : "Failed to load workspace" });
+      if (preferenceResult.status === "fulfilled") {
+        setPreferenceState({ loading: false, envelope: preferenceResult.value, error: null });
+        setPreferenceDraft(preferenceDraftFromProfile(preferenceResult.value.data));
+      } else {
+        setPreferenceState({ loading: false, envelope: null, error: preferenceResult.reason instanceof Error ? preferenceResult.reason.message : "Failed to load preferences" });
+      }
+      setSnapshotsState(snapshotResult.status === "fulfilled"
+        ? { loading: false, envelope: snapshotResult.value, error: null }
+        : { loading: false, envelope: null, error: snapshotResult.reason instanceof Error ? snapshotResult.reason.message : "Failed to load recommendation history" });
+      return;
+    }
 
     setCurrentUserState((current) => ({ ...current, loading: true, error: null }));
     setPreferenceState((current) => ({ ...current, loading: true, error: null }));
@@ -8649,7 +8706,12 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (!auth.isAuthenticated || accountDeactivated || route.page !== "account") {
+    if (
+      runtimeConfig.isPublicGuestDemo
+      || !auth.isAuthenticated
+      || accountDeactivated
+      || route.page !== "account"
+    ) {
       setCareerPlatformRegistryState(emptyLoadState());
       return;
     }
@@ -8701,14 +8763,20 @@ function App() {
       setHealth((current) => ({ ...current, loading: true, error: null }));
       setRegions((current) => ({ ...current, loading: true, error: null }));
       setMarketCoverageState((current) => ({ ...current, loading: true, error: null }));
-      setMarketOperationsState((current) => ({ ...current, loading: true, error: null }));
+      if (!runtimeConfig.isPublicGuestDemo) {
+        setMarketOperationsState((current) => ({ ...current, loading: true, error: null }));
+      }
 
-      const [healthResult, regionsResult, marketCoverageResult, marketOperationsResult] = await Promise.allSettled([
+      const [healthResult, regionsResult, marketCoverageResult] = await Promise.allSettled([
         getHealth(),
         getRegions(),
         getImportedMarkets(),
-        getImportedMarketOperationsView(),
       ]);
+      const marketOperationsResult = runtimeConfig.isPublicGuestDemo
+        ? null
+        : await getImportedMarketOperationsView()
+          .then((value) => ({ status: "fulfilled" as const, value }))
+          .catch((reason: unknown) => ({ status: "rejected" as const, reason }));
 
       if (healthResult.status === "fulfilled") {
         setHealth({ loading: false, envelope: healthResult.value, error: null });
@@ -8751,13 +8819,13 @@ function App() {
         });
       }
 
-      if (marketOperationsResult.status === "fulfilled") {
+      if (marketOperationsResult?.status === "fulfilled") {
         setMarketOperationsState({
           loading: false,
           envelope: marketOperationsResult.value,
           error: null,
         });
-      } else {
+      } else if (marketOperationsResult) {
         setMarketOperationsState({
           loading: false,
           envelope: null,
@@ -8933,6 +9001,7 @@ function App() {
   ]);
 
   useEffect(() => {
+    if (runtimeConfig.isPublicGuestDemo) return;
     if (route.page !== "plans" && route.page !== "recommendations") return;
     if (
       monetizationPlansState.loading
@@ -9017,6 +9086,7 @@ function App() {
   ]);
 
   useEffect(() => {
+    if (runtimeConfig.isPublicGuestDemo) return;
     if (!["recommendations", "plans", "account"].includes(route.page)) return;
 
     ACCESS_PREVIEW_REQUESTS.forEach((request) => {
@@ -10241,22 +10311,26 @@ function App() {
 
   if (!isProductRoute) {
     return (
-      <LazyRoute>
-        <PublicRouteView
-          onNavigate={handleRouteLink}
-          publicBenchmarkDetailState={selectedPublicBenchmarkDetailState}
-          publicBenchmarkListState={publicBenchmarkListState}
-          publicReportDetailState={selectedPublicReportDetailState}
-          publicReportListState={publicReportListState}
-          predictiveReportState={predictiveReportState}
-          route={route}
-        />
-      </LazyRoute>
+      <>
+        <PublicGuestRuntimeNotice auth={auth} />
+        <LazyRoute>
+          <PublicRouteView
+            onNavigate={handleRouteLink}
+            publicBenchmarkDetailState={selectedPublicBenchmarkDetailState}
+            publicBenchmarkListState={publicBenchmarkListState}
+            publicReportDetailState={selectedPublicReportDetailState}
+            publicReportListState={publicReportListState}
+            predictiveReportState={predictiveReportState}
+            route={route}
+          />
+        </LazyRoute>
+      </>
     );
   }
 
   return (
     <ProductShell
+      accountNotice={<PublicGuestRuntimeNotice auth={auth} />}
       activePage={route.page}
       auth={auth}
       footer={!(["explore", "my-search", "profile"] as AppPage[]).includes(route.page) ? <PublicFooter activePage={null} onNavigate={handleRouteLink} /> : null}
@@ -10703,6 +10777,7 @@ function App() {
             deactivateConfirmed={deactivateConfirmed}
             deactivationResult={deactivationResult}
             exportState={exportState}
+            guestMode={runtimeConfig.isPublicGuestDemo}
             onDeactivate={handleDeactivateAccount}
             onDeactivateConfirmed={setDeactivateConfirmed}
             onCreateApiClient={handleCreateApiClient}

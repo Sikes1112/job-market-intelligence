@@ -37,7 +37,7 @@ class PortfolioSeedResult:
     seed: SeedResult
     imported: CuratedMarketBatchResult
     refreshed: CuratedMarketBatchResult
-    reviewer: ReviewerScenarioResult
+    reviewer: ReviewerScenarioResult | None
 
 
 def run_portfolio_seed(
@@ -46,6 +46,7 @@ def run_portfolio_seed(
     *,
     as_of: date,
     demo_now: datetime | None = None,
+    include_reviewer: bool = True,
 ) -> PortfolioSeedResult:
     """Extend a completed MVP seed into the complete eight-market demo."""
 
@@ -72,7 +73,7 @@ def run_portfolio_seed(
         run_id=DEMO_CLOSED_RUN_ID,
         observed_at=observed_at,
     )
-    reviewer = seed_reviewer_scenarios(session)
+    reviewer = seed_reviewer_scenarios(session) if include_reviewer else None
     return PortfolioSeedResult(
         seed=seed_result,
         imported=imported,

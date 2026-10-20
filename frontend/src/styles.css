@@ -2014,6 +2014,38 @@ legend {
   margin: 0;
 }
 
+.public-guest-notice {
+  align-items: center;
+  background: #f6f2e7;
+  border: 1px solid #ded5bd;
+  border-radius: 0.75rem;
+  color: var(--ink);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  gap: 0.55rem 0.9rem;
+  justify-content: space-between;
+  margin: 0.7rem auto 0;
+  max-width: 1180px;
+  padding: 0.55rem 0.75rem;
+  width: min(calc(100% - 2rem), 1180px);
+}
+
+.public-guest-notice > span:last-child {
+  align-items: center;
+  display: flex;
+  gap: 0.55rem;
+}
+
+.public-guest-notice small {
+  color: var(--muted);
+}
+
+.public-guest-notice button {
+  min-height: auto;
+  padding: 0.35rem 0.65rem;
+}
+
 .current-opportunities-view {
   align-items: start;
 }

@@ -52,7 +52,10 @@ class RequestObservabilityMiddleware:
                 if settings is not None:
                     headers["X-Release-ID"] = settings.release_id
                 if settings is not None and settings.security_headers_enabled:
-                    apply_security_headers(headers)
+                    apply_security_headers(
+                        headers,
+                        public_guest_demo=settings.is_public_guest_demo,
+                    )
             await send(message)
 
         try:
@@ -165,6 +168,9 @@ class RequestObservabilityMiddleware:
 
 
 def _pseudonymous_principal(scope: Scope) -> str | None:
+    guest_session_id = scope.get("state", {}).get("verified_guest_session_id")
+    if isinstance(guest_session_id, str) and guest_session_id:
+        return sha256(f"guest|{guest_session_id}".encode()).hexdigest()[:20]
     claims = scope.get("state", {}).get("verified_oidc_claims")
     if not isinstance(claims, dict):
         return None

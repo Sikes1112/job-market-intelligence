@@ -1,34 +1,43 @@
 services:
   - type: web
-    name: jmi-backend
+    name: job-market-intelligence-demo
+    repo: https://github.com/Sikes1112/job-market-intelligence
+    branch: main
     runtime: python
-    plan: starter
-    buildCommand: pip install -r requirements.txt
-    preDeployCommand: RELEASE_ID=$RENDER_GIT_COMMIT python -m alembic upgrade head && RELEASE_ID=$RENDER_GIT_COMMIT python -m scripts.beta_reference_data bootstrap
-    startCommand: RELEASE_ID=$RENDER_GIT_COMMIT uvicorn backend.api.app:app --host 0.0.0.0 --port $PORT
+    plan: free
+    autoDeployTrigger: off
+    buildCommand: >-
+      pip install -r requirements.txt -c requirements.lock &&
+      cd frontend &&
+      npm ci &&
+      VITE_DEPLOYMENT_MODE=public_guest_demo VITE_RELEASE_ID=$RENDER_GIT_COMMIT npm run build
+    startCommand: >-
+      python -m uvicorn backend.api.app:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /ready
     envVars:
       - key: APP_ENV
-        value: production
+        value: public_guest_demo
       - key: PYTHON_VERSION
         value: 3.11.11
       - key: SERVICE_NAME
-        value: jmi-backend
+        value: jmi-public-guest-demo
+      - key: NODE_VERSION
+        value: "22"
+      - key: FRONTEND_DIST_DIR
+        value: frontend/dist
       - key: API_DOCS_ENABLED
         value: "false"
       - key: BETA_ACCESS_REQUIRED
+        value: "false"
+      - key: READINESS_REQUIRE_MIGRATION_CURRENT
         value: "true"
       - key: RATE_LIMIT_ENABLED
         value: "true"
       - key: SECURITY_HEADERS_ENABLED
         value: "true"
+      - key: MAX_REQUEST_BODY_BYTES
+        value: "65536"
+      - key: WEB_CONCURRENCY
+        value: "1"
       - key: DATABASE_URL
-        sync: false
-      - key: CORS_ALLOWED_ORIGINS
-        sync: false
-      - key: AUTH0_ISSUER
-        sync: false
-      - key: AUTH0_AUDIENCE
-        sync: false
-      - key: ERROR_MONITORING_DSN
-        sync: false
+        value: sqlite:////tmp/jmi-public-guest.db

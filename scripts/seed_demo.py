@@ -99,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
         for line in result.summary_lines():
             print(line)
         if portfolio_result is not None:
+            if portfolio_result.reviewer is None:
+                raise RuntimeError("local portfolio seed must include reviewer state")
             print(
                 "  portfolio_demo         "
                 f"markets={len(portfolio_result.imported.markets_succeeded)} "

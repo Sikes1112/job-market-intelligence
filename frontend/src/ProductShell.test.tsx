@@ -63,4 +63,31 @@ describe("ProductShell", () => {
     expect(screen.getByText("Market intelligence")).toBeInTheDocument();
     expect(screen.getByText("Opportunity data health")).toBeInTheDocument();
   });
+
+  test("closes the account popover after internal navigation", () => {
+    const onNavigate = vi.fn();
+    const { container } = render(
+      <ProductShell
+        activePage="explore"
+        auth={auth}
+        navigation={{ comparisonA: "greater_boston", comparisonB: "sf_bay_area" }}
+        onNavigate={onNavigate}
+        onSearch={vi.fn()}
+        routePath="/markets"
+        usesIndividualShell
+      >
+        <p>Page content</p>
+      </ProductShell>,
+    );
+    const menu = container.querySelector<HTMLDetailsElement>("details.account-menu");
+    expect(menu).not.toBeNull();
+    menu!.open = true;
+
+    const profileLink = menu!.querySelector<HTMLAnchorElement>('a[href="/markets/profile"]');
+    expect(profileLink).not.toBeNull();
+    fireEvent.click(profileLink!);
+
+    expect(menu).not.toHaveAttribute("open");
+    expect(onNavigate).toHaveBeenCalledWith("/markets/profile", undefined);
+  });
 });

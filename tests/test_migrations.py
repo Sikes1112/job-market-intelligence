@@ -110,7 +110,7 @@ def test_local_demo_migration_wrapper_stamps_existing_create_all_schema(tmp_path
     try:
         with engine.connect() as connection:
             version = connection.execute(text("select version_num from alembic_version"))
-        assert version.scalar_one() == "0046_beta_production_hardening"
+        assert version.scalar_one() == "0047_public_guest_sessions"
     finally:
         engine.dispose()
 
@@ -126,7 +126,7 @@ def test_alembic_upgrade_head_is_idempotent(tmp_path) -> None:
     try:
         with engine.connect() as connection:
             version = connection.execute(text("select version_num from alembic_version"))
-            assert version.scalar_one() == "0046_beta_production_hardening"
+            assert version.scalar_one() == "0047_public_guest_sessions"
     finally:
         engine.dispose()
 

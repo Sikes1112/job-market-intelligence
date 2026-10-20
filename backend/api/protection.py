@@ -12,6 +12,11 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from backend.api.errors import safe_error_response_for_request_id
 from backend.api.request_context import request_id_from_scope
 from backend.config.settings import Settings
+from backend.public_guest.policy import (
+    public_guest_frontend_path_allowed,
+    public_guest_scope_allowed,
+)
+from backend.public_guest.service import VerifiedGuestPrincipal
 
 
 class RequestBodyTooLarge(Exception):
@@ -19,6 +24,7 @@ class RequestBodyTooLarge(Exception):
 
 
 PUBLIC_DEMO_READ_ONLY_ERROR_TYPE = "public_demo_read_only"
+PUBLIC_GUEST_ROUTE_DENIED_ERROR_TYPE = "public_guest_route_denied"
 PUBLIC_DEMO_EXACT_ALLOWLIST = frozenset(
     {
         ("GET", "/health"),
@@ -89,6 +95,17 @@ class APIProtectionMiddleware:
                 status_code=403,
                 error_type=PUBLIC_DEMO_READ_ONLY_ERROR_TYPE,
                 message="Public demo mode exposes only approved read-only routes",
+            )
+            await response(scope, receive, send)
+            return
+
+        if self._public_guest_request_denied(scope):
+            scope.setdefault("state", {})["error_type"] = PUBLIC_GUEST_ROUTE_DENIED_ERROR_TYPE
+            response = safe_error_response_for_request_id(
+                request_id,
+                status_code=403,
+                error_type=PUBLIC_GUEST_ROUTE_DENIED_ERROR_TYPE,
+                message="Route is not available in the public guest demo",
             )
             await response(scope, receive, send)
             return
@@ -166,6 +183,21 @@ class APIProtectionMiddleware:
         path = _normalized_path(scope)
         return not _public_demo_route_allowed(method, path)
 
+    def _public_guest_request_denied(self, scope: Scope) -> bool:
+        if not self.settings.is_public_guest_demo:
+            return False
+        method = str(scope.get("method", "")).upper()
+        if method == "OPTIONS":
+            return False
+        path = _normalized_path(scope)
+        if public_guest_scope_allowed(scope):
+            return False
+        return not (
+            method == "GET"
+            and _accepts_html(scope)
+            and public_guest_frontend_path_allowed(path)
+        ) and not (method == "GET" and path.startswith(("/assets/", "/data/")))
+
     def _prune_expired_rate_limits(self, now: float) -> None:
         expired_keys = [key for key, bucket in self._rate_limits.items() if bucket.reset_at <= now]
         for key in expired_keys:
@@ -196,7 +228,9 @@ class APIProtectionMiddleware:
         return limited_receive
 
 
-def apply_security_headers(headers: MutableHeaders) -> None:
+def apply_security_headers(
+    headers: MutableHeaders, *, public_guest_demo: bool = False
+) -> None:
     if "X-Content-Type-Options" not in headers:
         headers["X-Content-Type-Options"] = "nosniff"
     if "X-Frame-Options" not in headers:
@@ -205,6 +239,16 @@ def apply_security_headers(headers: MutableHeaders) -> None:
         headers["Referrer-Policy"] = "no-referrer"
     if "Permissions-Policy" not in headers:
         headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if public_guest_demo:
+        if "Strict-Transport-Security" not in headers:
+            headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        if "Content-Security-Policy" not in headers:
+            headers["Content-Security-Policy"] = (
+                "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; "
+                "object-src 'none'; form-action 'self'; script-src 'self'; "
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+                "font-src 'self'; connect-src 'self'"
+            )
 
 
 def _rate_limit_key(scope: Scope, policy_name: str) -> str:
@@ -212,6 +256,9 @@ def _rate_limit_key(scope: Scope, policy_name: str) -> str:
 
 
 def _principal_or_client_key(scope: Scope) -> str:
+    guest = scope.get("state", {}).get("verified_guest_principal")
+    if isinstance(guest, VerifiedGuestPrincipal):
+        return f"guest:{guest.session_id}"
     claims = scope.get("state", {}).get("verified_oidc_claims")
     if isinstance(claims, dict):
         identity = _stable_claim_identity(claims)
@@ -290,6 +337,10 @@ def _rate_limit_policy(scope: Scope, settings: Settings) -> RateLimitPolicy:
 
 
 def _has_authenticated_signal(scope: Scope) -> bool:
+    if isinstance(
+        scope.get("state", {}).get("verified_guest_principal"), VerifiedGuestPrincipal
+    ):
+        return True
     if isinstance(scope.get("state", {}).get("verified_oidc_claims"), dict):
         return True
     return _local_test_claims_from_header(scope) is not None
@@ -345,6 +396,11 @@ def _normalized_path(scope: Scope) -> str:
     if raw_path == "/":
         return raw_path
     return raw_path.rstrip("/")
+
+
+def _accepts_html(scope: Scope) -> bool:
+    accept = Headers(scope=scope).get("accept", "")
+    return "text/html" in accept.lower()
 
 
 def _public_demo_route_allowed(method: str, path: str) -> bool:

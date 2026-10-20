@@ -127,6 +127,7 @@ REQUIRED_TABLES = {
     "exception_cases",
     "product_analytics_events",
     "product_user_visits",
+    "public_guest_sessions",
     "beta_cohorts",
     "beta_cohort_memberships",
     "product_feature_gates",
@@ -151,6 +152,7 @@ APPEND_ONLY_LOG_TABLES = {
     "support_case_events",
 }
 VISIT_TELEMETRY_TABLES = {"product_user_visits"}
+GUEST_SESSION_TABLES = {"public_guest_sessions"}
 HISTORICAL_INTELLIGENCE_TABLES = {
     "market_snapshots",
     "company_region_snapshots",
@@ -185,6 +187,7 @@ CANONICAL_METADATA_TABLES = (
     - {"jobs"}
     - APPEND_ONLY_LOG_TABLES
     - VISIT_TELEMETRY_TABLES
+    - GUEST_SESSION_TABLES
     - HISTORICAL_INTELLIGENCE_TABLES
     - ADMIN_REVIEW_TABLES
     - EXPLORE_WORKFLOW_TABLES

@@ -40,6 +40,7 @@ from backend.hiring.repository import HiringRepository
 from backend.outputs.repository import OutputMetadataRepository
 from backend.outputs.service import OutputAssemblyService
 from backend.presence.repository import PresenceRepository
+from backend.public_guest.service import VerifiedGuestPrincipal
 from backend.scoring.repository import RegionScoreRepository
 from backend.users.exceptions import DeactivatedUserAuthenticationBlocked
 from backend.users.models import ExternalAuthIdentity, User, UserProfile
@@ -108,14 +109,31 @@ def get_current_user(
     that already-verified claim mapping as JSON.
     """
 
-    claims = _verified_oidc_claims_from_request(request)
-    try:
-        principal = principal_from_verified_oidc_claims(claims)
-    except AuthBoundaryError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid verified auth claims",
-        ) from exc
+    settings = request.app.state.settings
+    verified_guest: VerifiedGuestPrincipal | None = None
+    if settings.app_env == AppEnv.PUBLIC_GUEST_DEMO:
+        verified_guest = getattr(request.state, "verified_guest_principal", None)
+        if not isinstance(verified_guest, VerifiedGuestPrincipal):
+            error_type = (
+                "guest_session_expired"
+                if getattr(request.state, "guest_session_invalid", False)
+                else "guest_session_required"
+            )
+            raise SafeHTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                error_type=error_type,
+                message="Guest session is missing or expired",
+            )
+        principal = verified_guest.as_external_principal()
+    else:
+        claims = _verified_oidc_claims_from_request(request)
+        try:
+            principal = principal_from_verified_oidc_claims(claims)
+        except AuthBoundaryError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid verified auth claims",
+            ) from exc
 
     try:
         resolved = UserIdentityService(UserRepository(session)).resolve_external_principal(
@@ -126,6 +144,19 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
         ) from exc
+    if settings.app_env == AppEnv.PUBLIC_GUEST_DEMO:
+        if resolved.user.user_id != verified_guest.user_id:
+            raise SafeHTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                error_type="guest_session_invalid",
+                message="Guest session is invalid",
+            )
+        if resolved.user.admin_role is not None:
+            raise SafeHTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                error_type="guest_privilege_denied",
+                message="Guest privileges are invalid",
+            )
     return CurrentUser(
         user=resolved.user,
         identity=resolved.identity,

@@ -7,7 +7,13 @@ from backend.config.settings import AppEnv, Settings, is_sqlite_database_url
 
 ALLOW_NON_LOCAL_DEMO_DB_ENV = "JMI_ALLOW_NON_LOCAL_DEMO_DB"
 SCRIPT_BLOCKED_ENVS = frozenset(
-    {AppEnv.PUBLIC_DEMO, AppEnv.STAGING, AppEnv.PRODUCTION, AppEnv.PROD}
+    {
+        AppEnv.PUBLIC_DEMO,
+        AppEnv.PUBLIC_GUEST_DEMO,
+        AppEnv.STAGING,
+        AppEnv.PRODUCTION,
+        AppEnv.PROD,
+    }
 )
 
 
@@ -16,7 +22,7 @@ def ensure_demo_database_target_allowed(settings: Settings, database_url: str) -
     if settings.app_env in SCRIPT_BLOCKED_ENVS:
         _blocked(
             "Local/demo database scripts are blocked when APP_ENV is public_demo, "
-            "staging, production, or prod. "
+            "public_guest_demo, staging, production, or prod. "
             "Use the production migration/deployment procedure instead."
         )
 

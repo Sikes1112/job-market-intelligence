@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Auth0Provider,
   useAuth0,
@@ -7,6 +7,11 @@ import {
   type User as Auth0User,
 } from "@auth0/auth0-react";
 import { runtimeConfig } from "./runtimeConfig";
+import {
+  initializeGuestSession,
+  subscribeGuestSession,
+  type GuestSessionEvent,
+} from "./guestSession";
 
 type FrontendAuthConfig = {
   domain: string;
@@ -29,6 +34,8 @@ export type FrontendAuthContextValue = {
   login: () => Promise<void>;
   logout: () => void;
   getAccessTokenSilently: () => Promise<string | null>;
+  sessionMessage?: string | null;
+  retrySession?: () => Promise<void>;
 };
 
 const authConfig = readAuthConfig();
@@ -123,7 +130,63 @@ function Auth0ContextBridge({ children }: { children: ReactNode }) {
   );
 }
 
+function PublicGuestContextBridge({ children }: { children: ReactNode }) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null);
+
+  const start = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await initializeGuestSession();
+      setIsAuthenticated(true);
+    } catch (reason) {
+      setIsAuthenticated(false);
+      setError(reason instanceof Error ? reason : new Error("The live demo could not start."));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleEvent = (event: GuestSessionEvent) => {
+      if (event.state === "unavailable") {
+        setError(new Error(event.message ?? "The live demo is temporarily unavailable."));
+        setIsAuthenticated(false);
+      } else {
+        setError(null);
+        setIsAuthenticated(true);
+        if (event.state === "reset") setSessionMessage(event.message ?? null);
+      }
+      setIsLoading(false);
+    };
+    const unsubscribe = subscribeGuestSession(handleEvent);
+    void start();
+    return unsubscribe;
+  }, [start]);
+
+  const value = useMemo<FrontendAuthContextValue>(() => ({
+    isConfigured: true,
+    isAuthenticated,
+    isLoading,
+    error,
+    user: isAuthenticated ? { sub: "public_guest", name: "Guest workspace" } : null,
+    login: start,
+    logout: () => undefined,
+    getAccessTokenSilently: async () => null,
+    sessionMessage,
+    retrySession: start,
+  }), [error, isAuthenticated, isLoading, sessionMessage, start]);
+
+  return <FrontendAuthContext.Provider value={value}>{children}</FrontendAuthContext.Provider>;
+}
+
 export function FrontendAuthProvider({ children }: { children: ReactNode }) {
+  if (runtimeConfig.isPublicGuestDemo) {
+    return <PublicGuestContextBridge>{children}</PublicGuestContextBridge>;
+  }
   if (!authConfig) {
     return (
       <FrontendAuthContext.Provider value={missingAuthValue}>

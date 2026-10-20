@@ -1,7 +1,8 @@
-import { useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 
 import type { FrontendAuthContextValue } from "./auth";
 import { BetaFeedback } from "./BetaFeedback";
+import { runtimeConfig } from "./runtimeConfig";
 import {
   accountUrl,
   careerAgentUrl,
@@ -101,6 +102,10 @@ const ADVANCED_LINKS = [
   { label: "Institution workspace", url: institutionDashboardUrl() },
 ];
 
+const PUBLIC_GUEST_ADVANCED_LINKS = ADVANCED_LINKS.filter(
+  (item) => ![currentOpportunityOperationsUrl(), institutionDashboardUrl()].includes(item.url),
+);
+
 function isPlainLeftClick(event: MouseEvent<HTMLAnchorElement>): boolean {
   return event.button === 0 && !event.metaKey && !event.altKey && !event.ctrlKey && !event.shiftKey;
 }
@@ -148,10 +153,25 @@ export function ProductShell({
   usesIndividualShell,
 }: ProductShellProps) {
   const [search, setSearch] = useState("");
+  const toolsMenuRef = useRef<HTMLDetailsElement>(null);
+  const accountMenuRef = useRef<HTMLDetailsElement>(null);
+  const advancedLinks = runtimeConfig.isPublicGuestDemo
+    ? PUBLIC_GUEST_ADVANCED_LINKS
+    : ADVANCED_LINKS;
+  const workspaceLinks = WORKSPACE_LINKS;
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void onSearch(search);
+  }
+
+  function navigateFromPopover(
+    menu: RefObject<HTMLDetailsElement | null>,
+    url: string,
+    options?: { replace?: boolean },
+  ) {
+    if (menu.current) menu.current.open = false;
+    onNavigate(url, options);
   }
 
   if (!usesIndividualShell) {
@@ -215,21 +235,21 @@ export function ProductShell({
           })}
         </nav>
 
-        <details className="tools-menu shell-popover">
+        <details className="tools-menu shell-popover" ref={toolsMenuRef}>
           <summary>Tools</summary>
           <div>
             <p>Workspace</p>
-            {WORKSPACE_LINKS.slice(0, 3).map((item) => (
-              <ProductLink key={item.url} onNavigate={onNavigate} url={item.url}>{item.label}</ProductLink>
+            {workspaceLinks.slice(0, 3).map((item) => (
+              <ProductLink key={item.url} onNavigate={(url, options) => navigateFromPopover(toolsMenuRef, url, options)} url={item.url}>{item.label}</ProductLink>
             ))}
             <p>Advanced</p>
-            {ADVANCED_LINKS.map((item) => (
-              <ProductLink key={item.url} onNavigate={onNavigate} url={item.url}>{item.label}</ProductLink>
+            {advancedLinks.map((item) => (
+              <ProductLink key={item.url} onNavigate={(url, options) => navigateFromPopover(toolsMenuRef, url, options)} url={item.url}>{item.label}</ProductLink>
             ))}
           </div>
         </details>
 
-        <details className="account-menu shell-popover">
+        <details className="account-menu shell-popover" ref={accountMenuRef}>
           <summary aria-label="Account and workspace menu">
             {auth.user?.picture
               ? <img alt="" src={auth.user.picture} />
@@ -239,10 +259,10 @@ export function ProductShell({
             <strong>{auth.user?.name ?? auth.user?.email ?? (auth.isAuthenticated ? "Account" : "Signed out")}</strong>
             {auth.isAuthenticated ? (
               <>
-                {WORKSPACE_LINKS.map((item) => (
-                  <ProductLink key={item.url} onNavigate={onNavigate} url={item.url}>{item.label}</ProductLink>
+                {workspaceLinks.map((item) => (
+                  <ProductLink key={item.url} onNavigate={(url, options) => navigateFromPopover(accountMenuRef, url, options)} url={item.url}>{item.label}</ProductLink>
                 ))}
-                <button onClick={auth.logout} type="button">Sign out</button>
+                {!runtimeConfig.isPublicGuestDemo ? <button onClick={auth.logout} type="button">Sign out</button> : null}
               </>
             ) : <button onClick={() => void auth.login()} type="button">Sign in</button>}
           </div>
@@ -255,7 +275,7 @@ export function ProductShell({
         {footer}
       </main>
 
-      {auth.isAuthenticated ? <BetaFeedback auth={auth} route={routePath} /> : null}
+      {auth.isAuthenticated && !runtimeConfig.isPublicGuestDemo ? <BetaFeedback auth={auth} route={routePath} /> : null}
 
       <nav className="mobile-product-nav" aria-label="Primary mobile navigation">
         {FLAGSHIP_DESTINATIONS.map((item) => {

@@ -105,6 +105,9 @@ def make_engine(
         def _enforce_sqlite_foreign_keys(dbapi_connection, _connection_record):  # noqa: ANN001
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            if ":memory:" not in database_url and database_url != "sqlite://":
+                cursor.execute("PRAGMA journal_mode=WAL")
             cursor.close()
 
     return engine
@@ -157,6 +160,7 @@ def import_all_models() -> None:
     from backend.presence import models as _presence  # noqa: F401
     from backend.product_measurement import models as _product_measurement  # noqa: F401
     from backend.provenance import models as _provenance  # noqa: F401
+    from backend.public_guest import models as _public_guest  # noqa: F401
     from backend.region_expansion import models as _region_expansion  # noqa: F401
     from backend.scoring import models as _scoring  # noqa: F401
     from backend.trust import models as _trust  # noqa: F401

@@ -19,6 +19,7 @@ from backend.api.errors import register_exception_handlers
 from backend.api.exceptions import router as exceptions_router
 from backend.api.explore import router as explore_router
 from backend.api.external import router as external_router
+from backend.api.guest_sessions import router as guest_sessions_router
 from backend.api.institutions import router as institutions_router
 from backend.api.integrations import router as integrations_router
 from backend.api.market_intelligence import router as market_intelligence_router
@@ -45,6 +46,9 @@ from backend.config.settings import Settings, get_settings
 from backend.operations.error_monitoring import ErrorMonitor
 from backend.operations.metrics import InMemoryMetricsRegistry
 from backend.operations.status import liveness_payload, readiness_payload
+from backend.public_guest.lifecycle import initialize_public_guest_database
+from backend.public_guest.middleware import PublicGuestSessionMiddleware
+from backend.public_guest.static import configure_public_guest_frontend
 from backend.shared.db import make_engine, make_session_factory
 from backend.shared.logging import configure_logging
 
@@ -64,6 +68,9 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
+            if settings.is_public_guest_demo and app.state.owns_engine:
+                initialize_public_guest_database(settings, app.state.engine)
+                app.state.public_guest_database_initialized = True
             yield
         finally:
             if app.state.owns_engine:
@@ -83,12 +90,19 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
         app.add_middleware(
             CORSMiddleware,
             allow_origins=allowed_origins,
-            allow_credentials=False,
+            allow_credentials=settings.is_public_guest_demo,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-            allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "X-API-Key",
+                "X-Request-ID",
+                "X-CSRF-Token",
+            ],
             expose_headers=["X-Request-ID", "X-Release-ID"],
         )
     app.add_middleware(Auth0JWTMiddleware, settings=settings)
+    app.add_middleware(PublicGuestSessionMiddleware, settings=settings)
     app.add_middleware(RequestObservabilityMiddleware)
     register_exception_handlers(app)
 
@@ -102,6 +116,9 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
     app.state.billing_provider = None
     app.state.metrics_registry = InMemoryMetricsRegistry()
     app.state.error_monitor = ErrorMonitor()
+    app.state.public_guest_database_initialized = not (
+        settings.is_public_guest_demo and owns_engine
+    )
 
     @app.get("/health")
     def health() -> dict:
@@ -109,9 +126,24 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
 
     @app.get("/ready")
     def ready() -> JSONResponse:
+        if (
+            settings.is_public_guest_demo
+            and not app.state.public_guest_database_initialized
+        ):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "not_ready",
+                    "service": settings.service_name,
+                    "environment": settings.app_env.value,
+                    "release_id": settings.release_id,
+                    "checks": {"config": "ok", "database": "initializing"},
+                },
+            )
         status_code, content = readiness_payload(app.state.engine, settings)
         return JSONResponse(status_code=status_code, content=content)
 
+    app.include_router(guest_sessions_router)
     app.include_router(read_router)
     app.include_router(market_intelligence_router)
     app.include_router(personalized_router)
@@ -143,6 +175,8 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
     app.include_router(external_router)
     app.include_router(operations_router)
     app.include_router(admin_router)
+
+    configure_public_guest_frontend(app, settings)
 
     return app
 
