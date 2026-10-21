@@ -2,6 +2,8 @@
 
 Job Market Intelligence is a geographic career-decision application for exploring labor markets and employers, finding relevant opportunities, comparing markets, and turning evidence into a practical next step.
 
+**Live demo:** [Open Job Market Intelligence](https://job-market-intelligence-demo.onrender.com) — guest changes are temporary and may reset.
+
 ![Career Identity-based market recommendations in the running application](docs/assets/portfolio/recommendations.jpg)
 
 [What it does](#what-it-does) · [Engineering](#engineering-highlights) · [Run locally](#run-locally) · [Documentation](#documentation)
