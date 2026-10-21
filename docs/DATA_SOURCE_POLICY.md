@@ -1,193 +1,73 @@
 # Data Source Policy
 
-Layer 3 is the Data Provenance and Trust Layer. This Batch 3A policy defines
-the canonical vocabulary and source acceptability rules that must be in place
-before importing real market data. It is policy only: it does not introduce
-provenance tables, ingestion, scraping, API behavior, audit enforcement, or
-score algorithm changes.
+This is the active governance reference for market, employer, hiring, opportunity, and regional evidence. It defines which sources may support product facts and how provenance, missingness, and freshness are represented. The bundled portfolio data remains synthetic or curated demonstration material; it is not a maintained employment feed or verified market coverage.
 
-## Core Semantics
+## Evidence rules
 
-Seed/demo data is not factual public market coverage. Curated demo values may
-be useful for UI development, local testing, examples, and deterministic demo
-flows, but they must not be presented as verified market facts.
+- Every real observation needs a traceable source, observation date, usage rights, and enough context to reproduce its interpretation.
+- Source observations do not become canonical product truth merely because they were ingested. Identity resolution, review, coverage, freshness, and display or ranking eligibility remain separate decisions.
+- Missing data is not zero. `unknown`, `not_collected`, and `not_applicable` remain distinct from `zero_observed`, which requires a dated observed basis.
+- Stale evidence remains stale; it must not be relabeled current, zero, or absent.
+- Manual and user-submitted facts require reviewer, review time, source, and limitation metadata before they can support factual outputs.
+- Aggregators may aid discovery only when the underlying observation and date remain traceable.
+- Unverifiable claims, source-less snippets, and LLM-generated facts cannot serve as factual market evidence.
 
-Real market facts require provenance in later Layer 3 batches. Until those
-batches exist, real observed or real derived market facts must remain out of
-the application data path unless they can be represented with the future
-provenance schema and review workflow.
+These rules are implemented through the shared provenance vocabulary, ingestion and review services, coverage contracts, and provenance audits under [`backend/shared/provenance.py`](../backend/shared/provenance.py), [`backend/ingestion/`](../backend/ingestion/), [`backend/imports/`](../backend/imports/), and [`backend/provenance/`](../backend/provenance/).
 
-Missing data must not be interpreted as zero. `unknown`, `not_collected`, and
-`not_applicable` are distinct from `zero_observed`. A zero requires an observed
-basis, such as a dated source that was checked and found no matching count,
-posting, program, or presence.
+## Canonical vocabulary
 
-Stale data must remain distinguishable from current data. A fact that once had
-an observed basis can become stale without becoming false, zero, or unknown.
+Data origin:
 
-Third-party aggregators may be useful discovery aids, but they require caution
-unless source provenance is clear enough to trace the underlying observation.
-User-provided or manually entered facts require review metadata, including who
-reviewed the fact, when it was reviewed, what source was inspected, and any
-limits or uncertainty noted during review.
+- `demo_seed` and `synthetic_or_curated_demo`: deterministic or curated material for demonstrations and tests, never verified public coverage.
+- `real_observed`: directly observed from an eligible source.
+- `real_derived`: derived from one or more observed facts with lineage.
+- `manual_reviewed`: accepted through documented human review.
+- `unknown_origin`: origin is unresolved and cannot support a verified claim.
 
-Unverifiable claims, scraped snippets without source context, and LLM-generated
-facts are disallowed as factual market evidence.
+Value status:
 
-## Canonical Data Origin Vocabulary
-
-- `demo_seed`: deterministic seed/demo data.
-- `synthetic_or_curated_demo`: synthetic or manually curated demo values used
-  for UI/testing.
-- `real_observed`: a fact directly observed from an acceptable source.
-- `real_derived`: a fact derived from one or more observed facts.
-- `manual_reviewed`: a fact accepted after documented human review.
-- `unknown_origin`: origin has not been established and must not be treated as
-  verified market data.
-
-## Canonical Value Status Vocabulary
-
-- `unknown`: value is unknown.
-- `zero_observed`: observed basis supports a zero value.
-- `positive_observed`: observed basis supports a positive value.
-- `not_applicable`: field does not apply to the subject.
+- `unknown`: no supported value is known.
 - `not_collected`: collection has not been attempted.
-- `stale`: value has exceeded its freshness window.
-- `conflicting`: acceptable sources disagree.
-- `low_confidence`: value has weak support or unresolved caveats.
+- `not_applicable`: the field does not apply.
+- `zero_observed`: an eligible observation supports zero.
+- `positive_observed`: an eligible observation supports a positive value.
+- `stale`: the freshness window has expired.
+- `conflicting`: eligible sources disagree.
+- `low_confidence`: support is weak or has unresolved caveats.
 
-## Source Type Defaults
+## Source eligibility
 
-| Source type | Default acceptability | Notes |
-| --- | --- | --- |
-| `company_official` | `allowed` | Company careers pages, official locations pages, investor or press pages. |
-| `ats_job_board` | `allowed` | Direct ATS-hosted postings when the employer relationship is clear. |
-| `government_public_data` | `allowed` | Public datasets from government or public agencies. |
-| `university_or_coop_board` | `allowed` | University internship, co-op, or early-career boards with clear posting context. |
-| `regional_economic_dataset` | `allowed` | Public or licensed regional datasets with documented methods. |
-| `reputable_third_party_aggregator` | `allowed_with_caution` | Useful when provenance is clear; otherwise requires caution or review. |
-| `manual_research` | `manual_review_required` | Requires review metadata and source notes. |
-| `user_submitted` | `manual_review_required` | Requires review metadata before becoming factual evidence. |
-| `llm_generated` | `disallowed` | May assist drafting or summarization, but is not factual market evidence. |
-| `unknown_source` | `disallowed` | Must be resolved before use as factual evidence. |
+| Source type | Default | Conditions |
+|---|---|---|
+| Company or program official | Allowed | Preserve the exact page and observation date. |
+| Employer-linked ATS posting | Allowed | Employer identity, role, location, and posting context must be clear. |
+| Government or public agency data | Allowed | Preserve release, period, geography, and methodology. |
+| University or co-op board | Allowed | Preserve employer/program relationship and term or date. |
+| Regional economic dataset | Allowed | Method, geography, date, and license must be documented. |
+| Reputable aggregator | Caution | The original observation, date, and employer or dataset identity must be traceable. |
+| Manual research or user submission | Review required | Record reviewer, date, source, and uncertainty before factual use. |
+| LLM-generated or unknown source | Disallowed | May assist drafting or discovery but cannot establish a market fact. |
 
-## Company Universe
+The same standard applies across the company universe, company-region presence, hiring activity, internships and co-ops, early-career programs, opportunities, and regional metadata. Ambiguous remote locations, duplicated postings, unclear program years, inferred office presence, or restricted datasets require review rather than automatic acceptance. A source with prohibited terms or missing usage rights must not be imported.
 
-| Acceptability | Sources |
-| --- | --- |
-| Allowed | Official company websites, public company registries, government public data, verified public datasets with documented methods. |
-| Allowed with caution | Reputable third-party company databases or aggregators when source lineage and refresh date are visible. |
-| Manual review required | Manually entered companies, user-submitted companies, companies imported from restricted datasets. |
-| Disallowed | LLM-generated company lists, unverifiable lists, scraped snippets without source URL and context, sources with prohibited terms. |
+## Freshness and missingness
 
-## Company-Region Presence
+The implemented default windows in [`backend/shared/provenance.py`](../backend/shared/provenance.py) are:
 
-| Acceptability | Sources |
-| --- | --- |
-| Allowed | Official office/location pages, company careers pages with location filters, public filings, government or regional datasets. |
-| Allowed with caution | Third-party office/location aggregators, job boards implying presence only through postings. |
-| Manual review required | Manually researched presence claims, user-submitted office claims, ambiguous remote/hybrid location evidence. |
-| Disallowed | LLM-generated presence claims, unsupported social posts, snippets without source context, stale claims presented as current. |
+| Evidence | Current for |
+|---|---:|
+| Company universe and presence | 180 days |
+| Hiring counts | 14 days |
+| Internships and co-ops | 120 days |
+| Early-career programs | 90 days |
+| Regional metadata | 365 days |
 
-## Hiring Activity
+These are governance defaults, not promises that portfolio data is refreshed on those schedules. Domain-specific imports may define an additional documented staleness rule.
 
-| Acceptability | Sources |
-| --- | --- |
-| Allowed | Company official careers pages, ATS job boards with employer identity, dated public job postings. |
-| Allowed with caution | Reputable job aggregators when original posting source, posting date, and employer identity are clear. |
-| Manual review required | Manual counts, user-submitted posting evidence, aggregator-derived counts with partial provenance. |
-| Disallowed | LLM-generated hiring counts, undated snippets, duplicated postings without dedupe basis, unverifiable claims. |
+Count-like values must be classified before aggregation. `None` remains unknown or not collected; numeric zero is valid only with `zero_observed`; positive observations retain `positive_observed`. Score preparation may use supported available components, but it must not convert missing or stale inputs to zero. User-facing summaries should return a missing value and limitation rather than fabricate certainty.
 
-## Internships
+## Provenance review
 
-| Acceptability | Sources |
-| --- | --- |
-| Allowed | Company careers pages, ATS postings, university career boards, official internship program pages. |
-| Allowed with caution | Third-party aggregators with source links and posting dates. |
-| Manual review required | Manually entered internship availability, user submissions, program pages with unclear season/year. |
-| Disallowed | LLM-generated internship claims, stale program pages presented as current, snippets without source context. |
+Diagnostic audits check for missing lineage, stale observations, source concentration, excessive low-confidence evidence, demo and real data mixed in one trust group, and missing values prepared as zero. Findings identify the affected evidence, severity, explanation, and remediation; they do not independently scrape sources, rewrite scores, or grant display authority.
 
-## Co-ops
-
-| Acceptability | Sources |
-| --- | --- |
-| Allowed | University co-op boards, official employer co-op postings, ATS postings explicitly identifying co-op roles. |
-| Allowed with caution | Aggregators that preserve original employer or university source context. |
-| Manual review required | Manual co-op classifications, user-submitted co-op claims, ambiguous internship/co-op labeling. |
-| Disallowed | LLM-generated co-op claims, unsupported forum posts, scraped snippets without source context. |
-
-## Early-Career Programs
-
-| Acceptability | Sources |
-| --- | --- |
-| Allowed | Official company new-grad, rotational, apprenticeship, fellowship, or early-career program pages. |
-| Allowed with caution | Third-party early-career program lists when original source and date are visible. |
-| Manual review required | Manually curated program classifications, user-submitted program claims, pages with unclear active status. |
-| Disallowed | LLM-generated program claims, stale program claims presented as active, unverifiable summaries. |
-
-## Regional Metadata
-
-| Acceptability | Sources |
-| --- | --- |
-| Allowed | Government public data, regional economic datasets, public university or workforce datasets, official statistical releases. |
-| Allowed with caution | Reputable aggregators that cite methodology, source dates, and licensing terms. |
-| Manual review required | Manually curated regional groupings, user-provided local corrections, restricted datasets. |
-| Disallowed | LLM-generated regional facts, unverifiable rankings, snippets without source and date, prohibited-license material. |
-
-## Freshness Windows
-
-These windows are conservative defaults for determining when a fact should be
-treated as current. They are intentionally easy to change when later Layer 3
-batches add provenance schema and audit enforcement.
-
-| Data type | Freshness category | Current for |
-| --- | --- | --- |
-| Company universe | `slow_changing` | 180 days |
-| Company presence | `slow_changing` | 180 days |
-| Hiring counts | `fast_changing` | 14 days |
-| Internships/co-ops | `seasonal` | 120 days |
-| Early-career programs | `medium_changing` | 90 days |
-| Region metadata | `slow_changing` | 365 days |
-
-Facts older than the window are stale, not zero. If no collection has happened,
-the value is `not_collected` or `unknown`, not zero.
-
-## Layer 3C Unknown/Zero and Freshness Handling
-
-Count-like values must be classified before aggregation:
-
-- `None` remains `unknown` or `not_collected`.
-- `0` is `zero_observed` only when the value has an observed basis.
-- Positive counts are `positive_observed`.
-- Stale values remain `stale` and must not be reported as current zero.
-
-Score-input preparation may use available observed components, but missing
-components must be omitted or reported as unknown rather than converted to
-zero. Output summaries should prefer `null` plus a warning over a fake zero
-when any required count input is unknown, not collected, or stale.
-
-Fact-link freshness uses the windows above. Score-input freshness must declare
-the underlying source fact category, such as hiring counts or entry-level
-programs, rather than using a generic score-level window.
-
-## Layer 3D Provenance Audit Checks
-
-Layer 3D adds diagnostic provenance audit checks. These checks return
-structured findings and do not scrape, ingest, call external APIs, rewrite
-scores, or block write paths.
-
-The audit checks cover:
-
-- missing provenance for expected real observed or real derived facts
-- stale source observations based on the Layer 3 freshness windows
-- single-source overreliance across too many real facts of the same binding type
-- concentration of low-confidence observations
-- demo/seed provenance mixed with real provenance for the same fact
-- unknown, not-collected, or stale values prepared as numeric zero or
-  `zero_observed`
-
-Findings include a code, severity, affected fact/source identifiers when
-available, explanation, recommended remediation, and whether the finding blocks
-real-data trust. Clean demo seed data is allowed to remain demo-labeled and
-does not fail the real-market provenance audit unless it is mixed into a real
-trust group.
+Clean, clearly labeled demo data is allowed for deterministic product and test flows. It becomes a governance failure only when presented as real coverage or mixed into a real-evidence claim without preserving the distinction.

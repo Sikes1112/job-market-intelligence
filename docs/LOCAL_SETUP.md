@@ -64,7 +64,7 @@ Open <http://127.0.0.1:5173/markets>. Leave `VITE_API_BASE_URL` unset for local 
 1. Open **Explore** to search markets and inspect employer evidence.
 2. Use **Compare** to evaluate selected geographic alternatives.
 3. Filter **Opportunities** by market, role, type, and work arrangement.
-4. In **Recommendations**, compare the authenticated **For You** view with the public **By Goal** strategies.
+4. In **Recommendations**, compare the user-scoped **For You** view with the shared **By Goal** strategies.
 5. Open **Career Identity** and **Decisions** to inspect the seeded profile, alternatives, and next actions.
 
 All bundled market and opportunity records are illustrative. The UI preserves the relevant synthetic-data, confidence, and coverage disclosures.
@@ -120,4 +120,4 @@ The GitHub Actions workflow runs the same backend lint/tests, frontend lint/test
 - **The schema is behind:** rerun `APP_ENV=local DATABASE_URL="sqlite:///./demo.db" .venv/bin/alembic upgrade head`, then rerun the idempotent portfolio seed.
 - **Ports 5173 or 8000 are occupied:** stop the conflicting local process or pass an explicit port to Vite or Uvicorn; if Vite changes ports, use the URL it prints.
 
-Auth0 and PostgreSQL configuration is intentionally outside the local portfolio path. Deployment-oriented material remains in the specialized operations documentation indexed from [`docs/README.md`](README.md).
+Auth0 and PostgreSQL configuration is intentionally outside the local portfolio path. See the [Engineering Guide](ENGINEERING_GUIDE.md#deployment-architecture) for deployed runtime modes and operational constraints.

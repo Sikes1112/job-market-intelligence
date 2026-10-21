@@ -1,5 +1,7 @@
 # Public Demo Environment
 
+> **Superseded runtime design.** This document describes the older read-only `APP_ENV=public_demo` mode, not the deployed `public_guest_demo` portfolio. See the current [Engineering Guide](ENGINEERING_GUIDE.md#deployment-architecture).
+
 Layer 10 public demo mode is for externally viewable demos. It is safer than
 the private/internal demo posture, but it is not production readiness.
 

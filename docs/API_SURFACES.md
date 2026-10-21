@@ -1,5 +1,7 @@
 # API Surfaces
 
+> **Historical cumulative inventory.** This layer-oriented narrative is not the current route authority and predates the public guest policy. Use the FastAPI route modules, [guest route policy](../backend/public_guest/policy.py), and [Engineering Guide](ENGINEERING_GUIDE.md) for the current application.
+
 This file documents the MVP API surface that is currently implemented. It is intentionally narrow: the local demo reads seeded backend data and exposes Auth0-backed frontend sign-in/account workflows for protected `/me` routes plus governed Layer 9 admin review, override, and repair APIs, but it does not expose scraping, broad admin mutation tooling, maps, or production deployment controls. Current status is an internal-production baseline for local/single-process operation, not external-production readiness.
 
 ## Layer 38A Current Opportunities

@@ -1,5 +1,7 @@
 # Layer 39B Operations, Reliability, and Deployment
 
+> **Historical delivery record.** The topology, migration head, and lack of a Render descriptor below predate the current single-service public guest deployment. See [Deployment architecture](ENGINEERING_GUIDE.md#deployment-architecture) and [Operations](ENGINEERING_GUIDE.md#operations).
+
 This document records the Layer 39B operational baseline implemented against
 the repository as it exists after Layer 35-39A. It is intentionally bounded:
 the app remains a FastAPI backend, Vite/React frontend, SQLAlchemy/Alembic

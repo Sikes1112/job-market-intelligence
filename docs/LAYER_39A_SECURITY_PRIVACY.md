@@ -1,5 +1,7 @@
 # Layer 39A Security And Privacy Hardening
 
+> **Historical delivery record.** This captures the OIDC/Auth0 security baseline before public guest sessions were added. See the [Engineering Guide](ENGINEERING_GUIDE.md#authentication-and-isolation) for current runtime distinctions and guest isolation.
+
 ## Repository-Grounded Architecture
 
 The backend is a FastAPI application with SQLAlchemy models and Alembic

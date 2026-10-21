@@ -1,5 +1,7 @@
 # Public Demo Abuse Protection
 
+> **Superseded runtime design.** The controls below apply to the older read-only `public_demo` mode. Current guest sessions, CSRF/Origin checks, route policy, and quotas are documented in the [Engineering Guide](ENGINEERING_GUIDE.md#authentication-and-isolation).
+
 Layer 10 public demo abuse protection is designed for casual public exposure.
 It is intentionally lightweight and provider-neutral. It does not claim
 commercial-grade anti-abuse coverage.

@@ -7,7 +7,7 @@ Job Market Intelligence uses deterministic, evidence-governed analytics to rank 
 | Path | Inputs | Output | Identity behavior |
 |---|---|---|---|
 | **By Goal** | Shared market/employer evidence and one declared objective | Ranked targets, explanations, trade-offs, fallback/watchlist strategy | Public; Career Identity does not alter the result |
-| **For You** | Shared evidence plus the authenticated user's supported, consented Career Identity facts | Deterministic preference-fit markets and employers | User-scoped; labeled personalized only when identity context was applied |
+| **For You** | Shared evidence plus the current user's supported, consented Career Identity facts | Deterministic preference-fit markets and employers | User-scoped; labeled personalized only when identity context was applied |
 
 `POST /recommendations/strategy` implements **By Goal**. `POST /me/discover/personalized` implements **For You**. The Recommendations screen presents both, but their inputs, scores, and algorithms are not combined.
 
@@ -16,7 +16,7 @@ flowchart LR
   E[Shared governed evidence] --> A[Evidence assembly]
   A --> R[Goal-specific ranking]
   R --> S[Strategy and watchlist]
-  I[Authenticated Career Identity + consent] --> P[Supported preference mapping]
+  I[User-scoped Career Identity + consent] --> P[Supported preference mapping]
   E --> P
   P --> F[Personalized discovery]
   S --> D[Exploration and decisions]
@@ -61,11 +61,13 @@ Counts carry both a value and a status. `None/unknown` means the system lacks a 
 
 Other Career Identity facts—including education, experience, skills, projects, credentials, career goals, compensation, timing, and work-arrangement preferences—may be stored but do **not** alter the current personalized-discovery request. Skill and experience counts are response metadata only. This limitation is intentional and prevents the interface from implying personalization the adapter does not perform.
 
-Without a Career Identity or consent, request inputs remain unchanged and the response is not labeled as Career Identity personalization. A fresh local identity stays empty. Focused API tests verify identity sensitivity, consent behavior, determinism, and cross-user isolation.
+The user boundary may come from the backend-issued session in the public guest demo, the verified local development identity, or configured OIDC/Auth0 authentication. Guest access does not require account creation, but its Career Identity is still isolated to that guest session. Without a Career Identity or consent, request inputs remain unchanged and the response is not labeled as Career Identity personalization. Focused API tests verify identity sensitivity, consent behavior, determinism, and cross-user isolation.
 
 ## Decisions and versioning
 
 Career decisions preserve the context snapshot, alternatives, recommendation, selection, action plan, outcome, and an append-only version journal. Mutations create a new version rather than rewriting historical state. Career Identity writes use expected-version checks and return `VERSION_CONFLICT` for stale updates.
+
+The user-owned **My Search** workspace carries a selected priority into next actions and application tracking. Application status changes are explicit; opening an external demonstration link does not silently mark an application as submitted.
 
 ## Evaluation limits
 

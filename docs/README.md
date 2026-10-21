@@ -1,31 +1,25 @@
 # Documentation
 
-The root [README](../README.md) is the project overview. Use the current guides below for setup and technical investigation; the remaining documents preserve specialized operations detail or development history.
+The root [README](../README.md) is the product entrance. The guides below describe the current application; historical files remain available for implementation provenance, not as present-day operating instructions.
 
-## Start here
+## Current guides
 
-- [`LOCAL_SETUP.md`](LOCAL_SETUP.md) — complete local installation, migration, seed, startup, verification, and troubleshooting procedure.
-- [`ENGINEERING_GUIDE.md`](ENGINEERING_GUIDE.md) — implemented architecture, subsystem boundaries, representative request paths, trade-offs, source, and tests.
-- [`DECISION_INTELLIGENCE.md`](DECISION_INTELLIGENCE.md) — goal-based ranking, authenticated Career Identity discovery, evidence semantics, and evaluation limits.
+- [Decision Intelligence](DECISION_INTELLIGENCE.md) — By Goal versus For You, deterministic ranking, consent, evidence, uncertainty, and evaluation limits.
+- [Engineering Guide](ENGINEERING_GUIDE.md) — architecture, source map, authentication and guest isolation, deployment, operations, testing, and trade-offs.
+- [Local Setup](LOCAL_SETUP.md) — installation, SQLite migration and seed, startup, verification, and troubleshooting.
+- [Portfolio Intelligence Evaluation](evaluation/PORTFOLIO_INTELLIGENCE_EVALUATION.md) — reproducible golden cases and the limits of that evidence.
 
-## Supporting evidence and specialized references
+## Specialist references
 
-- [`evaluation/PORTFOLIO_INTELLIGENCE_EVALUATION.md`](evaluation/PORTFOLIO_INTELLIGENCE_EVALUATION.md) — executable golden behaviors and the limits of those checks.
-- [`BROWSER_ACCEPTANCE_REPORT.md`](BROWSER_ACCEPTANCE_REPORT.md) — completed browser-based portfolio acceptance evidence.
-- [`WALKTHROUGH_CAPTURE.md`](WALKTHROUGH_CAPTURE.md) — optional sequence for recording the running local application; no recording is bundled.
-- [`API_SURFACES.md`](API_SURFACES.md) — comprehensive API inventory.
-- [`DATA_SOURCE_POLICY.md`](DATA_SOURCE_POLICY.md) and [`CANONICAL_GEOGRAPHY.md`](CANONICAL_GEOGRAPHY.md) — source-governance and geographic-identity references.
-- [`PUBLIC_DEMO_ENVIRONMENT.md`](PUBLIC_DEMO_ENVIRONMENT.md) — hosted public-demo restrictions; not required for local use.
+- [Data Model](DATA_MODEL.md) — implemented domain and persistence model.
+- [Data Source Policy](DATA_SOURCE_POLICY.md) — source eligibility, provenance, freshness, missingness, and governance.
+- [Canonical Geography](CANONICAL_GEOGRAPHY.md) and the [geography dataset notes](../data/geography/README.md) — identity rules, geometry source, and transformation.
+- [Frontend notes](../frontend/README.md) — package-level development commands and Vite configuration.
 
-## Historical implementation records
+Security, deployment, testing, and operations questions start in the [Engineering Guide](ENGINEERING_GUIDE.md), which links to the relevant implementation and tests.
 
-Files named `LAYER_*`, closeout reports, and material under [`implementation/`](implementation/) document the system's development and individual subsystem deliveries. They are retained for auditability, but they are not the recommended description of the current application.
+## Historical material
 
-The following are specifically historical or superseded:
+Files named `LAYER_*`, closeout reports, implementation prompts, and material under [`implementation/`](implementation/) record completed development. Earlier architecture proposals, the original MVP and slice plans, cumulative API narratives, Auth0-only or controlled-beta topology, the old read-only `public_demo` design, and browser acceptance reports are also point-in-time references.
 
-- [`PRODUCT_OVERVIEW.md`](PRODUCT_OVERVIEW.md) — early product framing, superseded by the root README.
-- [`MVP_SCOPE.md`](MVP_SCOPE.md) — original MVP scope.
-- [`architecture/ENGINEERING_IMPLEMENTATION_BLUEPRINT.md`](architecture/ENGINEERING_IMPLEMENTATION_BLUEPRINT.md) — a pre-implementation distributed-infrastructure blueprint. Its queues, workers, caches, and object storage are not required by the local application.
-- Other documents under [`architecture/`](architecture/) are design-stage orchestration proposals unless a current guide explicitly cites an implemented path.
-
-When historical documentation conflicts with current source, tests, migrations, or the three start-here guides, the current implementation is authoritative.
+They are intentionally retained without being part of the current reading path. When a historical record conflicts with current source, tests, migrations, deployment configuration, or the current guides above, use the current evidence.

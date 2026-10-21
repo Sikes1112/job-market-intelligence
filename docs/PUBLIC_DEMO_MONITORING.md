@@ -1,5 +1,7 @@
 # Public Demo Monitoring
 
+> **Historical operations reference.** This predates the deployed `public_guest_demo` topology. Use the [Engineering Guide](ENGINEERING_GUIDE.md#operations) for current readiness, session, data-lifecycle, and failure-investigation behavior.
+
 Layer 10 public demo monitoring is intentionally provider-neutral. It gives a
 maintainer enough visibility to know whether the public demo is reachable,
 whether the API is ready, whether errors are occurring, and whether the key

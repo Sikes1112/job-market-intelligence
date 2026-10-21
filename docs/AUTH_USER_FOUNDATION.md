@@ -1,5 +1,7 @@
 # Auth And User Foundation
 
+> **Historical/conditional reference.** This records the repository's Auth0 path for configured OIDC environments. The live portfolio uses isolated backend-issued guest sessions and does not require Auth0. See the current [Engineering Guide](ENGINEERING_GUIDE.md#authentication-and-isolation).
+
 ## Decision
 
 Use Auth0 as the managed auth provider for the first production auth path.

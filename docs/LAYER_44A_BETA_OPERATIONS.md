@@ -1,5 +1,7 @@
 # Layer 44A Beta Operations and Release Runbook
 
+> **Superseded beta topology.** This Vercel/Render/Neon/Auth0 runbook is not the live portfolio deployment. The current demonstration is one Render Free service with same-origin FastAPI/React, guest sessions, and ephemeral SQLite; see the [Engineering Guide](ENGINEERING_GUIDE.md#deployment-architecture).
+
 ## Production Architecture
 
 The repository now defines one intended controlled-beta topology:

@@ -1,5 +1,7 @@
 # Layer 41B Explore Context and Fit authority
 
+> **Historical delivery record.** This preserves the authority decision made during Layer 41B. Current product and request paths are summarized in the [Engineering Guide](ENGINEERING_GUIDE.md#representative-implementation-paths).
+
 ## Jurisdictions
 
 The redesigned product has one authority per question:

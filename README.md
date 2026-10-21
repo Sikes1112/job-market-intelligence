@@ -13,8 +13,8 @@ Job Market Intelligence is a geographic career-decision application for explorin
 - Explores labor markets and employer presence from a role, industry, or geographic starting point.
 - Filters governed demonstration opportunities by market, role family, type, work arrangement, freshness, and strategic relevance.
 - Compares selected markets with evidence, confidence, coverage, and trade-offs kept visible.
-- Separates authenticated, consent-aware Career Identity discovery from public goal-based market ranking.
-- Carries alternatives and recommendations into versioned career decisions and next actions.
+- Separates consent-aware, user-scoped Career Identity discovery from shared goal-based market ranking.
+- Carries alternatives and recommendations into versioned career decisions, next actions, and application tracking.
 
 | Explore markets | Make a decision |
 |---|---|
@@ -27,10 +27,10 @@ More views: [market comparison](docs/assets/portfolio/market-comparison.jpg), [c
 - **Evidence-aware data:** conclusions retain provenance, coverage, confidence, freshness, and the distinction between unknown values and observed zeroes.
 - **Governed opportunities:** source policy, canonical identity, status, coverage, and eligibility determine whether an observation can be displayed or ranked.
 - **Explainable recommendations:** declared goal profiles produce deterministic rankings, reasons, trade-offs, watchlists, and abstentions without claiming trained machine learning.
-- **User-owned personalization and decisions:** Career Identity is authenticated, consent-aware, versioned, and separate from public goal rankings; decision mutations append history instead of overwriting it.
+- **User-owned personalization and decisions:** Career Identity is consent-aware, versioned, and isolated to the current guest session or signed-in user; it remains separate from goal rankings.
 - **Reproducible local application:** Alembic migrations and an idempotent portfolio seed create the SQLite demonstration without paid services or external data calls.
 
-See the [engineering guide](docs/ENGINEERING_GUIDE.md) for architecture, representative request paths, source entry points, and trade-offs.
+See [Decision Intelligence](docs/DECISION_INTELLIGENCE.md) for the recommendation boundary and the [engineering guide](docs/ENGINEERING_GUIDE.md) for architecture, security, deployment, and verification.
 
 ## Tech stack
 
@@ -40,48 +40,7 @@ See the [engineering guide](docs/ENGINEERING_GUIDE.md) for architecture, represe
 
 ## Run locally
 
-The verified baseline is Python 3.11, Node.js 22, and npm 10 or newer. The repository includes pinned runtime files and locked Python and npm dependencies.
-
-From the repository root:
-
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-dev.txt -c requirements.lock
-
-cd frontend
-npm ci
-cd ..
-```
-
-Create the database and demonstration data:
-
-```bash
-APP_ENV=local DATABASE_URL="sqlite:///./demo.db" \
-  python -m alembic upgrade head
-
-APP_ENV=local python -m scripts.seed_demo \
-  --database-url "sqlite:///./demo.db" \
-  --portfolio --demo-as-of 2026-10-17
-```
-
-Start the API:
-
-```bash
-APP_ENV=local DATABASE_URL="sqlite:///./demo.db" \
-  .venv/bin/uvicorn backend.api.app:app --reload
-```
-
-In a second terminal, start the frontend with its local demonstration identity:
-
-```bash
-cd frontend
-VITE_LOCAL_AUTH=true npm run dev
-```
-
-Open <http://127.0.0.1:5173/markets>. No Auth0 tenant, external AI API, commercial database, or paid service is required. `VITE_LOCAL_AUTH` is effective only during development and connects the seeded Career Identity and decision scenario; configured beta and production deployments reject it.
-
-For setup explanations, verification commands, and troubleshooting, use the **[complete local setup guide](docs/LOCAL_SETUP.md)**.
+The verified baseline is Python 3.11, Node.js 22, npm 10 or newer, and SQLite. No Auth0 tenant, external AI API, commercial database, or paid service is required. Follow the **[local setup guide](docs/LOCAL_SETUP.md)** for installation, migrations, the portfolio seed, startup, verification, and troubleshooting.
 
 ## Demonstration data and limitations
 
@@ -92,8 +51,8 @@ The application exercises real ingestion, persistence, governance, matching, ran
 ## Documentation
 
 - [Local setup](docs/LOCAL_SETUP.md) — installation, database initialization, startup, checks, and troubleshooting.
-- [Engineering guide](docs/ENGINEERING_GUIDE.md) — current architecture, subsystem boundaries, implementation paths, and tests.
-- [Decision Intelligence](docs/DECISION_INTELLIGENCE.md) — public goal ranking, Career Identity discovery, evidence semantics, and evaluation limits.
+- [Engineering guide](docs/ENGINEERING_GUIDE.md) — current architecture, security, deployment, operations, and testing.
+- [Decision Intelligence](docs/DECISION_INTELLIGENCE.md) — By Goal ranking, For You discovery, evidence semantics, and evaluation limits.
 - [Documentation index](docs/README.md) — specialized references and clearly separated historical records.
 
 ## License and attribution
