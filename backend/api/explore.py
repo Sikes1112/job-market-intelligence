@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -48,12 +48,13 @@ def get_explore_context(
 @router.post("/markets", response_model=None)
 def evaluate_explore_markets(
     request: ExploreMarketsRequest,
+    http_request: Request,
     as_of: date | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> Any:
     try:
-        result = ExploreFitService(session).evaluate(
+        result = _fit_service(http_request, session).evaluate(
             current.user.user_id,
             request.session_overrides,
             as_of=as_of,
@@ -67,12 +68,13 @@ def evaluate_explore_markets(
 def get_explore_market_detail(
     market_ref: str,
     request: ExploreMarketsRequest,
+    http_request: Request,
     as_of: date | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> Any:
     try:
-        response, market = ExploreFitService(session).market_detail(
+        response, market = _fit_service(http_request, session).market_detail(
             current.user.user_id,
             market_ref,
             request.session_overrides,
@@ -108,12 +110,13 @@ def get_explore_market_detail(
 @router.post("/compare", response_model=None)
 def compare_explore_markets(
     request: ExploreComparisonRequest,
+    http_request: Request,
     as_of: date | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> Any:
     try:
-        result = ExploreComparisonService(session).compare(
+        result = _comparison_service(http_request, session).compare(
             current.user.user_id,
             request,
             as_of=as_of,
@@ -130,12 +133,13 @@ def compare_explore_markets(
 @router.post("/comparisons", status_code=status.HTTP_201_CREATED, response_model=None)
 def save_explore_comparison(
     request: SaveExploreComparisonRequest,
+    http_request: Request,
     as_of: date | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> Any:
     try:
-        result = ExploreComparisonService(session).save(
+        result = _comparison_service(http_request, session).save(
             current.user.user_id,
             request,
             as_of=as_of,
@@ -183,12 +187,13 @@ def get_explore_comparison(
 @router.post("/prioritize", response_model=None)
 def prioritize_explore_comparison(
     request: PrioritizeExploreComparisonRequest,
+    http_request: Request,
     as_of: date | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> Any:
     try:
-        result = ExploreComparisonService(session).prioritize(
+        result = _comparison_service(http_request, session).prioritize(
             current.user.user_id,
             request,
             as_of=as_of,
@@ -211,4 +216,22 @@ def _validation(message: str, *, status_code: int = 400) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content=error_envelope(code=VALIDATION_ERROR, message=message),
+    )
+
+
+def _fit_service(request: Request, session: Session) -> ExploreFitService:
+    return ExploreFitService(
+        session,
+        shared_intelligence=getattr(
+            request.app.state,
+            "explore_shared_intelligence",
+            None,
+        ),
+    )
+
+
+def _comparison_service(request: Request, session: Session) -> ExploreComparisonService:
+    return ExploreComparisonService(
+        session,
+        fit_service=_fit_service(request, session),
     )

@@ -43,6 +43,7 @@ from backend.api.user import router as user_router
 from backend.api.user_intelligence import router as user_intelligence_router
 from backend.api.user_reports import router as user_reports_router
 from backend.config.settings import Settings, get_settings
+from backend.explore.shared_intelligence import SharedIntelligenceCoordinator
 from backend.operations.error_monitoring import ErrorMonitor
 from backend.operations.metrics import InMemoryMetricsRegistry
 from backend.operations.status import liveness_payload, readiness_payload
@@ -71,6 +72,7 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
             if settings.is_public_guest_demo and app.state.owns_engine:
                 initialize_public_guest_database(settings, app.state.engine)
                 app.state.public_guest_database_initialized = True
+                app.state.explore_shared_intelligence.invalidate()
             yield
         finally:
             if app.state.owns_engine:
@@ -116,6 +118,14 @@ def create_app(*, engine: Engine | None = None, settings: Settings | None = None
     app.state.billing_provider = None
     app.state.metrics_registry = InMemoryMetricsRegistry()
     app.state.error_monitor = ErrorMonitor()
+    app.state.explore_shared_intelligence = (
+        SharedIntelligenceCoordinator(
+            release_id=settings.release_id,
+            engine_identity=id(engine),
+        )
+        if settings.is_public_guest_demo
+        else None
+    )
     app.state.public_guest_database_initialized = not (
         settings.is_public_guest_demo and owns_engine
     )

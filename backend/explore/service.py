@@ -30,6 +30,7 @@ from backend.explore.schemas import (
     OpportunityCoverage,
     RankingUniverse,
 )
+from backend.explore.shared_intelligence import SharedIntelligenceCoordinator
 from backend.geography.models import Region, RegionStateMembership
 from backend.geography.repository import RegionRepository
 from backend.geography.resolver import GeographicResolver
@@ -79,6 +80,7 @@ class ExploreFitService:
         session: Session,
         *,
         market_intelligence: _MarketIntelligence | None = None,
+        shared_intelligence: SharedIntelligenceCoordinator | None = None,
         clock: callable | None = None,
     ) -> None:
         self._session = session
@@ -88,6 +90,7 @@ class ExploreFitService:
             self._region_repo,
         )
         self._market_intelligence = market_intelligence or MarketIntelligenceService(session)
+        self._shared_intelligence = shared_intelligence
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def context(
@@ -184,10 +187,17 @@ class ExploreFitService:
         *,
         as_of: date | datetime | None,
     ) -> ExploreMarketsResponse:
-        ranking = self._market_intelligence.ranking(
-            goal=context.supported_goal,
-            as_of=as_of,
-        )
+        if self._shared_intelligence is None:
+            ranking = self._market_intelligence.ranking(
+                goal=context.supported_goal,
+                as_of=as_of,
+            )
+        else:
+            ranking = self._shared_intelligence.ranking(
+                self._market_intelligence,
+                goal=context.supported_goal,
+                as_of=as_of,
+            )
         entries = load_market_registry()
         region_ids_by_market = self._canonical_registry_regions(entries)
         region_ids = tuple(
@@ -293,7 +303,13 @@ class ExploreFitService:
         *,
         as_of: date | datetime | None,
     ) -> ExploreMarketsResponse:
-        report = self._market_intelligence.platform_summary(as_of=as_of)
+        if self._shared_intelligence is None:
+            report = self._market_intelligence.platform_summary(as_of=as_of)
+        else:
+            report = self._shared_intelligence.platform_summary(
+                self._market_intelligence,
+                as_of=as_of,
+            )
         entries = load_market_registry()
         region_ids_by_market = self._canonical_registry_regions(entries)
         region_ids = tuple(
