@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { OPPORTUNITY_ROLE_OPTIONS, opportunityRole } from "./opportunityContext";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   ApiError,
   compareExploreMarkets,
@@ -102,7 +103,11 @@ function marketFitLabel(market: ExploreComparisonMarket): string {
   return pretty(market.fit.state);
 }
 
-function MarketComparisonCard({ market, onNavigate }: { market: ExploreComparisonMarket; onNavigate: Props["onNavigate"] }) {
+function MarketComparisonCard({ market, onNavigate, preferredRole }: { market: ExploreComparisonMarket; onNavigate: Props["onNavigate"]; preferredRole: string | null }) {
+  const mappedRole = opportunityRole(preferredRole);
+  const [choosingRole, setChoosingRole] = useState(false);
+  const [category, setCategory] = useState("");
+  const openOpportunities = (role: string) => onNavigate(currentOpportunitiesUrl({ market: market.fit.region.region_id, roleFamily: role, preferredRole: preferredRole ?? undefined }));
   const jobs = market.fit.opportunity_coverage;
   return (
     <article className="comparison-market-card">
@@ -129,11 +134,20 @@ function MarketComparisonCard({ market, onNavigate }: { market: ExploreCompariso
       <p className="comparison-caveat">{readableSummary(market.confidence_caveat)}</p>
       <button
         className="secondary-button comparison-opportunity-action"
-        onClick={() => onNavigate(currentOpportunitiesUrl({ market: market.fit.region.region_id }))}
+        onClick={() => mappedRole ? openOpportunities(mappedRole) : setChoosingRole(true)}
         type="button"
       >
         {`View opportunities in ${market.fit.region.primary_city ?? market.fit.region.display_name}`}
       </button>
+      {choosingRole ? <section aria-label="Choose opportunity category">
+        <p>Preferred career role: {preferredRole ?? "Not specified"}. No verified opportunity mapping is available. Choose a search category; your career preference will not change.</p>
+        <label>Opportunity search category<select value={category} onChange={(event) => setCategory(event.target.value)}>
+          <option value="">Choose a supported category</option>
+          {OPPORTUNITY_ROLE_OPTIONS.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+        </select></label>
+        <button disabled={!category} type="button" onClick={() => openOpportunities(category)}>Open selected opportunities</button>
+        <button type="button" onClick={() => setChoosingRole(false)}>Cancel category selection</button>
+      </section> : null}
       <details>
         <summary>Evidence and coverage</summary>
         <p>{market.fit.market_coverage.summary}</p>
@@ -178,12 +192,30 @@ export default function ExploreComparisonPage({
   const [confirming, setConfirming] = useState(false);
   const [priorityTarget, setPriorityTarget] = useState("");
   const [prioritizing, setPrioritizing] = useState(false);
+  const [priorityError, setPriorityError] = useState<string | null>(null);
   const [prioritization, setPrioritization] = useState<ExplorePrioritization | null>(null);
   const [canonicalLiveState, setCanonicalLiveState] = useState<ExploreUrlState | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const viewed = useRef(new Set<string>());
   const prioritizeButtonRef = useRef<HTMLButtonElement>(null);
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
+  const closeConfirmation = () => {
+    setConfirming(false);
+    window.setTimeout(() => prioritizeButtonRef.current?.focus(), 0);
+  };
+  useEffect(() => {
+    if (!confirming) return;
+    // Disabling the submitted button can move native keyboard focus to body.
+    const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeConfirmation();
+    };
+    document.addEventListener("keydown", dismissOnEscape, true);
+    return () => document.removeEventListener("keydown", dismissOnEscape, true);
+  }, [confirming]);
+
   const authOptions = useMemo<ProtectedRequestOptions>(
     () => ({ getAccessToken: auth.getAccessTokenSilently }),
     [auth.getAccessTokenSilently],
@@ -290,6 +322,9 @@ export default function ExploreComparisonPage({
   async function prioritize() {
     if (!result || !priorityTarget || prioritizing) return;
     setPrioritizing(true);
+    setPriorityError(null);
+    setPrioritization(null);
+    setAnnouncement("");
     try {
       const envelope = await prioritizeExploreComparison(
         savedComparisonId
@@ -304,11 +339,12 @@ export default function ExploreComparisonPage({
       );
       const next = envelope.data?.prioritization;
       if (!next) throw new Error("Prioritize returned no Decision.");
+      const successAnnouncement = `${next.decision.title} is now active in My Search.`;
       setPrioritization(next);
       setConfirming(false);
-      setAnnouncement(`${next.decision.title} is now active in My Search.`);
+      setAnnouncement(successAnnouncement);
     } catch (reason) {
-      setAnnouncement(`Could not prioritize market: ${errorMessage(reason)}`);
+      setPriorityError(`Could not prioritize market: ${errorMessage(reason)}`);
     } finally {
       setPrioritizing(false);
     }
@@ -323,10 +359,14 @@ export default function ExploreComparisonPage({
   const recommendationMatches = priorityTarget && result.winner_region_ids.length
     ? result.winner_region_ids.includes(priorityTarget)
     : null;
-  const closeConfirmation = () => {
-    setConfirming(false);
-    window.setTimeout(() => prioritizeButtonRef.current?.focus(), 0);
-  };
+  function handleConfirmationKey(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "Tab") {
+      const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("*")).filter((element) => element.tabIndex >= 0 && !element.matches(":disabled"));
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+  }
   return (
     <div className="explore-comparison-page">
       <div aria-atomic="true" aria-live="polite" className="sr-only">{announcement}</div>
@@ -352,6 +392,8 @@ export default function ExploreComparisonPage({
         </div>
       </section>
 
+      {priorityError && !confirming ? <p className="error-copy" role="alert">{priorityError} Choose Prioritize to review your market and try again.</p> : null}
+
       {result.differentiating_factors.length ? <section aria-labelledby="difference-title" className="comparison-factors">
         <div><p className="eyebrow">Key differences</p><h2 id="difference-title">Biggest differentiators</h2></div>
         <ul>{result.differentiating_factors.slice(0, 4).map((factor) => <li key={factor.code}><strong>{factor.label}</strong><span>{readableSummary(factor.summary)}</span></li>)}</ul>
@@ -366,7 +408,7 @@ export default function ExploreComparisonPage({
 
       <section aria-labelledby="market-cards-title">
         <h2 id="market-cards-title">Market tradeoffs</h2>
-        <div className="comparison-market-cards">{result.compared_markets.map((market) => <MarketComparisonCard key={market.fit.region.region_id} market={market} onNavigate={onNavigate} />)}</div>
+        <div className="comparison-market-cards">{result.compared_markets.map((market) => <MarketComparisonCard key={market.fit.region.region_id} market={market} onNavigate={onNavigate} preferredRole={result.effective_context.goal ?? result.effective_context.role_families[0] ?? null} />)}</div>
       </section>
 
       <section className="comparison-table-section" aria-labelledby="compact-title">
@@ -381,11 +423,12 @@ export default function ExploreComparisonPage({
       </section>
 
       {confirming ? (
-        <section aria-labelledby="prioritize-title" aria-modal="true" className="prioritize-confirmation" role="dialog">
+        <section aria-labelledby="prioritize-title" aria-modal="true" className="prioritize-confirmation" role="dialog" onKeyDown={handleConfirmationKey}>
           <h2 id="prioritize-title">Choose a market to prioritize</h2>
           <p>Add one market to My Search. The comparison result will remain unchanged.</p>
           <label>Market<select autoFocus onChange={(event) => setPriorityTarget(event.target.value)} value={priorityTarget}><option value="">Select a market</option>{result.compared_markets.filter((market) => market.fit.state !== "hard_constraint_excluded").map((market) => <option key={market.fit.region.region_id} value={market.fit.region.region_id}>{market.fit.region.display_name}</option>)}</select></label>
           {chosen ? <p><strong>Prioritize {chosen.fit.region.display_name}?</strong> This will add it to My Search as an active decision.{result.winner_region_ids.length === 0 ? ` You’re choosing ${chosen.fit.region.display_name} even though the comparison did not recommend a single market.` : recommendationMatches === false ? " Your choice differs from the system recommendation and both will be preserved." : ""}</p> : <p>Select the market you want to pursue.</p>}
+          {priorityError ? <p className="error-copy" role="alert">{priorityError} Review your market and try again.</p> : null}
           <div><button disabled={!priorityTarget || prioritizing} onClick={() => void prioritize()} type="button">{prioritizing ? "Prioritizing…" : chosen ? `Prioritize ${chosen.fit.region.display_name}` : "Prioritize"}</button><button className="secondary-button" onClick={closeConfirmation} type="button">Cancel</button></div>
         </section>
       ) : null}

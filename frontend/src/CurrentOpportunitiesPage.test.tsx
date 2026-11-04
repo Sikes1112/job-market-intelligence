@@ -210,6 +210,25 @@ describe("CurrentOpportunitiesPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
     expect(login).toHaveBeenCalled();
   });
+  test("commits filters with replace and carries source criteria into detail links", async () => {
+    const navigate = vi.fn();
+    render(<CurrentOpportunitiesPage auth={auth} onNavigate={navigate} initialState={{market:"greater_boston",roleFamily:"software_engineering",freshness:"fresh",relevance:"direct_fit",preferredRole:"cybersecurity"}} />);
+    const link = (await screen.findAllByRole("link",{name:"View detail"}))[0];
+    expect(link.getAttribute("href")).toContain("freshness=fresh");
+    expect(link.getAttribute("href")).toContain("preferred_role=cybersecurity");
+    fireEvent.change(screen.getByLabelText("Market"),{target:{value:"austin"}});
+    expect(navigate).toHaveBeenLastCalledWith(expect.stringContaining("market=austin"),{replace:true});
+    fireEvent.click(screen.getByRole("button",{name:"Reset filters"}));
+    expect(navigate).toHaveBeenLastCalledWith(expect.not.stringContaining("freshness="),{replace:true});
+  });
+  test("detail return keeps explicit inventory filters rather than job-derived defaults", async () => {
+    render(<CurrentOpportunitiesPage auth={auth} opportunityId="opp_direct" initialState={{market:"austin",roleFamily:"data_ai",freshness:"fresh",relevance:"adjacent_fit"}} onNavigate={vi.fn()} />);
+    const link = await screen.findByRole("link",{name:"Return to filtered results"});
+    expect(link.getAttribute("href")).toContain("market=austin");
+    expect(link.getAttribute("href")).toContain("role=data_ai");
+    expect(link.getAttribute("href")).toContain("relevance=adjacent_fit");
+  });
+
 });
 
 function envelope<T>(data: T): ApiEnvelope<T> {

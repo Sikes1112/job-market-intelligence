@@ -1,3 +1,4 @@
+import { OPPORTUNITY_ROLE_OPTIONS as ROLE_OPTIONS } from "./opportunityContext";
 import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import {
   ApiError,
@@ -21,6 +22,8 @@ import type {
 import {
   careerIdentityUrl,
   currentOpportunityDetailUrl,
+  currentOpportunitiesUrl,
+  normalizeOpportunityState,
   decisionsUrl,
   recommendationsUrl,
   type CurrentOpportunityUrlState,
@@ -47,7 +50,7 @@ type CurrentOpportunitiesPageProps = {
   auth: FrontendAuthContextValue;
   opportunityId?: string;
   operations?: boolean;
-  onNavigate?: (url: string) => void;
+  onNavigate?: (url: string, options?: { replace?: boolean }) => void;
   initialState?: CurrentOpportunityUrlState;
 };
 
@@ -74,13 +77,6 @@ const MARKET_OPTIONS = [
   ["atlanta", "Atlanta"],
   ["chicago", "Chicago"],
 ] as const;
-const ROLE_OPTIONS = [
-  ["software_engineering", "Software engineering"],
-  ["applied_ai", "Applied AI"],
-  ["data_ai", "Data and AI"],
-  ["product_management", "Technical product management"],
-  ["solutions_engineering", "Solutions engineering"],
-] as const;
 const OPPORTUNITY_TYPES = [["job", "Jobs"], ["internship", "Internships"]] as const;
 
 function emptyLoad<T>(): LoadState<T> {
@@ -105,6 +101,17 @@ export default function CurrentOpportunitiesPage({
   const protectedOptions = useMemo<ProtectedRequestOptions>(() => ({
     getAccessToken: auth.getAccessTokenSilently,
   }), [auth.getAccessTokenSilently]);
+
+  const filterContext = { ...initialState, ...filters };
+  function changeFilters(next: OpportunityFilters) {
+    setFilters(next);
+    onNavigate?.(opportunityId ? currentOpportunityDetailUrl(opportunityId, { ...initialState, ...next }) : currentOpportunitiesUrl({ ...initialState, ...next }), { replace: true });
+  }
+  useEffect(() => {
+    if (operations || opportunityId || !onNavigate || window.location.pathname !== "/markets/current-opportunities") return;
+    const canonical = currentOpportunitiesUrl({ ...initialState, ...filtersFromUrl(initialState) });
+    if (`${window.location.pathname}${window.location.search}` !== canonical) onNavigate(canonical, { replace: true });
+  }, [initialState, operations, opportunityId, onNavigate]);
 
   const navigate = useCallback((event: MouseEvent<HTMLAnchorElement>, url: string) => {
     if (!onNavigate || event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
@@ -303,7 +310,8 @@ export default function CurrentOpportunitiesPage({
         </div>
       </section>
 
-      <OpportunityFiltersPanel filters={filters} onChange={setFilters} />
+      {initialState?.preferredRole ? <p>Preferred career role: <strong>{initialState.preferredRole}</strong>. Opportunity category is a separate search choice; change it below.</p> : null}
+      <OpportunityFiltersPanel filters={filters} onChange={changeFilters} />
       <CoveragePanel coverage={coverage} loading={coverageState.loading} error={coverageState.error} />
 
       {hasDegradedData ? <DegradedNotice matches={filteredMatches} /> : null}
@@ -322,10 +330,13 @@ export default function CurrentOpportunitiesPage({
 
       <section className="current-opportunity-list" aria-label="Strategic current opportunity matches">
         {filteredMatches.map((match) => (
-          <OpportunityMatchCard key={match.opportunity.opportunity_id} match={match} navigate={navigate} />
+          <OpportunityMatchCard key={match.opportunity.opportunity_id} match={match} navigate={navigate} context={filterContext} />
         ))}
       </section>
 
+      {opportunityId ? (
+        <a href={currentOpportunitiesUrl(filterContext)} onClick={(event) => navigate(event, currentOpportunitiesUrl(filterContext))}>Return to filtered results</a>
+      ) : null}
       {opportunityId ? (
         <OpportunityDetailPanel
           detail={detailState}
@@ -337,8 +348,11 @@ export default function CurrentOpportunitiesPage({
 }
 
 function filtersFromUrl(state?: CurrentOpportunityUrlState): OpportunityFilters {
+  state = normalizeOpportunityState(state);
   return {
     ...DEFAULT_FILTERS,
+    freshness: state?.freshness ?? "",
+    relevance: state?.relevance ?? "",
     market: state?.market ?? DEFAULT_FILTERS.market,
     roleFamily: state?.roleFamily ?? DEFAULT_FILTERS.roleFamily,
     opportunityType: state?.opportunityType ?? DEFAULT_FILTERS.opportunityType,
@@ -677,12 +691,14 @@ function OpportunityEmptyState({
 function OpportunityMatchCard({
   match,
   navigate,
+  context,
 }: {
   match: CurrentOpportunityMatchPayload;
+  context: CurrentOpportunityUrlState;
   navigate: (event: MouseEvent<HTMLAnchorElement>, url: string) => void;
 }) {
   const opportunity = match.opportunity;
-  const detailUrl = currentOpportunityDetailUrl(opportunity.opportunity_id);
+  const detailUrl = currentOpportunityDetailUrl(opportunity.opportunity_id, context);
   return (
     <article className={`card opportunity-match-card freshness-${opportunity.freshness_state}`}>
       <div className="card-header">

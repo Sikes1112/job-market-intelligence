@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   addCareerDecisionOption,
   ApiError,
@@ -372,6 +372,8 @@ export default function DecisionWorkspacePage({
     () => ({ getAccessToken: auth.getAccessTokenSilently }),
     [auth.getAccessTokenSilently],
   );
+  const selectionIntent = useRef<string | null>(null);
+  const selectionGeneration = useRef(0);
   const [identity, setIdentity] = useState<CareerIdentity | null>(null);
   const [decisions, setDecisions] = useState<CareerDecision[]>([]);
   const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null);
@@ -400,7 +402,7 @@ export default function DecisionWorkspacePage({
   const [supportDraft, setSupportDraft] = useState<SupportDraft>(emptySupportDraft);
   const [viewedRecommendationIds, setViewedRecommendationIds] = useState<Set<string>>(() => new Set());
 
-  const selected = decision ?? decisions.find((item) => item.decision_id === selectedDecisionId) ?? decisions[0] ?? null;
+  const selected = decision ?? decisions.find((item) => item.decision_id === selectedDecisionId) ?? (selectedDecisionId ? null : decisions[0]) ?? null;
   const recommendedOption = selected?.recommendation
     ? selected.options.find((option) => option.option_id === selected.recommendation?.recommended_option_id) ?? null
     : null;
@@ -409,6 +411,7 @@ export default function DecisionWorkspacePage({
     : null;
 
   const loadDeepDecisionState = useCallback(async (decisionId: string) => {
+    const generation = selectionGeneration.current;
     setDeepLoading(true);
     setDeepError(null);
     try {
@@ -416,9 +419,11 @@ export default function DecisionWorkspacePage({
         getLatestDeepDecisionAnalysis(decisionId, protectedOptions),
         listStrategicCareerReviews(protectedOptions, { decisionId, limit: 10 }),
       ]);
+      if (generation !== selectionGeneration.current) return;
       setDeepAnalysis(analysisEnvelope.data?.analysis ?? null);
       setStrategicReviews(reviewsEnvelope.data?.strategic_reviews ?? []);
     } catch (loadError) {
+      if (generation !== selectionGeneration.current) return;
       if (loadError instanceof ApiError && loadError.statusCode === 404) {
         setDeepAnalysis(null);
         setStrategicReviews([]);
@@ -426,32 +431,46 @@ export default function DecisionWorkspacePage({
         setDeepError(errorMessage(loadError, "Deep advisor analysis could not load."));
       }
     } finally {
-      setDeepLoading(false);
+      if (generation === selectionGeneration.current) setDeepLoading(false);
     }
   }, [protectedOptions]);
 
   const refreshDecision = useCallback(async (decisionId: string) => {
-    const [decisionEnvelope, journalEnvelope] = await Promise.all([
-      getCareerDecision(decisionId, protectedOptions),
-      getCareerDecisionJournal(decisionId, protectedOptions),
-    ]);
-    const nextDecision = decisionEnvelope.data?.decision ?? null;
-    setDecision(nextDecision);
-    if (nextDecision) {
-      setDecisions((items) => {
-        const index = items.findIndex((item) => item.decision_id === nextDecision.decision_id);
-        if (index < 0) return [nextDecision, ...items];
-        return items.map((item) => item.decision_id === nextDecision.decision_id ? nextDecision : item);
-      });
+    const generation = ++selectionGeneration.current;
+    selectionIntent.current = decisionId;
+    setSelectedDecisionId(decisionId);
+    setDecision(null);
+    setJournal([]);
+    setDeepAnalysis(null);
+    setStrategicReviews([]);
+    try {
+      const [decisionEnvelope, journalEnvelope] = await Promise.all([
+        getCareerDecision(decisionId, protectedOptions),
+        getCareerDecisionJournal(decisionId, protectedOptions),
+      ]);
+      if (generation !== selectionGeneration.current) return null;
+      const nextDecision = decisionEnvelope.data?.decision ?? null;
+      setDecision(nextDecision);
+      if (nextDecision) {
+        setDecisions((items) => {
+          const index = items.findIndex((item) => item.decision_id === nextDecision.decision_id);
+          if (index < 0) return [nextDecision, ...items];
+          return items.map((item) => item.decision_id === nextDecision.decision_id ? nextDecision : item);
+        });
+      }
+      setSelectedDecisionId(nextDecision?.decision_id ?? decisionId);
+      setJournal(journalEnvelope.data?.journal ?? []);
+      await loadDeepDecisionState(nextDecision?.decision_id ?? decisionId);
+      return nextDecision;
+    } catch (loadError) {
+      if (generation === selectionGeneration.current) setError(errorMessage(loadError, "Decision could not load."));
+      return null;
     }
-    setSelectedDecisionId(nextDecision?.decision_id ?? decisionId);
-    setJournal(journalEnvelope.data?.journal ?? []);
-    await loadDeepDecisionState(nextDecision?.decision_id ?? decisionId);
-    return nextDecision;
   }, [loadDeepDecisionState, protectedOptions]);
 
   const loadWorkspace = useCallback(async () => {
     if (!auth.isAuthenticated) return;
+    const generation = selectionGeneration.current;
     setLoading(true);
     setError(null);
     try {
@@ -460,12 +479,13 @@ export default function DecisionWorkspacePage({
         listCareerDecisions(protectedOptions),
         getWeeklyCareerReview(protectedOptions),
       ]);
+      if (generation !== selectionGeneration.current) return;
       const nextDecisions = decisionsEnvelope.data?.decisions ?? [];
       setIdentity(identityEnvelope.data ?? null);
       setDecisions(nextDecisions);
       setWeeklyReview(reviewEnvelope.data?.review ?? null);
-      const nextSelected = selectedDecisionId
-        ? nextDecisions.find((item) => item.decision_id === selectedDecisionId)
+      const nextSelected = selectionIntent.current
+        ? nextDecisions.find((item) => item.decision_id === selectionIntent.current)
         : nextDecisions[0];
       if (nextSelected) {
         await refreshDecision(nextSelected.decision_id);
@@ -477,11 +497,11 @@ export default function DecisionWorkspacePage({
         setStrategicReviews([]);
       }
     } catch (loadError) {
-      setError(errorMessage(loadError, "Decision Workspace could not load."));
+      if (generation === selectionGeneration.current) setError(errorMessage(loadError, "Decision Workspace could not load."));
     } finally {
       setLoading(false);
     }
-  }, [auth.isAuthenticated, protectedOptions, refreshDecision, selectedDecisionId]);
+  }, [auth.isAuthenticated, protectedOptions, refreshDecision]);
 
   const loadBetaAccess = useCallback(async () => {
     if (!auth.isAuthenticated) return;
@@ -596,6 +616,7 @@ export default function DecisionWorkspacePage({
     const constraints: CareerDecisionConstraintInput[] = commaList(decisionDraft.hardConstraints).map((constraint) => ({
       key: constraint.toLowerCase().replaceAll(" ", "_"),
       field: "scenario",
+      evaluation_mode: "unverified",
       operator: "contains",
       value: constraint,
       hard: true,
@@ -627,8 +648,8 @@ export default function DecisionWorkspacePage({
       const created = envelope.data?.decision;
       if (!created) return;
       setDecisionDraft(emptyDecisionDraft());
-      setSelectedDecisionId(created.decision_id);
-      await loadWorkspace();
+      selectionIntent.current = created.decision_id;
+      setDecisions((items) => [created, ...items]);
       await refreshDecision(created.decision_id);
     }, "Decision created.");
   }
@@ -666,7 +687,7 @@ export default function DecisionWorkspacePage({
       }, protectedOptions);
       const nextDecision = envelope.data?.decision;
       if (nextDecision) {
-        setDecision(nextDecision);
+        if (selectionIntent.current === nextDecision.decision_id) setDecision(nextDecision);
         setDecisions((items) => items.map((item) => item.decision_id === nextDecision.decision_id ? nextDecision : item));
       }
       setOptionDraft(emptyOptionDraft());
@@ -678,7 +699,7 @@ export default function DecisionWorkspacePage({
     await mutate(async () => {
       await compareCareerDecision(selected.decision_id, protectedOptions);
       await generateDeepDecisionAnalysis(selected.decision_id, {}, protectedOptions);
-      await refreshDecision(selected.decision_id);
+      if (selectionIntent.current === selected.decision_id) await refreshDecision(selected.decision_id);
     }, "Comparison refreshed.");
   }
 
@@ -704,7 +725,7 @@ export default function DecisionWorkspacePage({
       }, protectedOptions);
       await generateDeepDecisionAnalysis(selected.decision_id, {}, protectedOptions);
       setSelectionNote("");
-      await refreshDecision(selected.decision_id);
+      if (selectionIntent.current === selected.decision_id) await refreshDecision(selected.decision_id);
     }, "Choice saved to the journal.");
   }
 
@@ -714,7 +735,7 @@ export default function DecisionWorkspacePage({
       await reopenCareerDecision(selected.decision_id, protectedOptions);
       setDeepAnalysis(null);
       setStrategicReviews([]);
-      await refreshDecision(selected.decision_id);
+      if (selectionIntent.current === selected.decision_id) await refreshDecision(selected.decision_id);
       const identityEnvelope = await getCareerIdentity(protectedOptions);
       setIdentity(identityEnvelope.data ?? null);
     }, "Decision reopened for reconsideration.");
@@ -753,7 +774,7 @@ export default function DecisionWorkspacePage({
           },
         ],
       }, protectedOptions);
-      await refreshDecision(selected.decision_id);
+      if (selectionIntent.current === selected.decision_id) await refreshDecision(selected.decision_id);
     }, "Action plan created.");
   }
 
@@ -761,7 +782,7 @@ export default function DecisionWorkspacePage({
     if (!selected) return;
     await mutate(async () => {
       await updateCareerAction(action.action_id, { status }, protectedOptions);
-      await refreshDecision(selected.decision_id);
+      if (selectionIntent.current === selected.decision_id) await refreshDecision(selected.decision_id);
       const reviewEnvelope = await getWeeklyCareerReview(protectedOptions);
       setWeeklyReview(reviewEnvelope.data?.review ?? null);
     }, `Action marked ${label(status).toLowerCase()}.`);
@@ -784,7 +805,7 @@ export default function DecisionWorkspacePage({
       }, protectedOptions);
       await generateDeepDecisionAnalysis(selected.decision_id, {}, protectedOptions);
       setApplicationDraft(emptyApplicationDraft());
-      await refreshDecision(selected.decision_id);
+      if (selectionIntent.current === selected.decision_id) await refreshDecision(selected.decision_id);
     }, "Application state recorded.");
   }
 
@@ -793,7 +814,7 @@ export default function DecisionWorkspacePage({
     await mutate(async () => {
       await transitionCareerApplication(application.application_id, { to_status: toStatus }, protectedOptions);
       await generateDeepDecisionAnalysis(selected.decision_id, {}, protectedOptions);
-      await refreshDecision(selected.decision_id);
+      if (selectionIntent.current === selected.decision_id) await refreshDecision(selected.decision_id);
       const reviewEnvelope = await getWeeklyCareerReview(protectedOptions);
       setWeeklyReview(reviewEnvelope.data?.review ?? null);
     }, `Application moved to ${label(toStatus).toLowerCase()}.`);
@@ -815,7 +836,7 @@ export default function DecisionWorkspacePage({
       }, protectedOptions);
       await generateDeepDecisionAnalysis(selected.decision_id, {}, protectedOptions);
       setOutcomeDraft(emptyOutcomeDraft());
-      await refreshDecision(selected.decision_id);
+      if (selectionIntent.current === selected.decision_id) await refreshDecision(selected.decision_id);
       const reviewEnvelope = await getWeeklyCareerReview(protectedOptions);
       setWeeklyReview(reviewEnvelope.data?.review ?? null);
     }, "Outcome recorded.");
@@ -838,7 +859,7 @@ export default function DecisionWorkspacePage({
         cohort_key: betaAccess?.cohorts[0]?.cohort_key ?? null,
       }, protectedOptions);
       setFeedbackDraft(emptyFeedbackDraft());
-      await refreshDecision(selected.decision_id);
+      if (selectionIntent.current === selected.decision_id) await refreshDecision(selected.decision_id);
     }, "Recommendation feedback recorded.");
   }
 
@@ -971,7 +992,7 @@ export default function DecisionWorkspacePage({
                   onClick={() => void refreshDecision(item.decision_id)}
                 >
                   <span>{item.title}</span>
-                  <small>{label(item.status)} · {item.options.length} options · {item.action_plan?.actions.length ?? 0} actions</small>
+                  <small>{label(item.status)} · {item.options.length} options · {item.action_plan ? `${item.action_plan.actions.length} actions` : "Actions not loaded"}</small>
                 </button>
               ))}
             </div>
@@ -1328,7 +1349,7 @@ function CreateDecisionForm({
         />
       </label>
       <label>
-        Hard constraints
+        Hard requirements (free text — not verified)
         <input
           value={draft.hardConstraints}
           onChange={(event) => setDraft({ ...draft, hardConstraints: event.target.value })}
@@ -1386,6 +1407,9 @@ function DecisionSummary({
         <p className="eyebrow">What am I deciding?</p>
         <h3>{decision.title}</h3>
         {decision.description ? <p>{decision.description}</p> : null}
+        {decision.constraints.filter((rule) => rule.evaluation_mode === "unverified" || (rule.field === "scenario" && rule.operator === "contains")).map((rule, index) => (
+          <p key={index}><strong>Unverified requirement:</strong> {String(rule.label ?? rule.value ?? rule.key)}. This free-text requirement has not been machine-verified.</p>
+        ))}
       </div>
       <div className="decision-state-strip">
         <Badge label={label(decision.status)} tone={decision.status === "decided" ? "success" : "neutral"} />
@@ -1699,6 +1723,9 @@ function ScenarioComparison({ fitOptions, options }: { fitOptions: DecisionFitOp
               <TextList title="Advantages" items={fit.advantages} empty="No advantages supported by current evidence." />
               <TextList title="Tradeoffs" items={fit.tradeoffs} empty="No tradeoffs identified yet." />
               <TextList title="Unknowns" items={fit.important_unknowns} empty="No important unknowns recorded." />
+              {fit.constraints?.map((rule, index) => (
+                <p key={`requirement-${index}`}><strong>{rule.status === "satisfied" ? "Verified satisfied" : rule.status === "violated" ? "Verified violated" : rule.status === "unknown" ? "Requirement not verified" : "Historical requirement assessment"}:</strong> {String(rule.label ?? rule.key ?? rule.expected)}</p>
+              ))}
               {(fit.hard_violations?.length ?? 0) > 0 ? (
                 <div className="hard-violation-list">
                   <strong>Hard constraints violated</strong>

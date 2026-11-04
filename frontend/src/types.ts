@@ -2252,6 +2252,7 @@ export type CareerDecisionPriorityInput = {
 };
 
 export type CareerDecisionConstraintInput = {
+  evaluation_mode?: "structured" | "unverified";
   key: string;
   field: string;
   operator?: string;

@@ -1147,3 +1147,37 @@ describe("DecisionWorkspacePage", () => {
     expect(screen.queryByText(/irrational|obsessed|indecisive|afraid/i)).not.toBeInTheDocument();
   });
 });
+
+ test("new selection defeats an older detail and journal response and keeps mutation target", async () => {
+  render(<DecisionWorkspacePage auth={auth} />);
+  await screen.findByText("No career decisions yet");
+  fireEvent.change(screen.getByLabelText("Decision question"), { target: { value: "Older decision" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create decision" }));
+  await screen.findByRole("heading", { level: 1, name: "Older decision" });
+  await screen.findByText("Decision created.");
+  const old = apiState.decisions[0];
+  let finish!: (value: ApiEnvelope<{ decision: CareerDecision }>) => void;
+  vi.mocked(api.getCareerDecision).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const calls = vi.mocked(api.getCareerDecision).mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(vi.mocked(api.getCareerDecision).mock.calls.length).toBe(calls + 1));
+  fireEvent.change(screen.getByLabelText("Decision question"), { target: { value: "New decision" } });
+  fireEvent.change(screen.getByLabelText(/Hard requirements/), { target: { value: "Stay in Chicago" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create decision" }));
+  await screen.findByRole("heading", { level: 1, name: "New decision" });
+  finish({ status: "success", data: { decision: old }, metadata: { state: "fresh" }, error: null });
+  await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("New decision"));
+  await addScenario("New scenario", "Data analyst", "chicago");
+  expect(apiState.decisions.find((d) => d.title === "New decision")?.options).toHaveLength(1);
+  expect(apiState.decisions.find((d) => d.title === "Older decision")?.options).toHaveLength(0);
+  expect(apiState.decisions.find((d) => d.title === "New decision")?.constraints[0]).toMatchObject({evaluation_mode: "unverified", value: "Stay in Chicago"});
+});
+
+ test("summary without plan is not presented as factual zero actions", async () => {
+  const result = await api.createCareerDecision({decision_type:"career_path", title:"Loaded plan"}, {getAccessToken:auth.getAccessTokenSilently});
+  const original = result.data!.decision;
+  apiState.decisions = [original, { ...original, decision_id: "other", title: "Unloaded plan", action_plan: null }];
+  render(<DecisionWorkspacePage auth={auth} />);
+  await screen.findByRole("heading", { level: 1, name: original.title });
+  expect(screen.getByRole("button", {name: /Unloaded plan/})).toHaveTextContent("Actions not loaded");
+ });

@@ -1,3 +1,4 @@
+import { OPPORTUNITY_ROLE_OPTIONS } from "./opportunityContext";
 import {
   geographicInputFromPath,
   geographicRouteToken,
@@ -138,6 +139,9 @@ export type ExploreUrlState = {
 };
 
 export type CurrentOpportunityUrlState = {
+  freshness?: string;
+  relevance?: string;
+  preferredRole?: string;
   market?: string;
   roleFamily?: string;
   opportunityType?: string;
@@ -418,15 +422,33 @@ function baseRoute(
   };
 }
 
-function parseCurrentOpportunityState(params: URLSearchParams): CurrentOpportunityUrlState {
-  const returnTo = cleanToken(params.get("return"));
+export function safeOpportunityReturn(value: string | undefined): string | undefined {
+  if (!value || !/^\/markets(?:[/?]|$)/.test(value)) return undefined;
+  const url = new URL(value, "https://jmi.invalid");
+  return url.origin === "https://jmi.invalid" && /^\/markets(?:\/|$)/.test(url.pathname) ? `${url.pathname}${url.search}` : undefined;
+}
+export function normalizeOpportunityState(state: CurrentOpportunityUrlState = {}): CurrentOpportunityUrlState {
+  const allowed = (value: string | undefined, values: readonly string[]) => value && values.includes(value) ? value : undefined;
   return {
-    market: cleanToken(params.get("market")),
-    roleFamily: cleanToken(params.get("role")),
+    ...state,
+    market: allowed(state.market, ["greater_boston","greater_nyc","sf_bay_area","greater_seattle","washington_dc","austin","atlanta","chicago"]),
+    roleFamily: allowed(state.roleFamily, OPPORTUNITY_ROLE_OPTIONS.map(([value]) => value)),
+    opportunityType: allowed(state.opportunityType, ["job","internship"]),
+    workArrangement: allowed(state.workArrangement, ["remote","hybrid","onsite","mixed","unknown"]),
+    freshness: allowed(state.freshness, ["fresh","aging","stale","unknown"]),
+    relevance: allowed(state.relevance, ["direct_fit","adjacent_fit","limited_or_ineligible"]),
+    returnTo: safeOpportunityReturn(state.returnTo),
+  };
+}
+function parseCurrentOpportunityState(params: URLSearchParams): CurrentOpportunityUrlState {
+  return normalizeOpportunityState({
+    preferredRole: cleanToken(params.get("preferred_role")),
+    market: cleanToken(params.get("market")), roleFamily: cleanToken(params.get("role")),
     opportunityType: cleanToken(params.get("opportunity_type") ?? params.get("opportunity")),
     workArrangement: cleanToken(params.get("work_arrangement") ?? params.get("work")),
-    returnTo: returnTo?.startsWith("/markets") ? returnTo : undefined,
-  };
+    freshness: cleanToken(params.get("freshness")), relevance: cleanToken(params.get("relevance")),
+    returnTo: cleanToken(params.get("return")),
+  });
 }
 
 function parseExploreState(params: URLSearchParams): ExploreUrlState {
@@ -768,7 +790,11 @@ export function opportunityRoutesUrl(): string {
 }
 
 export function currentOpportunitiesUrl(state?: CurrentOpportunityUrlState): string {
+  state = normalizeOpportunityState(state);
   const params = new URLSearchParams();
+  if (state?.freshness) params.set("freshness", state.freshness);
+  if (state?.relevance) params.set("relevance", state.relevance);
+  if (state?.preferredRole) params.set("preferred_role", state.preferredRole);
   if (state?.market) params.set("market", state.market);
   if (state?.roleFamily) params.set("role", state.roleFamily);
   if (state?.opportunityType) params.set("opportunity_type", state.opportunityType);
@@ -778,8 +804,9 @@ export function currentOpportunitiesUrl(state?: CurrentOpportunityUrlState): str
   return `${PRODUCT_ROOT}/current-opportunities${query ? `?${query}` : ""}`;
 }
 
-export function currentOpportunityDetailUrl(opportunityId: string): string {
-  return `${PRODUCT_ROOT}/current-opportunities/${encodePathValue(opportunityId)}`;
+export function currentOpportunityDetailUrl(opportunityId: string, state?: CurrentOpportunityUrlState): string {
+  const query = currentOpportunitiesUrl(state).split("?")[1];
+  return `${PRODUCT_ROOT}/current-opportunities/${encodePathValue(opportunityId)}${query ? `?${query}` : ""}`;
 }
 
 export function currentOpportunityOperationsUrl(): string {

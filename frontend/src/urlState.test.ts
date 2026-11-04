@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   canonicalizeExploreState,
   currentOpportunitiesUrl,
+  currentOpportunityDetailUrl,
   exploreComparisonUrl,
   isProductPage,
   exploreUrl,
@@ -172,3 +173,18 @@ describe("urlState market intelligence route", () => {
     );
   });
 });
+
+ test("round trips every opportunity filter and source role through detail", () => {
+  const filters = {market:"austin",roleFamily:"software_engineering",opportunityType:"job",workArrangement:"hybrid",freshness:"fresh",relevance:"direct_fit",preferredRole:"cybersecurity",returnTo:"/markets?focus=austin"};
+  const url = currentOpportunitiesUrl(filters);
+  expect(parseTestUrl(url).currentOpportunities).toMatchObject(filters);
+  expect(parseTestUrl(currentOpportunityDetailUrl("job1",filters)).currentOpportunities).toMatchObject(filters);
+ });
+ test("invalid opportunity values and unsafe returns never become criteria", () => {
+  const parsed = parseTestUrl("/markets/current-opportunities?market=bad&role=bad&freshness=bad&relevance=bad&return=https%3A%2F%2Fevil.example");
+  expect(parsed.currentOpportunities.market).toBeUndefined();
+  expect(parsed.currentOpportunities.returnTo).toBeUndefined();
+  expect(currentOpportunitiesUrl(parsed.currentOpportunities)).not.toContain("bad");
+ });
+
+function parseTestUrl(value: string) { const url = new URL(value, "https://jmi.test"); return parseRoute(url.pathname,url.search); }

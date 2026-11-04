@@ -33,7 +33,7 @@
   white-space: nowrap;
 }
 
-.redesigned-app-shell {
+.app-shell.redesigned-app-shell {
   background: #f4f5ef;
   display: block;
   min-height: 100vh;
@@ -133,7 +133,7 @@
 
 .account-menu > div button { background: transparent; color: var(--green); padding: 0.35rem; text-align: left; }
 
-.redesigned-content-shell {
+.content-shell.redesigned-content-shell {
   display: block;
   padding: 0;
 }
@@ -727,7 +727,7 @@
   .opportunity-track-list article, .application-card { align-items: start; grid-template-columns: 1fr; }
   .opportunity-track-list article > div:last-child { justify-items: start; }
   .explore-intro { display: block; }
-  .explore-search { display: none; }
+  .explore-search { display: grid; min-width: 0; width: 100%; margin-top: 1rem; }
   .explore-intro h1 { font-size: 2.5rem; }
   .personalization-strip { align-items: start; display: grid; border-radius: 0.9rem 0.9rem 0 0; }
   .context-summary { display: grid; gap: 0.55rem; }
@@ -5575,4 +5575,11 @@ legend {
     overflow-y: auto;
     width: min(18rem, calc(100vw - 1.5rem));
   }
+}
+
+/* Decision evidence must shrink with the narrow panel, not be clipped by its disclosure. */
+@media (max-width: 560px) {
+  .decision-panel { grid-template-columns: minmax(0, 1fr); }
+  .decision-panel > *, .decision-journal > li { min-width: 0; overflow-wrap: anywhere; }
+  .decision-panel-header { flex-wrap: wrap; }
 }
