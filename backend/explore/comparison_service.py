@@ -173,7 +173,6 @@ class ExploreComparisonService:
                 raise ExploreComparisonValidationError(
                     "comparison is stale; run it again before prioritizing"
                 )
-            snapshot = self._persist_snapshot(user_id, result, saved=False)
 
         selected_region_id = self._resolve_region_ids((request.selected_market_ref,))[0]
         market_by_region = {
@@ -209,6 +208,10 @@ class ExploreComparisonService:
                 created=False,
                 decision=view.model_dump(mode="json"),
             )
+
+        if not request.comparison_id:
+            # Reuse must not accumulate unused evidence rows.
+            snapshot = self._persist_snapshot(user_id, result, saved=False)
 
         self._record(
             user_id,

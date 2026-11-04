@@ -5,27 +5,15 @@ import math
 import time
 from dataclasses import dataclass
 from http.cookies import CookieError, SimpleCookie
-from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
-from starlette.routing import compile_path
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from backend.api.errors import safe_error_response_for_request_id
 from backend.api.request_context import request_id_from_scope
-from backend.career_decisions.models import (
-    CareerAction,
-    CareerApplication,
-    CareerDecision,
-    DecisionOption,
-)
-from backend.career_identity.models import CareerIdentity, CareerIdentityFact
 from backend.config.settings import Settings
-from backend.explore.models import ExploreComparisonSnapshot
 from backend.public_guest.policy import public_guest_scope_allowed
 from backend.public_guest.service import (
     PUBLIC_GUEST_COOKIE_NAME,
@@ -35,7 +23,6 @@ from backend.public_guest.service import (
     PublicGuestSessionService,
     VerifiedGuestPrincipal,
 )
-from backend.users.models import PersonalizedRecommendationSnapshot
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _BOOTSTRAP_ROUTE = ("POST", "/guest/session")
@@ -45,72 +32,6 @@ _BOOTSTRAP_ROUTE = ("POST", "/guest/session")
 class _RateBucket:
     count: int
     reset_at: float
-
-
-@dataclass(frozen=True, slots=True)
-class _EntityQuota:
-    name: str
-    route_method: str
-    route_pattern: object
-    maximum_setting: str
-
-
-_ENTITY_QUOTAS = (
-    _EntityQuota(
-        "career_identity_facts",
-        "POST",
-        compile_path("/me/career-identity/facts")[0],
-        "guest_max_career_identity_facts",
-    ),
-    _EntityQuota(
-        "saved_comparisons",
-        "POST",
-        compile_path("/me/explore/compare")[0],
-        "guest_max_saved_comparisons",
-    ),
-    _EntityQuota(
-        "saved_comparisons",
-        "POST",
-        compile_path("/me/explore/comparisons")[0],
-        "guest_max_saved_comparisons",
-    ),
-    _EntityQuota(
-        "decisions",
-        "POST",
-        compile_path("/me/decisions")[0],
-        "guest_max_decisions",
-    ),
-    _EntityQuota(
-        "decision_options",
-        "POST",
-        compile_path("/me/decisions/{decision_id}/options")[0],
-        "guest_max_decision_options",
-    ),
-    _EntityQuota(
-        "actions",
-        "POST",
-        compile_path("/me/decisions/{decision_id}/actions")[0],
-        "guest_max_actions",
-    ),
-    _EntityQuota(
-        "applications",
-        "POST",
-        compile_path("/me/applications")[0],
-        "guest_max_applications",
-    ),
-    _EntityQuota(
-        "applications",
-        "POST",
-        compile_path("/me/search-workspace/applications/track")[0],
-        "guest_max_applications",
-    ),
-    _EntityQuota(
-        "recommendation_snapshots",
-        "POST",
-        compile_path("/me/recommendation-snapshots")[0],
-        "guest_max_recommendation_snapshots",
-    ),
-)
 
 
 class PublicGuestSessionMiddleware:
@@ -251,21 +172,11 @@ class PublicGuestSessionMiddleware:
         with factory() as session:
             service = PublicGuestSessionService(session, self.settings)
             try:
-                _enforce_entity_quota(
-                    session,
-                    self.settings,
-                    principal.user_id,
-                    method,
-                    path,
-                )
                 service.consume_mutation(principal.session_id)
                 session.commit()
             except (GuestMutationQuotaExceeded, GuestDatabaseCapacityExceeded):
                 session.rollback()
                 return "Guest demo storage limit reached"
-            except GuestEntityQuotaExceeded as exc:
-                session.rollback()
-                return f"Guest demo {exc.entity_name} limit reached"
         return None
 
     def _issuance_retry_after(self, scope: Scope) -> int | None:
@@ -307,54 +218,6 @@ class PublicGuestSessionMiddleware:
             headers=headers,
         )
         await response(scope, receive, _no_store_send(send))
-
-
-class GuestEntityQuotaExceeded(RuntimeError):
-    def __init__(self, entity_name: str) -> None:
-        super().__init__(entity_name)
-        self.entity_name = entity_name
-
-
-def _enforce_entity_quota(
-    session: Session,
-    settings: Settings,
-    user_id: str,
-    method: str,
-    path: str,
-) -> None:
-    for quota in _ENTITY_QUOTAS:
-        if quota.route_method != method or not quota.route_pattern.fullmatch(path):
-            continue
-        maximum = int(getattr(settings, quota.maximum_setting))
-        count = _entity_count(session, quota.name, user_id)
-        if count >= maximum:
-            raise GuestEntityQuotaExceeded(quota.name)
-        return
-
-
-def _entity_count(session: Session, entity_name: str, user_id: str) -> int:
-    if entity_name == "career_identity_facts":
-        statement = (
-            select(func.count())
-            .select_from(CareerIdentityFact)
-            .join(
-                CareerIdentity,
-                CareerIdentity.career_identity_id == CareerIdentityFact.career_identity_id,
-            )
-            .where(CareerIdentity.user_id == user_id)
-        )
-    else:
-        models: dict[str, Any] = {
-            "saved_comparisons": ExploreComparisonSnapshot,
-            "decisions": CareerDecision,
-            "decision_options": DecisionOption,
-            "actions": CareerAction,
-            "applications": CareerApplication,
-            "recommendation_snapshots": PersonalizedRecommendationSnapshot,
-        }
-        model = models[entity_name]
-        statement = select(func.count()).select_from(model).where(model.user_id == user_id)
-    return int(session.scalar(statement) or 0)
 
 
 def _trusted_request_origin(scope: Scope, expected_origin: str) -> bool:
