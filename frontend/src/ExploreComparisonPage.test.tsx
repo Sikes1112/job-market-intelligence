@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
+import { ApiError } from "./api";
 import ExploreComparisonPage from "./ExploreComparisonPage";
 import type { FrontendAuthContextValue } from "./auth";
 import type { ApiEnvelope, ExploreComparisonResult, ExploreFitResult, ExplorePrioritization } from "./types";
@@ -197,6 +198,65 @@ describe("Layer 42B Explore comparison", () => {
     fireEvent.click(screen.getByRole("button", { name: "Prioritize Greater New York" }));
     await waitFor(() => expect(mocks.prioritize).toHaveBeenCalledWith(expect.objectContaining({ selected_market_ref: "greater_nyc" }), expect.anything()));
     expect(await screen.findByRole("heading", { name: "Added to My Search" })).toBeInTheDocument();
+  });
+
+  test("shows one visible quota alert, preserves comparison and supports retry and navigation", async () => {
+    const quota = new ApiError("Guest demo saved_comparisons limit reached", {
+      statusCode: 429,
+      envelope: { status: "error", data: null, metadata: {state: "fresh"}, error: { type: "guest_quota_exceeded", message: "Guest demo saved_comparisons limit reached" } },
+    });
+    mocks.save.mockRejectedValue(quota);
+    const navigate = vi.fn();
+    const { container } = render(<ExploreComparisonPage auth={auth} onNavigate={navigate} state={state} />);
+    const save = await screen.findByRole("button", { name: "Save comparison" });
+    fireEvent.click(save);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/guest demo’s saved-comparison limit has been reached/);
+    expect(alert).toHaveTextContent(/existing saved comparisons are still available/);
+    // Visibility in jsdom alone would miss the original clipped sr-only region.
+    expect(alert).toHaveClass("error-copy");
+    expect(alert.closest(".sr-only, [hidden], [aria-hidden='true']")).toBeNull();
+    expect(alert.closest(".comparison-hero")).not.toBeNull();
+    expect(container.querySelector("[aria-live='polite']")).not.toHaveTextContent(/Could not save/);
+    expect(screen.queryByRole("button", { name: "Saved ✓" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 3 }).map(el => el.textContent)).toEqual(["Greater Boston", "Greater New York"]);
+    fireEvent.click(save);
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/saved-comparison limit/);
+    expect(mocks.save).toHaveBeenLastCalledWith({market_refs: state.selected, session_overrides: expect.anything(), comparison_identity: comparison().comparison_identity}, expect.anything());
+    expect(mocks.prioritize).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Prioritize" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/saved-comparison limit/);
+    fireEvent.click(screen.getByRole("button", { name: /Back to Explore/ }));
+    expect(navigate).toHaveBeenCalledWith(expect.stringContaining("/markets"));
+  });
+
+  test("keeps other 429 errors accurate and clears save errors when comparison context changes", async () => {
+    mocks.save.mockRejectedValue(new ApiError("Too many requests; try again later", {statusCode: 429}));
+    const navigate = vi.fn();
+    const {rerender} = render(<ExploreComparisonPage auth={auth} onNavigate={navigate} state={state} />);
+    fireEvent.click(await screen.findByRole("button", {name: "Save comparison"}));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Too many requests; try again later");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("saved-comparison limit");
+    rerender(<ExploreComparisonPage auth={auth} onNavigate={navigate} state={{...state, selected: ["new-york", "boston"]}} />);
+    await screen.findByRole("button", {name: "Save comparison"});
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("clears a previous save failure after successful retry and opens the saved snapshot", async () => {
+    mocks.save.mockRejectedValueOnce(new Error("Temporary failure"));
+    const navigate = vi.fn();
+    render(<ExploreComparisonPage auth={auth} onNavigate={navigate} state={state} />);
+    fireEvent.click(await screen.findByRole("button", {name: "Save comparison"}));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not save comparison: Temporary failure");
+    fireEvent.click(screen.getByRole("button", {name: "Save comparison"}));
+    expect(await screen.findByRole("button", {name: "Saved ✓"})).toBeDisabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Comparison saved. It is now available in My Search.")).toHaveAttribute("aria-live", "polite");
+    fireEvent.click(screen.getByRole("button", {name: "Open saved snapshot"}));
+    expect(navigate).toHaveBeenCalledWith("/markets/comparisons/cmp-1");
   });
 
   test("reopens an immutable saved snapshot and offers an explicit current rerun", async () => {

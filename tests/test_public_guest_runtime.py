@@ -12,7 +12,7 @@ import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import event, select, text
+from sqlalchemy import event, func, select, text
 
 from backend.api.app import create_app
 from backend.config.settings import AppEnv, Settings
@@ -909,3 +909,831 @@ def _bootstrap(client: TestClient) -> str:
 
 def _unsafe_headers(csrf_token: str) -> dict[str, str]:
     return {"Origin": ORIGIN, "X-CSRF-Token": csrf_token}
+
+
+@pytest.mark.parametrize("first_path", ["direct", "prioritize"])
+def test_decision_quota_covers_all_creation_paths_and_preserves_reuse(
+    tmp_path: Path,
+    first_path: str,
+) -> None:
+    from backend.career_decisions.models import (
+        CareerDecision,
+        DecisionContextSnapshot,
+        DecisionOption,
+        DecisionVersion,
+    )
+    from backend.explore.models import ExploreComparisonSnapshot, ExploreDecisionProvenance
+    from backend.product_measurement.models import ProductAnalyticsEvent
+
+    app, engine = _file_app(tmp_path, "quota-paths.db", seed_portfolio=True, guest_max_decisions=1)
+    owner = TestClient(app, base_url=ORIGIN)
+    other = TestClient(app, base_url=ORIGIN)
+    headers = _unsafe_headers(_bootstrap(owner))
+    other_headers = _unsafe_headers(_bootstrap(other))
+    base = {"market_refs": ["boston", "new-york"], "session_overrides": {}}
+    comparison = owner.post("/me/explore/compare", headers=headers, json=base).json()["data"]
+    saved = owner.post(
+        "/me/explore/comparisons",
+        headers=headers,
+        json={
+            **base,
+            "comparison_identity": comparison["comparison_identity"],
+        },
+    ).json()["data"]["comparison"]["comparison_id"]
+    priority = {"comparison_id": saved, "selected_market_ref": "boston"}
+    direct = {"decision_type": "career_path", "title": "Quota owner"}
+    if first_path == "direct":
+        first = owner.post("/me/decisions", headers=headers, json=direct)
+        assert first.status_code == 201
+        decision_id = first.json()["data"]["decision"]["decision_id"]
+    else:
+        first = owner.post("/me/explore/prioritize", headers=headers, json=priority)
+        assert first.status_code == 200
+        decision_id = first.json()["data"]["prioritization"]["decision_id"]
+        reused = owner.post("/me/explore/prioritize", headers=headers, json=priority)
+        assert reused.status_code == 200
+        assert reused.json()["data"]["prioritization"]["created"] is False
+        assert reused.json()["data"]["prioritization"]["decision_id"] == decision_id
+
+    factory = make_session_factory(engine)
+
+    def counts():
+        with factory() as session:
+            return tuple(
+                session.scalar(select(func.count()).select_from(model))
+                for model in (
+                    CareerDecision,
+                    ExploreComparisonSnapshot,
+                    ExploreDecisionProvenance,
+                    DecisionContextSnapshot,
+                    DecisionOption,
+                    DecisionVersion,
+                    ProductAnalyticsEvent,
+                )
+            )
+
+    before = counts()
+    for path, body in (
+        ("/me/decisions", direct),
+        ("/me/explore/prioritize", {**priority, "selected_market_ref": "new-york"}),
+    ):
+        rejected = owner.post(path, headers=headers, json=body)
+        assert rejected.status_code == 429
+        assert rejected.json()["error"]["type"] == "guest_quota_exceeded"
+        assert counts() == before
+    assert owner.get(f"/me/decisions/{decision_id}").status_code == 200
+    assert other.get(f"/me/decisions/{decision_id}").status_code == 404
+    assert other.post("/me/decisions", headers=other_headers, json=direct).status_code == 201
+
+
+@pytest.mark.parametrize("separate_app", [False, True])
+def test_concurrent_cross_path_decision_quota_is_serialized(
+    tmp_path: Path, separate_app: bool,
+) -> None:
+    from backend.career_decisions.models import CareerDecision
+
+    app, engine = _file_app(
+        tmp_path, "concurrent-decisions.db", seed_portfolio=True, guest_max_decisions=1
+    )
+    owner = TestClient(app, base_url=ORIGIN)
+    headers = _unsafe_headers(_bootstrap(owner))
+    base = {"market_refs": ["boston", "new-york"], "session_overrides": {}}
+    comparison = owner.post("/me/explore/compare", headers=headers, json=base).json()["data"]
+    saved = owner.post(
+        "/me/explore/comparisons",
+        headers=headers,
+        json={
+            **base,
+            "comparison_identity": comparison["comparison_identity"],
+        },
+    ).json()["data"]["comparison"]["comparison_id"]
+
+    async def race():
+        import httpx
+
+        transport = httpx.ASGITransport(app=app)
+        peer_app = create_app(engine=engine, settings=app.state.settings) if separate_app else app
+        async with httpx.AsyncClient(
+            transport=transport, base_url=ORIGIN, cookies=owner.cookies
+        ) as client, httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=peer_app), base_url=ORIGIN, cookies=owner.cookies
+        ) as peer:
+            import asyncio
+
+            # Both requests are scheduled on the same app event loop, as in Uvicorn.
+            return await asyncio.gather(
+                client.post(
+                    "/me/decisions",
+                    headers=headers,
+                    json={"decision_type": "career_path", "title": "Racer"},
+                ),
+                peer.post(
+                    "/me/explore/prioritize",
+                    headers=headers,
+                    json={
+                        "comparison_id": saved,
+                        "selected_market_ref": "boston",
+                    },
+                ),
+            )
+
+    import asyncio
+
+    responses = asyncio.run(race())
+    assert sorted(response.status_code for response in responses) in ([200, 429], [201, 429])
+    with make_session_factory(engine)() as session:
+        assert session.scalar(select(func.count()).select_from(CareerDecision)) == 1
+
+
+@pytest.mark.parametrize("limit", [1, 2])
+def test_configured_decision_limit_rejects_only_new_insertions(tmp_path: Path, limit: int) -> None:
+    app, _engine = _app(tmp_path, guest_max_decisions=limit)
+    client = TestClient(app, base_url=ORIGIN)
+    headers = _unsafe_headers(_bootstrap(client))
+    for index in range(limit):
+        assert (
+            client.post(
+                "/me/decisions",
+                headers=headers,
+                json={
+                    "decision_type": "career_path",
+                    "title": f"Decision {index}",
+                },
+            ).status_code
+            == 201
+        )
+    rejected = client.post(
+        "/me/decisions",
+        headers=headers,
+        json={
+            "decision_type": "career_path",
+            "title": "Beyond quota",
+        },
+    )
+    assert rejected.status_code == 429
+    assert rejected.json()["error"]["type"] == "guest_quota_exceeded"
+
+def _business_digest(engine):
+    """Assert rollback across the complete business graph, excluding session accounting."""
+    from sqlalchemy import MetaData
+
+    metadata = MetaData()
+    metadata.reflect(engine)
+    with engine.connect() as connection:
+        return {
+            name: sorted(repr(tuple(row)) for row in connection.execute(select(table)))
+            for name, table in metadata.tables.items()
+            if name != "public_guest_sessions"
+        }
+
+
+@pytest.mark.parametrize("resource", ["options", "actions"])
+@pytest.mark.parametrize("aggregate_first", [False, True])
+def test_nested_resource_quota_cross_paths_and_rollback(tmp_path, resource, aggregate_first):
+    settings = {"guest_max_decision_options" if resource == "options" else "guest_max_actions": 1}
+    app, engine = _file_app(tmp_path, "nested.db", seed_portfolio=True, **settings)
+    client, other = TestClient(app, base_url=ORIGIN), TestClient(app, base_url=ORIGIN)
+    headers, peer_headers = _unsafe_headers(_bootstrap(client)), _unsafe_headers(_bootstrap(other))
+
+    def new_decision(c=client, h=headers, **extra):
+        return c.post(
+            "/me/decisions",
+            headers=h,
+            json={
+                "title": "Nested quota",
+                "decision_type": "career_path",
+                **extra,
+            },
+        )
+
+    first = new_decision().json()["data"]["decision"]["decision_id"]
+    second = new_decision().json()["data"]["decision"]["decision_id"]
+    direct_path = f"/me/decisions/{first}/{resource}"
+    payload = (
+        {"title": "First"}
+        if resource == "options"
+        else {"title": "First", "action_type": "research"}
+    )
+    aggregate_path = "/me/decisions" if resource == "options" else f"/me/decisions/{second}/plan"
+    aggregate = (
+        {"title": "Embedded", "decision_type": "career_path", "options": [payload]}
+        if resource == "options"
+        else {"actions": [payload]}
+    )
+    paths = [(direct_path, payload), (aggregate_path, aggregate)]
+    if aggregate_first:
+        paths.reverse()
+    assert client.post(paths[0][0], headers=headers, json=paths[0][1]).status_code == 201
+    before = _business_digest(engine)
+    rejected = client.post(paths[1][0], headers=headers, json=paths[1][1])
+    assert rejected.status_code == 429
+    assert rejected.json()["error"]["type"] == "guest_quota_exceeded"
+    assert _business_digest(engine) == before
+    assert client.get("/me/decisions/" + first).status_code == 200
+    assert other.get("/me/decisions/" + first).status_code == 404
+    # Distinct owner retains full quota capacity.
+    peer = new_decision(other, peer_headers).json()["data"]["decision"]["decision_id"]
+    assert (
+        other.post(
+            f"/me/decisions/{peer}/{resource}", headers=peer_headers, json=payload
+        ).status_code
+        == 201
+    )
+    if resource == "actions":
+        plan_decision = second if aggregate_first else first
+        before = _business_digest(engine)
+        reused = client.post(f"/me/decisions/{plan_decision}/plan", headers=headers, json={})
+        assert reused.status_code == 201
+        assert _business_digest(engine) == before
+
+
+@pytest.mark.parametrize("resource", ["options", "actions"])
+def test_nested_batch_quota_rolls_back_parent_and_all_children(tmp_path, resource):
+    settings = {"guest_max_decision_options" if resource == "options" else "guest_max_actions": 1}
+    app, engine = _file_app(tmp_path, "batch.db", **settings)
+    client = TestClient(app, base_url=ORIGIN)
+    headers = _unsafe_headers(_bootstrap(client))
+    payload = {"title": "Batch", "decision_type": "career_path"}
+    if resource == "options":
+        path = "/me/decisions"
+        payload["options"] = [{"title": "One"}, {"title": "Two"}]
+    else:
+        decision = client.post("/me/decisions", headers=headers, json=payload).json()["data"][
+            "decision"
+        ]["decision_id"]
+        path = f"/me/decisions/{decision}/plan"
+        payload = {}  # default generated plan contains multiple actions
+    before = _business_digest(engine)
+    assert client.post(path, headers=headers, json=payload).status_code == 429
+    assert _business_digest(engine) == before
+
+
+@pytest.mark.parametrize("resource", ["options", "actions"])
+def test_concurrent_direct_and_aggregate_resource_quota(tmp_path, resource):
+    from backend.career_decisions.models import CareerAction, DecisionOption
+
+    settings = {"guest_max_decision_options" if resource == "options" else "guest_max_actions": 1}
+    app, engine = _file_app(tmp_path, "race.db", **settings)
+    owner = TestClient(app, base_url=ORIGIN)
+    headers = _unsafe_headers(_bootstrap(owner))
+    ids = [
+        owner.post(
+            "/me/decisions", headers=headers, json={"title": "Race", "decision_type": "career_path"}
+        ).json()["data"]["decision"]["decision_id"]
+        for _ in range(2)
+    ]
+    peer_engine = make_engine(str(engine.url))
+    peer_app = create_app(engine=peer_engine, settings=app.state.settings)
+    barrier = threading.Barrier(2)
+    arrivals = []
+
+    def at_transaction(conn, cursor, statement, parameters, context, executemany):
+        if statement == "BEGIN IMMEDIATE":
+            arrivals.append(statement)
+            barrier.wait(timeout=10)
+
+    event.listen(engine, "before_cursor_execute", at_transaction)
+    event.listen(peer_engine, "before_cursor_execute", at_transaction)
+
+    def deliver(aggregate):
+        target = peer_app if aggregate else app
+        with TestClient(target, base_url=ORIGIN, cookies=owner.cookies) as c:
+            item = {
+                "title": "Racer",
+                **({"action_type": "research"} if resource == "actions" else {}),
+            }
+            path = (
+                (f"/me/decisions/{ids[1]}/plan" if resource == "actions" else "/me/decisions")
+                if aggregate
+                else f"/me/decisions/{ids[0]}/{resource}"
+            )
+            payload = (
+                (
+                    {"actions": [item]}
+                    if resource == "actions"
+                    else {
+                        "title": "Embedded racer",
+                        "decision_type": "career_path",
+                        "options": [item],
+                    }
+                )
+                if aggregate
+                else item
+            )
+            return c.post(path, headers=headers, json=payload)
+
+    try:
+        with ThreadPoolExecutor(2) as pool:
+            responses = list(pool.map(deliver, [False, True]))
+    finally:
+        event.remove(engine, "before_cursor_execute", at_transaction)
+        event.remove(peer_engine, "before_cursor_execute", at_transaction)
+        peer_engine.dispose()
+    assert len(arrivals) == 2
+    assert sorted(r.status_code for r in responses) == [201, 429]
+    with make_session_factory(engine)() as session:
+        model = DecisionOption if resource == "options" else CareerAction
+        assert session.scalar(select(func.count()).select_from(model)) == 1
+
+
+def test_comparison_option_batch_rejection_rolls_back_implicit_snapshot(tmp_path):
+    app, engine = _file_app(
+        tmp_path, "comparison-options.db", seed_portfolio=True, guest_max_decision_options=1
+    )
+    client = TestClient(app, base_url=ORIGIN)
+    headers = _unsafe_headers(_bootstrap(client))
+    identity = client.post(
+        "/me/explore/compare",
+        headers=headers,
+        json={
+            "market_refs": ["boston", "new-york"],
+            "session_overrides": {},
+        },
+    ).json()["data"]["comparison_identity"]
+    before = _business_digest(engine)
+    response = client.post(
+        "/me/explore/prioritize",
+        headers=headers,
+        json={
+            "market_refs": ["boston", "new-york"],
+            "session_overrides": {},
+            "selected_market_ref": "boston",
+            "comparison_identity": identity,
+        },
+    )
+    assert response.status_code == 429
+    assert _business_digest(engine) == before
+
+
+def test_non_guest_nested_resources_are_not_subject_to_guest_caps(tmp_path):
+    import json
+
+    from backend.career_decisions.models import CareerAction, DecisionOption
+
+    url = "sqlite:///" + str(tmp_path / "non-guest.db")
+    engine = make_engine(url)
+    create_all(engine)
+    settings = Settings(
+        app_env="test",
+        database_url=url,
+        guest_max_decision_options=1,
+        guest_max_actions=1,
+        guest_max_career_identity_facts=1,
+        guest_max_applications=1,
+        guest_max_recommendation_snapshots=1,
+        _env_file=None,
+    )
+    client = TestClient(create_app(engine=engine, settings=settings))
+    headers = {
+        "X-Verified-OIDC-Claims": json.dumps(
+            {
+                "iss": "https://jmi.us.auth0.com/",
+                "sub": "auth0|quota-nonguest",
+                "email": "quota@example.invalid",
+                "email_verified": True,
+            }
+        )
+    }
+    for _ in range(2):
+        response = client.post(
+            "/me/decisions",
+            headers=headers,
+            json={
+                "decision_type": "career_path",
+                "title": "Independent non-guest",
+                "options": [{"title": "Option"}],
+            },
+        )
+        assert response.status_code == 201
+        did = response.json()["data"]["decision"]["decision_id"]
+        assert (
+            client.post(
+                f"/me/decisions/{did}/plan",
+                headers=headers,
+                json={
+                    "actions": [{"title": "Research", "action_type": "research"}],
+                },
+            ).status_code
+            == 201
+        )
+        assert client.post('/me/applications', headers=headers, json={
+            'decision_id':did, 'role_title':'Non guest', 'status':'preparing'}).status_code == 201
+        assert client.post('/me/career-identity/facts', headers=headers, json={
+            'fact_type':'skill','state':'explicit','payload':{'name':did}}).status_code == 201
+        assert client.post('/me/recommendation-snapshots', headers=headers, json={
+            'personalized_output':{},'recommendation_version':'r6','source_version_bundle':{},
+            'recommendation_inputs_hash':did,
+            'generated_at':'2026-11-04T00:00:00Z'}).status_code == 201
+    with make_session_factory(engine)() as session:
+        for model in (DecisionOption, CareerAction):
+            assert session.scalar(select(func.count()).select_from(model)) == 2
+
+
+@pytest.mark.parametrize("resource", ["options", "actions"])
+def test_resource_batch_exact_limit_and_rejection(tmp_path, resource):
+    limit = {"guest_max_decision_options" if resource == "options" else "guest_max_actions": 2}
+    app, engine = _file_app(tmp_path, "exact-batch.db", **limit)
+    client = TestClient(app, base_url=ORIGIN)
+    headers = _unsafe_headers(_bootstrap(client))
+    body = {"title": "Batch boundary", "decision_type": "career_path"}
+    if resource == "options":
+        path = "/me/decisions"
+        body["options"] = [{"title": "One"}, {"title": "Two"}]
+    else:
+        did = client.post("/me/decisions", headers=headers, json=body).json()["data"]["decision"][
+            "decision_id"
+        ]
+        path = f"/me/decisions/{did}/plan"
+        body = {
+            "actions": [{"title": title, "action_type": "research"} for title in ("One", "Two")]
+        }
+    response = client.post(path, headers=headers, json=body)
+    assert response.status_code == 201
+    did = (
+        response.json()["data"]["decision"]["decision_id"]
+        if resource == "options"
+        else response.json()["data"]["action_plan"]["decision_id"]
+    )
+    before = _business_digest(engine)
+    response = client.post(
+        f"/me/decisions/{did}/{resource}",
+        headers=headers,
+        json={"title": "Over", **({"action_type": "research"} if resource == "actions" else {})},
+    )
+    assert response.status_code == 429
+    assert _business_digest(engine) == before
+
+
+def test_existing_comparison_options_reused_at_capacity(tmp_path):
+    app, engine = _file_app(
+        tmp_path, "reuse-options.db", seed_portfolio=True, guest_max_decision_options=2
+    )
+    client = TestClient(app, base_url=ORIGIN)
+    headers = _unsafe_headers(_bootstrap(client))
+    base = {"market_refs": ["boston", "new-york"], "session_overrides": {}}
+    compared = client.post("/me/explore/compare", headers=headers, json=base).json()["data"]
+    saved = client.post(
+        "/me/explore/comparisons",
+        headers=headers,
+        json={**base, "comparison_identity": compared["comparison_identity"]},
+    )
+    payload = {
+        "comparison_id": saved.json()["data"]["comparison"]["comparison_id"],
+        "selected_market_ref": "boston",
+    }
+    first = client.post("/me/explore/prioritize", headers=headers, json=payload)
+    assert first.status_code == 200
+    before = _business_digest(engine)
+    second = client.post("/me/explore/prioritize", headers=headers, json=payload)
+    assert second.status_code == 200
+    assert second.json()["data"]["prioritization"]["created"] is False
+    assert (
+        second.json()["data"]["prioritization"]["decision_id"]
+        == first.json()["data"]["prioritization"]["decision_id"]
+    )
+    assert _business_digest(engine) == before
+@pytest.mark.parametrize("ingest_first", [False, True])
+def test_fact_quota_ingestion_cross_paths_reuse_and_rollback(tmp_path, ingest_first):
+    app, engine = _file_app(tmp_path, "facts.db", guest_max_career_identity_facts=1)
+    owner = TestClient(app, base_url=ORIGIN)
+    headers = _unsafe_headers(_bootstrap(owner))
+    identity = owner.get("/me/career-identity").json()["data"]
+    assert (
+        owner.put(
+            "/me/career-identity/privacy",
+            headers=headers,
+            json={
+                "ingestion_consent_granted": True,
+                "expected_version": identity["current_version"],
+            },
+        ).status_code
+        == 200
+    )
+
+    def ingest(name):
+        return owner.post(
+            "/me/career-identity/ingest",
+            headers=headers,
+            json={
+                "source_type": "structured_profile",
+                "consent_granted": True,
+                "structured_profile": {"skills": [{"name": name}]},
+            },
+        )
+
+    def direct(name):
+        return owner.post(
+            "/me/career-identity/facts",
+            headers=headers,
+            json={"fact_type": "skill", "state": "explicit", "payload": {"name": name}},
+        )
+
+    assert (ingest("First") if ingest_first else direct("First")).status_code in (200, 201)
+    # An identical normalized fact is an update/reuse, not another slot.
+    assert direct("First").status_code == 201
+    before = _business_state(engine)
+    assert (direct("Excess") if ingest_first else ingest("Excess")).status_code == 429
+    assert _business_state(engine) == before
+    other = TestClient(app, base_url=ORIGIN)
+    assert (
+        other.post(
+            "/me/career-identity/facts",
+            headers=_unsafe_headers(_bootstrap(other)),
+            json={"fact_type": "skill", "state": "explicit", "payload": {"name": "Independent"}},
+        ).status_code
+        == 201
+    )
+
+
+def test_ingestion_batch_failure_is_atomic(tmp_path):
+    app, engine = _file_app(tmp_path, "batch-facts.db", guest_max_career_identity_facts=1)
+    c = TestClient(app, base_url=ORIGIN)
+    headers = _unsafe_headers(_bootstrap(c))
+    identity = c.get("/me/career-identity").json()["data"]
+    assert (
+        c.put(
+            "/me/career-identity/privacy",
+            headers=headers,
+            json={
+                "ingestion_consent_granted": True,
+                "expected_version": identity["current_version"],
+            },
+        ).status_code
+        == 200
+    )
+    before = _business_state(engine)
+    r = c.post(
+        "/me/career-identity/ingest",
+        headers=headers,
+        json={
+            "source_type": "structured_profile",
+            "consent_granted": True,
+            "structured_profile": {"skills": [{"name": "One"}, {"name": "Two"}]},
+        },
+    )
+    assert r.status_code == 429
+    assert _business_state(engine) == before
+
+
+@pytest.mark.parametrize(
+    "resource", ["applications", "recommendation_snapshots", "career_identity_facts"]
+)
+def test_remaining_resource_quota_across_independent_apps(tmp_path, resource):
+    app, engine = _file_app(tmp_path, "race-extra.db", **{"guest_max_" + resource: 1})
+    owner = TestClient(app, base_url=ORIGIN)
+    headers = _unsafe_headers(_bootstrap(owner))
+    did = owner.post(
+        "/me/decisions",
+        headers=headers,
+        json={"title": "Race owner", "decision_type": "career_path"},
+    ).json()["data"]["decision"]["decision_id"]
+    peer_engine = make_engine(str(engine.url))
+    peer = create_app(engine=peer_engine, settings=app.state.settings)
+    barrier = threading.Barrier(2)
+    arrivals = []
+
+    def at_transaction(conn, cursor, statement, parameters, context, executemany):
+        if statement == "BEGIN IMMEDIATE":
+            arrivals.append(True)
+            barrier.wait(timeout=10)
+
+    event.listen(engine, "before_cursor_execute", at_transaction)
+    event.listen(peer_engine, "before_cursor_execute", at_transaction)
+    path = {
+        "applications": "/me/applications",
+        "recommendation_snapshots": "/me/recommendation-snapshots",
+        "career_identity_facts": "/me/career-identity/facts",
+    }[resource]
+
+    def deliver(index):
+        payload = {
+            "applications": {
+                "decision_id": did,
+                "role_title": f"Role {index}",
+                "status": "preparing",
+            },
+            "recommendation_snapshots": {
+                "personalized_output": {},
+                "recommendation_version": "r6",
+                "source_version_bundle": {},
+                "recommendation_inputs_hash": f"r6-{index}",
+                "generated_at": "2026-11-04T00:00:00Z",
+            },
+            "career_identity_facts": {
+                "fact_type": "skill",
+                "state": "explicit",
+                "payload": {"name": f"Skill {index}"},
+            },
+        }[resource]
+        with TestClient(peer if index else app, base_url=ORIGIN, cookies=owner.cookies) as c:
+            return c.post(path, headers=headers, json=payload)
+
+    try:
+        with ThreadPoolExecutor(2) as pool:
+            responses = list(pool.map(deliver, [0, 1]))
+    finally:
+        event.remove(engine, "before_cursor_execute", at_transaction)
+        event.remove(peer_engine, "before_cursor_execute", at_transaction)
+        peer_engine.dispose()
+    assert len(arrivals) == 2
+    assert sorted(r.status_code for r in responses) == [201, 429]
+    table = {
+        "applications": "career_applications",
+        "recommendation_snapshots": "personalized_recommendation_snapshots",
+        "career_identity_facts": "career_identity_facts",
+    }[resource]
+    with engine.connect() as c:
+        assert c.exec_driver_sql("select count(*) from " + table).scalar_one() == 1
+
+
+def _business_state(engine):
+    from sqlalchemy import inspect
+
+    with engine.connect() as connection:
+        return {
+            table: connection.exec_driver_sql(f'SELECT * FROM "{table}"').fetchall()
+            for table in inspect(engine).get_table_names()
+            if table != "public_guest_sessions"
+        }
+
+
+@pytest.mark.parametrize("resource", ["applications", "recommendation_snapshots"])
+def test_other_resource_limits_rollback_and_independent_owners(tmp_path, resource):
+    app, engine = _file_app(tmp_path, "other-limits.db", **{"guest_max_" + resource: 1})
+    for _index in range(2):
+        c = TestClient(app, base_url=ORIGIN)
+        headers = _unsafe_headers(_bootstrap(c))
+        did = c.post(
+            "/me/decisions",
+            headers=headers,
+            json={"title": "Owner", "decision_type": "career_path"},
+        ).json()["data"]["decision"]["decision_id"]
+        path = "/me/applications" if resource == "applications" else "/me/recommendation-snapshots"
+        payload = (
+            {"decision_id": did, "role_title": "Independent", "status": "preparing"}
+            if resource == "applications"
+            else {
+                "personalized_output": {},
+                "recommendation_version": "r6",
+                "source_version_bundle": {},
+                "recommendation_inputs_hash": "r6",
+                "generated_at": "2026-11-04T00:00:00Z",
+            }
+        )
+        assert c.post(path, headers=headers, json=payload).status_code == 201
+        before = _business_state(engine)
+        r = c.post(path, headers=headers, json=payload)
+        assert r.status_code == 429
+        assert r.json()["error"]["type"] == "guest_quota_exceeded"
+        assert _business_state(engine) == before
+
+
+def _comparison_payload(client, headers, markets):
+    # Decision creation initializes Identity; keep preview context stable.
+    assert client.get("/me/career-identity").status_code == 200
+    base = {"market_refs": markets, "session_overrides": {}}
+    r = client.post("/me/explore/compare", headers=headers, json=base)
+    assert r.status_code == 200
+    return {**base, "comparison_identity": r.json()["data"]["comparison_identity"]}
+
+
+@pytest.mark.parametrize("internal_first", [False, True])
+def test_saved_comparison_mixed_creation_promotion_and_reuse(tmp_path, internal_first):
+    app, engine = _file_app(
+        tmp_path, "mixed.db", seed_portfolio=True, guest_max_saved_comparisons=1
+    )
+    c = TestClient(app, base_url=ORIGIN)
+    h = _unsafe_headers(_bootstrap(c))
+    first = _comparison_payload(c, h, ["boston", "new-york"])
+    second = _comparison_payload(c, h, ["atlanta", "austin"])
+    priority = {**second, "selected_market_ref": "atlanta"}
+    if internal_first:
+        assert c.post("/me/explore/prioritize", headers=h, json=priority).status_code == 200
+    assert c.post("/me/explore/comparisons", headers=h, json=first).status_code == 201
+    assert c.post("/me/explore/prioritize", headers=h, json=priority).status_code == 200
+    assert c.post("/me/explore/comparisons", headers=h, json=first).status_code == 201
+    assert (
+        c.post(
+            "/me/explore/compare",
+            headers=h,
+            json={k: v for k, v in first.items() if k != "comparison_identity"},
+        ).status_code
+        == 200
+    )
+    before = _business_state(engine)
+    assert c.post("/me/explore/comparisons", headers=h, json=second).status_code == 429
+    assert _business_state(engine) == before
+    with engine.connect() as db:
+        assert (
+            db.exec_driver_sql("select count(*) from explore_comparison_snapshots").scalar_one()
+            == 2
+        )
+        assert (
+            db.exec_driver_sql(
+                "select count(*) from explore_comparison_snapshots where saved_at is not null"
+            ).scalar_one()
+            == 1
+        )
+    peer = TestClient(app, base_url=ORIGIN)
+    peer_headers = _unsafe_headers(_bootstrap(peer))
+    assert peer.get("/me/career-identity").status_code == 200
+    assert peer.post("/me/explore/comparisons", headers=peer_headers, json=first).status_code == 201
+
+
+def test_internal_promotion_and_decision_quota_rollback(tmp_path):
+    app, engine = _file_app(
+        tmp_path,
+        "promote.db",
+        seed_portfolio=True,
+        guest_max_saved_comparisons=1,
+        guest_max_decisions=1,
+    )
+    c = TestClient(app, base_url=ORIGIN)
+    h = _unsafe_headers(_bootstrap(c))
+    first = _comparison_payload(c, h, ["boston", "new-york"])
+    assert (
+        c.post(
+            "/me/explore/prioritize", headers=h, json={**first, "selected_market_ref": "boston"}
+        ).status_code
+        == 200
+    )
+    assert c.post("/me/explore/comparisons", headers=h, json=first).status_code == 201
+    assert c.post("/me/explore/comparisons", headers=h, json=first).status_code == 201
+    second = _comparison_payload(c, h, ["atlanta", "austin"])
+    before = _business_state(engine)
+    assert (
+        c.post(
+            "/me/explore/prioritize", headers=h, json={**second, "selected_market_ref": "atlanta"}
+        ).status_code
+        == 429
+    )
+    assert _business_state(engine) == before
+    with engine.connect() as db:
+        assert (
+            db.exec_driver_sql("select count(*) from explore_comparison_snapshots").scalar_one()
+            == 1
+        )
+        assert (
+            db.exec_driver_sql(
+                "select count(*) from explore_comparison_snapshots where saved_at is not null"
+            ).scalar_one()
+            == 1
+        )
+
+
+@pytest.mark.parametrize("promote", [False, True])
+def test_saved_comparison_concurrent_independent_apps(tmp_path, promote):
+    app, engine = _file_app(
+        tmp_path, "saved-race.db", seed_portfolio=True, guest_max_saved_comparisons=1
+    )
+    c = TestClient(app, base_url=ORIGIN)
+    h = _unsafe_headers(_bootstrap(c))
+    payloads = []
+    for markets in [["boston", "new-york"], ["atlanta", "austin"]]:
+        payload = _comparison_payload(c, h, markets)
+        payloads.append(payload)
+        if promote:
+            assert (
+                c.post(
+                    "/me/explore/prioritize",
+                    headers=h,
+                    json={**payload, "selected_market_ref": markets[0]},
+                ).status_code
+                == 200
+            )
+    peer_engine = make_engine(str(engine.url))
+    peer = create_app(engine=peer_engine, settings=app.state.settings)
+    barrier = threading.Barrier(2)
+    arrivals = []
+
+    def sync(conn, cursor, statement, parameters, context, executemany):
+        if statement == "BEGIN IMMEDIATE":
+            arrivals.append(True)
+            barrier.wait(timeout=10)
+
+    event.listen(engine, "before_cursor_execute", sync)
+    event.listen(peer_engine, "before_cursor_execute", sync)
+
+    def deliver(i):
+        with TestClient(peer if i else app, base_url=ORIGIN, cookies=c.cookies) as client:
+            return client.post("/me/explore/comparisons", headers=h, json=payloads[i])
+
+    try:
+        with ThreadPoolExecutor(2) as pool:
+            rs = list(pool.map(deliver, [0, 1]))
+    finally:
+        event.remove(engine, "before_cursor_execute", sync)
+        event.remove(peer_engine, "before_cursor_execute", sync)
+        peer_engine.dispose()
+    assert len(arrivals) == 2
+    assert sorted(r.status_code for r in rs) == [201, 429]
+    with engine.connect() as db:
+        assert (
+            db.exec_driver_sql(
+                "select count(*) from explore_comparison_snapshots where saved_at is not null"
+            ).scalar_one()
+            == 1
+        )
+        assert db.exec_driver_sql(
+            "select count(*) from explore_comparison_snapshots"
+        ).scalar_one() == (2 if promote else 1)

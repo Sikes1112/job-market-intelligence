@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.admin.roles import (
@@ -40,6 +41,7 @@ from backend.hiring.repository import HiringRepository
 from backend.outputs.repository import OutputMetadataRepository
 from backend.outputs.service import OutputAssemblyService
 from backend.presence.repository import PresenceRepository
+from backend.public_guest.decision_quota import install_decision_quota
 from backend.public_guest.service import VerifiedGuestPrincipal
 from backend.scoring.repository import RegionScoreRepository
 from backend.users.exceptions import (
@@ -72,6 +74,22 @@ def get_session(request: Request) -> Iterator[Session]:
     factory = request.app.state.session_factory
     session = factory()
     try:
+        if request.app.state.settings.is_public_guest_demo:
+            if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+                # Guest mode is SQLite-only. Start a real write transaction before
+                # reads/savepoints: legacy SQLite otherwise commits a released first
+                # savepoint independently, and count/insert must be serialized.
+                session.execute(text("BEGIN IMMEDIATE"))
+            install_decision_quota(
+                session,
+                request.app.state.settings.guest_max_decisions,
+                option_maximum=request.app.state.settings.guest_max_decision_options,
+                action_maximum=request.app.state.settings.guest_max_actions,
+                fact_maximum=request.app.state.settings.guest_max_career_identity_facts,
+                application_maximum=request.app.state.settings.guest_max_applications,
+                snapshot_maximum=request.app.state.settings.guest_max_recommendation_snapshots,
+                saved_comparison_maximum=request.app.state.settings.guest_max_saved_comparisons,
+            )
         yield session
         session.commit()
     except Exception:

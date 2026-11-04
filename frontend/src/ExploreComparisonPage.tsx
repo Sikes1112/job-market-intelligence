@@ -189,6 +189,7 @@ export default function ExploreComparisonPage({
   const [reloadNonce, setReloadNonce] = useState(0);
   const [savedId, setSavedId] = useState<string | null>(savedComparisonId ?? null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [priorityTarget, setPriorityTarget] = useState("");
   const [prioritizing, setPrioritizing] = useState(false);
@@ -235,6 +236,7 @@ export default function ExploreComparisonPage({
     let normalizing = false;
     setLoading(true);
     setError(null);
+    setSaveError(null);
     const request = savedComparisonId
       ? getExploreComparison(savedComparisonId, authOptions).then((envelope) => envelope.data?.comparison.result)
       : canonicalizeExploreGeography(state).then((canonical) => {
@@ -302,6 +304,8 @@ export default function ExploreComparisonPage({
   async function save() {
     if (!result || saving || savedId) return;
     setSaving(true);
+    setSaveError(null);
+    setAnnouncement("");
     try {
       const envelope = await saveExploreComparison({
         market_refs: liveState.selected,
@@ -313,7 +317,13 @@ export default function ExploreComparisonPage({
       setSavedId(id);
       setAnnouncement("Comparison saved. It is now available in My Search.");
     } catch (reason) {
-      setAnnouncement(`Could not save comparison: ${errorMessage(reason)}`);
+      const quotaReached = reason instanceof ApiError
+        && reason.statusCode === 429
+        && reason.envelope?.error?.type === "guest_quota_exceeded"
+        && reason.message.includes("saved_comparisons");
+      setSaveError(quotaReached
+        ? "Could not save comparison: the guest demo’s saved-comparison limit has been reached. Your existing saved comparisons are still available in My Search."
+        : `Could not save comparison: ${errorMessage(reason)}`);
     } finally {
       setSaving(false);
     }
@@ -390,6 +400,7 @@ export default function ExploreComparisonPage({
           {savedComparisonId ? <button className="secondary-button" onClick={() => onNavigate(exploreComparisonUrl({ selected: result.compared_markets.map((market) => market.fit.region.public_slug ?? market.fit.region.region_id), view: "list" }))} type="button">Compare these markets again with current data</button> : null}
           {savedId && !savedComparisonId ? <button className="text-button" onClick={() => onNavigate(savedExploreComparisonUrl(savedId))} type="button">Open saved snapshot</button> : null}
         </div>
+        {saveError ? <p className="error-copy" role="alert">{saveError}</p> : null}
       </section>
 
       {priorityError && !confirming ? <p className="error-copy" role="alert">{priorityError} Choose Prioritize to review your market and try again.</p> : null}
