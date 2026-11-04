@@ -1,3 +1,4 @@
+import { ApiError } from "./api";
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -121,4 +122,70 @@ describe("Layer 42A Profile and My Search", () => {
     expect(await screen.findByText("Personalization consent is off")).toBeInTheDocument();
     expect(currentIdentity.facts.role_preference).toHaveLength(1);
   });
+  test.each([404, 409])("preserves draft and requires review after fact conflict %s", async (status) => {
+    render(<ProfileSummaryPage auth={auth} onNavigate={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", {name: "Edit search essentials"}));
+    fireEvent.change(screen.getByLabelText("Target role or goal"), {target: {value: "My unsaved role"}});
+    currentIdentity = structuredClone(currentIdentity);
+    currentIdentity.current_version++;
+    currentIdentity.facts.role_preference[0].payload.role_title = "Saved elsewhere";
+    currentIdentity.privacy.downstream_personalization_consent_granted = false;
+    mocks.updateFact.mockRejectedValueOnce(new ApiError("Fact changed", {statusCode: status}));
+    fireEvent.click(screen.getByRole("button", {name: "Save to Profile"}));
+    await screen.findByRole("heading", {name: "Review saved changes"});
+    expect(screen.getByLabelText("Target role or goal")).toHaveValue("My unsaved role");
+    expect(screen.getByText("Saved Elsewhere")).toBeInTheDocument();
+    const writes = mocks.updateFact.mock.calls.length;
+    fireEvent.submit(screen.getByLabelText("Target role or goal").closest("form")!);
+    expect(mocks.updateFact).toHaveBeenCalledTimes(writes);
+    fireEvent.click(screen.getByRole("button", {name: "Review draft against saved values"}));
+    expect(mocks.updateFact).toHaveBeenCalledTimes(writes);
+    expect(screen.getByLabelText("Use these facts to personalize Explore")).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", {name: "Apply reviewed draft"}));
+    await waitFor(() => expect(screen.queryByRole("heading", {name: "Search essentials"})).not.toBeInTheDocument());
+    expect(currentIdentity.facts.role_preference[0].payload.role_title).toBe("My unsaved role");
+    expect(currentIdentity.privacy.downstream_personalization_consent_granted).toBe(false);
+  });
+  test.each([422,403,503])("ordinary error %s retains draft without claiming a conflict", async (status) => {
+    render(<ProfileSummaryPage auth={auth} onNavigate={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", {name: "Edit search essentials"}));
+    fireEvent.change(screen.getByLabelText("Target role or goal"), {target:{value:"Keep draft"}});
+    mocks.updateFact.mockRejectedValueOnce(new ApiError("Correct this input", {statusCode:status}));
+    fireEvent.click(screen.getByRole("button",{name:"Save to Profile"}));
+    await screen.findByText("Correct this input");
+    expect(screen.queryByRole("heading",{name:"Review saved changes"})).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Target role or goal")).toHaveValue("Keep draft");
+  });
+
+  test("failed latest fetch preserves draft, retry does not save, and discard uses saved values", async () => {
+    render(<ProfileSummaryPage auth={auth} onNavigate={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", {name:"Edit search essentials"}));
+    fireEvent.change(screen.getByLabelText("Target role or goal"),{target:{value:"Keep until reviewed"}});
+    mocks.updateFact.mockRejectedValueOnce(new ApiError("Conflict",{statusCode:409}));
+    mocks.getIdentity.mockRejectedValueOnce(new Error("Network unavailable"));
+    fireEvent.click(screen.getByRole("button",{name:"Save to Profile"}));
+    await screen.findByRole("button",{name:"Retry loading saved values"});
+    expect(screen.getByLabelText("Target role or goal")).toHaveValue("Keep until reviewed");
+    const count = mocks.updateFact.mock.calls.length;
+    fireEvent.click(screen.getByRole("button",{name:"Retry loading saved values"}));
+    await screen.findByRole("button",{name:"Review draft against saved values"});
+    expect(mocks.updateFact).toHaveBeenCalledTimes(count);
+    fireEvent.click(screen.getByRole("button",{name:"Use saved values instead"}));
+    expect(screen.getByLabelText("Target role or goal")).toHaveValue("AI product manager");
+    expect(screen.queryByRole("heading",{name:"Review saved changes"})).not.toBeInTheDocument();
+  });
+  test("a second conflict requires a fresh review, never an automatic retry", async () => {
+    render(<ProfileSummaryPage auth={auth} onNavigate={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button",{name:"Edit search essentials"}));
+    fireEvent.change(screen.getByLabelText("Target role or goal"),{target:{value:"My draft"}});
+    mocks.updateFact.mockRejectedValueOnce(new ApiError("Conflict",{statusCode:409}));
+    fireEvent.click(screen.getByRole("button",{name:"Save to Profile"}));
+    fireEvent.click(await screen.findByRole("button",{name:"Review draft against saved values"}));
+    mocks.updateFact.mockRejectedValueOnce(new ApiError("Conflict again",{statusCode:409}));
+    fireEvent.click(screen.getByRole("button",{name:"Apply reviewed draft"}));
+    await screen.findByRole("button",{name:"Review draft against saved values"});
+    expect(screen.getByRole("button",{name:"Apply reviewed draft"})).toBeDisabled();
+    expect(screen.getByLabelText("Target role or goal")).toHaveValue("My draft");
+  });
+
 });

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
 import ExploreComparisonPage from "./ExploreComparisonPage";
 import type { FrontendAuthContextValue } from "./auth";
-import type { ApiEnvelope, ExploreComparisonResult, ExploreFitResult } from "./types";
+import type { ApiEnvelope, ExploreComparisonResult, ExploreFitResult, ExplorePrioritization } from "./types";
 import type { ExploreUrlState } from "./urlState";
 
 const routedAuth = vi.hoisted(() => ({
@@ -83,6 +83,26 @@ function comparison(): ExploreComparisonResult {
   };
 }
 
+function prioritization(region = "greater_boston"): ExplorePrioritization {
+  const title = region === "greater_boston" ? "Prioritize Greater Boston" : "Prioritize Greater New York";
+  const timestamp = "2026-10-09T12:00:00Z";
+  return {
+    decision_id: "decision-pending", comparison_id: "cmp-1", selected_region_id: region,
+    system_recommended_region_ids: ["greater_boston"], choice_matches_recommendation: region === "greater_boston", created: true,
+    decision: {
+      decision_id: "decision-pending", decision_type: "location_choice", status: "decided", title,
+      description: null, decision_date: timestamp, target_date: null, planned_review_at: null,
+      time_horizon: null, priorities: [], constraints: [], selected_option_id: "option-selected",
+      career_identity_id: null, current_context_snapshot_id: null, current_recommendation_id: null,
+      current_version: 1, context: null,
+      options: [{option_id: "option-selected", decision_id: "decision-pending", title: title.replace("Prioritize ", ""),
+        description: null, scenario: {region_id:region}, status: "selected", position: 0, created_at:timestamp, updated_at:timestamp}],
+      recommendation: null, action_plan: null,
+      applications: [], outcomes: [], created_at: timestamp, updated_at: timestamp,
+    },
+  };
+}
+
 const auth: FrontendAuthContextValue = { isConfigured: true, isAuthenticated: true, isLoading: false, error: null, user: { sub: "user" }, login: vi.fn(), logout: vi.fn(), getAccessTokenSilently: vi.fn(async () => "token") };
 const state: ExploreUrlState = { view: "list", selected: ["boston", "new-york"], goal: "ai_ml", opportunityTypes: [], workArrangements: [], geographicScope: [], industries: [] };
 
@@ -106,7 +126,7 @@ describe("Layer 42B Explore comparison", () => {
     mocks.compare.mockResolvedValue(envelope(comparison()));
     mocks.event.mockResolvedValue(envelope({ event: {} }));
     mocks.save.mockResolvedValue(envelope({ comparison: { comparison_id: "cmp-1", result: comparison() } }));
-    mocks.prioritize.mockResolvedValue(envelope({ prioritization: { decision_id: "decision-1", comparison_id: "cmp-1", selected_region_id: "greater_nyc", system_recommended_region_ids: ["greater_boston"], choice_matches_recommendation: false, created: true, decision: { title: "Prioritize Greater New York" } } }));
+    mocks.prioritize.mockResolvedValue(envelope({ prioritization: prioritization("greater_nyc") }));
     mocks.getSaved.mockResolvedValue(envelope({ comparison: { comparison_id: "cmp-1", result: comparison() } }));
   });
   afterEach(() => {
@@ -263,4 +283,140 @@ describe("Layer 42B Explore comparison", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(trigger).toHaveFocus());
   });
+  test("Escape mirrors Cancel and Tab stays inside the labeled confirmation", async () => {
+    render(<ExploreComparisonPage auth={auth} onNavigate={vi.fn()} state={state} />);
+    const trigger = await screen.findByRole("button", {name:"Prioritize"});
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog",{name:"Choose a market to prioritize"});
+    const market = screen.getByLabelText("Market");
+    expect(market).toHaveFocus();
+    fireEvent.keyDown(market,{key:"Tab",shiftKey:true});
+    expect(screen.getByRole("button",{name:"Cancel"})).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("button",{name:"Cancel"}),{key:"Tab"});
+    expect(market).toHaveFocus();
+    fireEvent.keyDown(dialog,{key:"Escape"});
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(()=>expect(trigger).toHaveFocus());
+    expect(mocks.prioritize).not.toHaveBeenCalled();
+  });
+  test("Escape dismisses a pending confirmation without cancelling its result", async () => {
+    let finish!: (value: unknown) => void;
+    mocks.prioritize.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+    const navigate = vi.fn();
+    render(<ExploreComparisonPage auth={auth} onNavigate={navigate} state={state} />);
+    const trigger = await screen.findByRole("button",{name:"Prioritize"});
+    fireEvent.click(trigger);
+    fireEvent.change(screen.getByLabelText("Market"),{target:{value:"greater_boston"}});
+    fireEvent.click(screen.getByRole("button",{name:"Prioritize Greater Boston"}));
+    expect(mocks.prioritize).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(document.body,{key:"Escape"});
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(()=>expect(trigger).toHaveFocus());
+    finish(envelope({ prioritization: prioritization() }));
+    expect(await screen.findByRole("heading",{name:"Added to My Search"})).toBeInTheDocument();
+    expect(screen.getByText("Prioritize Greater Boston is now active in My Search.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Could not prioritize market|TypeError/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mocks.prioritize).toHaveBeenCalledTimes(1);
+    expect(mocks.prioritize.mock.calls[0][0]).toMatchObject({selected_market_ref:"greater_boston"});
+    fireEvent.click(screen.getByRole("button", {name:"Open Decision"}));
+    expect(navigate).toHaveBeenLastCalledWith("/markets/decisions?decision=decision-pending");
+    fireEvent.click(screen.getByRole("button", {name:"Open My Search"}));
+    expect(navigate).toHaveBeenLastCalledWith("/markets/my-search");
+  });
+
+  test("pending dismissal preserves failure feedback and permits a deliberate retry", async () => {
+    let fail!: (reason: Error) => void;
+    mocks.prioritize.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    render(<ExploreComparisonPage auth={auth} onNavigate={vi.fn()} state={state} />);
+    const trigger = await screen.findByRole("button", { name: "Prioritize" });
+    fireEvent.click(trigger);
+    fireEvent.change(screen.getByLabelText("Market"), { target: { value: "greater_boston" } });
+    fireEvent.click(screen.getByRole("button", { name: "Prioritize Greater Boston" }));
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mocks.prioritize).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(trigger).toHaveFocus());
+    fail(new Error("Synthetic save failure"));
+    expect(await screen.findByText(/Could not prioritize market: Synthetic save failure/)).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+    expect(screen.getByRole("button", { name: "Prioritize Greater Boston" })).toBeEnabled();
+  });
+
+  test.each(["open", "Escape", "Cancel"])("failure remains visible and recoverable after %s", async (dismissal) => {
+    let fail!: (error: Error) => void;
+    mocks.prioritize.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    mocks.prioritize.mockResolvedValueOnce(envelope({prioritization:prioritization()}));
+    render(<ExploreComparisonPage auth={auth} onNavigate={vi.fn()} state={state} />);
+    const trigger = await screen.findByRole("button", {name:"Prioritize"});
+    fireEvent.click(trigger);
+    fireEvent.change(screen.getByLabelText("Market"), {target:{value:"greater_boston"}});
+    fireEvent.click(screen.getByRole("button", {name:"Prioritize Greater Boston"}));
+    if (dismissal === "Escape") fireEvent.keyDown(document.body, {key:"Escape"});
+    if (dismissal === "Cancel") fireEvent.click(screen.getByRole("button", {name:"Cancel"}));
+    fail(new Error("Synthetic save failure"));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toBeVisible();
+    expect(alert).toHaveTextContent("Could not prioritize market: Synthetic save failure");
+    expect(alert).toHaveTextContent(/try again/i);
+    expect(alert).not.toHaveClass("sr-only");
+    expect(screen.queryByRole("heading", {name:"Added to My Search"})).not.toBeInTheDocument();
+    if (dismissal === "open") expect(screen.getByRole("dialog")).toContainElement(alert);
+    else {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      await waitFor(() => expect(trigger).toHaveFocus());
+      fireEvent.click(trigger);
+    }
+    expect(screen.getByLabelText("Market")).toHaveValue("greater_boston");
+    fireEvent.click(screen.getByRole("button", {name:"Prioritize Greater Boston"}));
+    expect(await screen.findByRole("heading", {name:"Added to My Search"})).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Synthetic save failure/)).not.toBeInTheDocument();
+    expect(mocks.prioritize).toHaveBeenCalledTimes(2);
+  });
+
+  test.each([{}, {prioritization:{decision_id:"pending",created:true}}])("malformed success %j cannot expose a successful destination", async (response) => {
+    mocks.prioritize.mockResolvedValueOnce(envelope(response));
+    render(<ExploreComparisonPage auth={auth} onNavigate={vi.fn()} state={state} />);
+    fireEvent.click(await screen.findByRole("button", {name:"Prioritize"}));
+    fireEvent.change(screen.getByLabelText("Market"), {target:{value:"greater_boston"}});
+    fireEvent.click(screen.getByRole("button", {name:"Prioritize Greater Boston"}));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not prioritize market:");
+    expect(screen.queryByRole("heading", {name:"Added to My Search"})).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {name:"Open Decision"})).not.toBeInTheDocument();
+  });
+
+
 });
+
+ describe("contextual opportunity role handoff", () => {
+  afterEach(cleanup);
+  test("uses the saved comparison role, not today's live role", async () => {
+    const saved = comparison();
+    saved.effective_context.goal = "data_science";
+    mocks.getSaved.mockResolvedValue(envelope({comparison: {comparison_id: "saved", result: saved}}));
+    mocks.event.mockResolvedValue(envelope({event: {}}));
+    const navigate = vi.fn();
+    render(<ExploreComparisonPage auth={auth} state={state} savedComparisonId="saved" onNavigate={navigate} />);
+    fireEvent.click(await screen.findByRole("button", {name: "View opportunities in Greater Boston"}));
+    expect(navigate).toHaveBeenCalledWith(expect.stringMatching(/role=data_ai/));
+    expect(navigate.mock.calls[0][0]).toContain("preferred_role=data_science");
+  });
+  test("unmapped preference requires an explicit actual category without replacement", async () => {
+    const saved = comparison(); saved.effective_context.goal = "marine_ecologist";
+    mocks.getSaved.mockResolvedValue(envelope({comparison: {comparison_id: "saved", result: saved}}));
+    mocks.event.mockResolvedValue(envelope({event: {}}));
+    const navigate = vi.fn();
+    render(<ExploreComparisonPage auth={auth} state={state} savedComparisonId="saved" onNavigate={navigate} />);
+    fireEvent.click(await screen.findByRole("button", {name: "View opportunities in Greater Boston"}));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(screen.getByText(/marine_ecologist/)).toBeInTheDocument();
+    expect(screen.getByRole("button",{name:"Open selected opportunities"})).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Opportunity search category"),{target:{value:"solutions_engineering"}});
+    fireEvent.click(screen.getByRole("button",{name:"Open selected opportunities"}));
+    expect(navigate.mock.calls[0][0]).toContain("role=solutions_engineering");
+    expect(navigate.mock.calls[0][0]).toContain("preferred_role=marine_ecologist");
+  });
+ });

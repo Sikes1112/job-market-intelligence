@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   ApiError,
   createCareerIdentityFact,
@@ -37,6 +37,26 @@ function facts(identity: CareerIdentity | null, types: Array<keyof CareerIdentit
   return types.flatMap((type) => identity?.facts[type] ?? []);
 }
 
+function essentialsFromIdentity(identity: CareerIdentity) {
+    const roleFact = identity.facts.role_preference.find((fact) => ["explicit", "confirmed"].includes(fact.state)) ?? identity.facts.role_preference[0];
+    const goalFact = identity.facts.career_goal.find((fact) => ["explicit", "confirmed"].includes(fact.state)) ?? identity.facts.career_goal[0];
+    const workFact = identity.facts.work_arrangement_preference.find((fact) => ["explicit", "confirmed"].includes(fact.state)) ?? identity.facts.work_arrangement_preference[0];
+    const geographyFact = identity.facts.geographic_constraint.find((fact) => ["explicit", "confirmed"].includes(fact.state)) ?? identity.facts.geographic_constraint[0];
+    return {
+      role: String(roleFact?.payload.role_title ?? goalFact?.payload.description ?? ""),
+      opportunity: String(roleFact?.payload.employment_type ?? "internship"),
+      arrangement: String(workFact?.payload.arrangement ?? "hybrid"),
+      geography: String(geographyFact?.payload.location ?? ""),
+      careerStage: String(roleFact?.payload.seniority ?? "entry_level"),
+      consent: identity.privacy.downstream_personalization_consent_granted,
+    };
+}
+
+function EssentialsReview({ title, values }: { title: string; values: ReturnType<typeof essentialsFromIdentity> }) {
+  const labels: Record<string, string> = { role: "Target role", opportunity: "Opportunity type", arrangement: "Work arrangement", geography: "Preferred market", careerStage: "Career stage", consent: "Personalization consent" };
+  return <div><h3>{title}</h3><dl>{Object.entries(values).map(([key, value]) => <div key={key}><dt>{labels[key]}</dt><dd>{typeof value === "boolean" ? value ? "On" : "Off" : value ? pretty(value) : "Not specified"}</dd></div>)}</dl></div>;
+}
+
 export function ProfileSummaryPage({ auth, onNavigate }: CommonProps) {
   const [identity, setIdentity] = useState<CareerIdentity | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,6 +64,39 @@ export function ProfileSummaryPage({ auth, onNavigate }: CommonProps) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ role: "", opportunity: "internship", arrangement: "hybrid", geography: "", careerStage: "entry_level", consent: true });
+  const preserveDraft = useRef(false);
+  const baseForm = useRef(form);
+  const [conflict, setConflict] = useState<{ latest: CareerIdentity | null; reviewed: boolean } | null>(null);
+  async function fetchCurrentForReview() {
+    try {
+      const response = await getCareerIdentity(protectedOptions);
+      if (!response.data) throw new Error("Saved Profile could not be loaded.");
+      if (identity && response.data.career_identity_id !== identity.career_identity_id) throw new Error("The active Profile changed. Reopen the editor for the current account before applying this draft.");
+      setIdentity(response.data);
+      setConflict({ latest: response.data, reviewed: false });
+      setError("Your saved Profile changed. Your draft is preserved. Review the current values before applying it again. Earlier successful changes may already be saved.");
+    } catch (reason) {
+      setConflict({ latest: null, reviewed: false });
+      setError(`Your draft is preserved, but current saved values could not be retrieved. ${errorMessage(reason)}`);
+    }
+  }
+  function reviewDraft() {
+    if (!conflict?.latest) return;
+    const latest = essentialsFromIdentity(conflict.latest);
+    const next = { ...form };
+    for (const key of Object.keys(latest) as Array<keyof typeof form>) {
+      if (form[key] === baseForm.current[key]) Object.assign(next, { [key]: latest[key] });
+    }
+    setForm(next);
+    baseForm.current = latest;
+    setConflict({ ...conflict, reviewed: true });
+  }
+  function useSavedValues() {
+    if (!conflict?.latest) return;
+    const latest = essentialsFromIdentity(conflict.latest);
+    setForm(latest); baseForm.current = latest;
+    preserveDraft.current = false; setConflict(null); setError(null);
+  }
   const protectedOptions = useMemo<ProtectedRequestOptions>(() => ({ getAccessToken: auth.getAccessTokenSilently }), [auth.getAccessTokenSilently]);
 
   function load() {
@@ -60,18 +113,10 @@ export function ProfileSummaryPage({ auth, onNavigate }: CommonProps) {
 
   useEffect(() => {
     if (!identity || !editing) return;
-    const roleFact = identity.facts.role_preference.find((fact) => ["explicit", "confirmed"].includes(fact.state)) ?? identity.facts.role_preference[0];
-    const goalFact = identity.facts.career_goal.find((fact) => ["explicit", "confirmed"].includes(fact.state)) ?? identity.facts.career_goal[0];
-    const workFact = identity.facts.work_arrangement_preference.find((fact) => ["explicit", "confirmed"].includes(fact.state)) ?? identity.facts.work_arrangement_preference[0];
-    const geographyFact = identity.facts.geographic_constraint.find((fact) => ["explicit", "confirmed"].includes(fact.state)) ?? identity.facts.geographic_constraint[0];
-    setForm({
-      role: String(roleFact?.payload.role_title ?? goalFact?.payload.description ?? ""),
-      opportunity: String(roleFact?.payload.employment_type ?? "internship"),
-      arrangement: String(workFact?.payload.arrangement ?? "hybrid"),
-      geography: String(geographyFact?.payload.location ?? ""),
-      careerStage: String(roleFact?.payload.seniority ?? "entry_level"),
-      consent: identity.privacy.downstream_personalization_consent_granted,
-    });
+    if (preserveDraft.current) return;
+    const next = essentialsFromIdentity(identity);
+    setForm(next);
+    baseForm.current = next;
   }, [editing, identity]);
 
   const rolePreferences = facts(identity, ["role_preference"]);
@@ -98,7 +143,7 @@ export function ProfileSummaryPage({ auth, onNavigate }: CommonProps) {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!identity || !form.role.trim()) return;
+    if (!identity || !form.role.trim() || (conflict && !conflict.reviewed)) return;
     setSaving(true);
     setError(null);
     try {
@@ -115,7 +160,9 @@ export function ProfileSummaryPage({ auth, onNavigate }: CommonProps) {
         const candidates = current.facts[factType].filter((fact) => ["explicit", "confirmed"].includes(fact.state));
         const remove = factType === "geographic_constraint" && !form.geography.trim() ? candidates : candidates.slice(1);
         for (const fact of remove) {
-          await deleteCareerIdentityFact(fact.career_identity_fact_id, undefined, protectedOptions);
+          await deleteCareerIdentityFact(fact.career_identity_fact_id, current.current_version, protectedOptions);
+          const refreshed = await getCareerIdentity(protectedOptions);
+          if (refreshed.data) current = refreshed.data;
           removedFacts = true;
         }
       }
@@ -139,10 +186,16 @@ export function ProfileSummaryPage({ auth, onNavigate }: CommonProps) {
         const updated = await updateCareerIdentityPrivacy({ downstream_personalization_consent_granted: form.consent, expected_version: current.current_version }, protectedOptions);
         if (updated.data) current = updated.data;
       }
+      preserveDraft.current = false;
+      setConflict(null);
       setIdentity(current);
       setEditing(false);
     } catch (reason) {
-      setError(errorMessage(reason));
+      if (reason instanceof ApiError && [404, 409].includes(reason.statusCode ?? 0)) {
+        preserveDraft.current = true;
+        setConflict({ latest: null, reviewed: false });
+        await fetchCurrentForReview();
+      } else setError(errorMessage(reason));
     } finally {
       setSaving(false);
     }
@@ -166,7 +219,17 @@ export function ProfileSummaryPage({ auth, onNavigate }: CommonProps) {
       <header className="profile-hero"><p className="eyebrow">What the product understands about your search</p><h1>Profile</h1><p>{summary}</p><div><button onClick={() => setEditing((value) => !value)} type="button">{editing ? "Close editor" : "Edit search essentials"}</button><button className="secondary-button" onClick={() => onNavigate(exploreUrl())} type="button">Open Explore</button></div></header>
       {error ? <p className="explore-error" role="alert">{error}</p> : null}
       {!identity?.privacy.downstream_personalization_consent_granted ? <div className="explore-notice explore-notice-warning"><strong>Personalization consent is off</strong><span>Explore will show general market intelligence until you enable it.</span></div> : null}
-      {editing ? <form className="profile-essentials-form" onSubmit={submit}><h2>Search essentials</h2><p>This updates Career Identity. Explore filters remain temporary and never write here.</p><label>Target role or goal<input required onChange={(event) => setForm({ ...form, role: event.target.value })} placeholder="AI product manager" value={form.role} /></label><label>Opportunity type<select onChange={(event) => setForm({ ...form, opportunity: event.target.value })} value={form.opportunity}><option value="internship">Internship</option><option value="full_time">Full-time</option><option value="coop">Co-op</option></select></label><label>Career stage<select onChange={(event) => setForm({ ...form, careerStage: event.target.value })} value={form.careerStage}><option value="entry_level">Entry level</option><option value="mid_level">Mid-career</option></select></label><label>Work arrangement<select onChange={(event) => setForm({ ...form, arrangement: event.target.value })} value={form.arrangement}><option value="hybrid">Hybrid</option><option value="remote">Remote</option><option value="onsite">On-site</option><option value="flexible">Flexible</option></select></label><label>Preferred market (optional)<input onChange={(event) => setForm({ ...form, geography: event.target.value })} placeholder="Boston" value={form.geography} /></label><label className="checkbox-label"><input checked={form.consent} onChange={(event) => setForm({ ...form, consent: event.target.checked })} type="checkbox" />Use these facts to personalize Explore</label><button disabled={saving} type="submit">{saving ? "Saving…" : "Save to Profile"}</button></form> : null}
+      {editing && conflict ? <section aria-label="Review Profile conflict" role="status">
+        <h2>Review saved changes</h2>
+        {conflict.latest ? <>
+          <EssentialsReview title="Current saved values" values={essentialsFromIdentity(conflict.latest)} />
+          <EssentialsReview title="Your draft" values={form} />
+          <p>Fields you did not edit will keep the current saved values, including consent. Review your proposed changes before saving.</p>
+          {!conflict.reviewed ? <button type="button" onClick={reviewDraft}>Review draft against saved values</button> : <p>Review complete. Check the fields below, then apply the reviewed draft.</p>}
+          <button type="button" onClick={useSavedValues}>Use saved values instead</button>
+        </> : <button type="button" onClick={() => void fetchCurrentForReview()}>Retry loading saved values</button>}
+      </section> : null}
+      {editing ? <form className="profile-essentials-form" onSubmit={submit}><h2>Search essentials</h2><p>This updates Career Identity. Explore filters remain temporary and never write here.</p><label>Target role or goal<input required onChange={(event) => setForm({ ...form, role: event.target.value })} placeholder="AI product manager" value={form.role} /></label><label>Opportunity type<select onChange={(event) => setForm({ ...form, opportunity: event.target.value })} value={form.opportunity}><option value="internship">Internship</option><option value="full_time">Full-time</option><option value="coop">Co-op</option></select></label><label>Career stage<select onChange={(event) => setForm({ ...form, careerStage: event.target.value })} value={form.careerStage}><option value="entry_level">Entry level</option><option value="mid_level">Mid-career</option></select></label><label>Work arrangement<select onChange={(event) => setForm({ ...form, arrangement: event.target.value })} value={form.arrangement}><option value="hybrid">Hybrid</option><option value="remote">Remote</option><option value="onsite">On-site</option><option value="flexible">Flexible</option></select></label><label>Preferred market (optional)<input onChange={(event) => setForm({ ...form, geography: event.target.value })} placeholder="Boston" value={form.geography} /></label><label className="checkbox-label"><input checked={form.consent} onChange={(event) => setForm({ ...form, consent: event.target.checked })} type="checkbox" />Use these facts to personalize Explore</label><button disabled={saving || Boolean(conflict && !conflict.reviewed)} type="submit">{saving ? "Saving…" : conflict ? "Apply reviewed draft" : "Save to Profile"}</button></form> : null}
       <div className="profile-section-list">{sections.map(([title, items, empty]) => <section key={title}><header><h2>{title}</h2><span>{items.length || "—"}</span></header>{items.length ? <ul>{items.slice(0, 5).map((fact) => <li key={fact.career_identity_fact_id}>{factText(fact)}{fact.state !== "explicit" ? <small>{pretty(fact.state)}</small> : null}</li>)}</ul> : <p>{empty}</p>}</section>)}</div>
       <details className="profile-advanced"><summary>Advanced, privacy & account</summary><p>Profile version {identity?.current_version}. Privacy visibility: {identity?.privacy.privacy_visibility}. Raw fact identifiers and provenance are available in the legacy Career Identity review surface.</p><a href="/markets/career-identity">Open advanced Career Identity review</a></details>
     </div>

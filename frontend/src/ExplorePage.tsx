@@ -1,3 +1,4 @@
+import { opportunityRole as currentOpportunityRole } from "./opportunityContext";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   ApiError,
@@ -68,13 +69,6 @@ const CURATED_PUBLIC_SLUGS: Record<string, string> = {
   chicago: "chicago",
 };
 
-const CURRENT_OPPORTUNITY_ROLE_BY_EXPLORE_GOAL: Record<string, string> = {
-  ai_ml: "applied_ai",
-  data_science: "data_ai",
-  product_management: "product_management",
-  software_engineering: "software_engineering",
-};
-
 const CURRENT_OPPORTUNITY_TYPE_BY_EXPLORE_TYPE: Record<string, string> = {
   full_time: "job",
   "full time": "job",
@@ -89,10 +83,6 @@ const CURRENT_OPPORTUNITY_WORK_ARRANGEMENTS = new Set([
   "mixed",
   "unknown",
 ]);
-
-function currentOpportunityRole(goal: string | null | undefined): string | undefined {
-  return goal ? CURRENT_OPPORTUNITY_ROLE_BY_EXPLORE_GOAL[goal] : undefined;
-}
 
 function currentOpportunityType(value: string | null | undefined): string | undefined {
   return value ? CURRENT_OPPORTUNITY_TYPE_BY_EXPLORE_TYPE[value] : undefined;

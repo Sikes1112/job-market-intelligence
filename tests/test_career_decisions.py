@@ -627,3 +627,182 @@ def test_compare_validation_failure_does_not_create_context_snapshot(session: Se
     assert session.query(CareerDecision).count() == 1
     assert session.query(DecisionVersion).count() == 1
     assert session.query(CareerApplication).count() == 0
+
+
+@pytest.mark.parametrize(
+    ("operator", "actual", "expected", "status"),
+    [
+        ("eq", "hybrid", "hybrid", "satisfied"),
+        ("equals", "remote", "hybrid", "violated"),
+        ("in", ["chicago"], ["chicago"], "satisfied"),
+        ("one_of", ["austin"], ["chicago"], "violated"),
+        ("gte", 120000, 110000, "satisfied"),
+        (">=", 90000, 110000, "violated"),
+        ("lte", 5, 6, "satisfied"),
+        ("<=", 7, 6, "violated"),
+        ("eq", None, "hybrid", "unknown"),
+        ("contains", "Chicago", "Chicago", "unknown"),
+        ("gte", "unavailable", 110000, "unknown"),
+    ],
+)
+def test_constraint_evaluation_has_three_states(operator, actual, expected, status):
+    from backend.career_decisions.service import _constraint_results
+
+    result = _constraint_results(
+        [
+            {
+                "key": "requirement",
+                "field": "value",
+                "operator": operator,
+                "value": expected,
+                "hard": True,
+            }
+        ],
+        {"value": actual},
+    )[0]
+    assert result["status"] == status
+    assert result["satisfied"] is (None if status == "unknown" else status == "satisfied")
+
+
+def test_prose_and_missing_field_are_unknown_without_false_violations():
+    from backend.career_decisions.service import _constraint_results, _disadvantages, _tradeoffs
+
+    rules = [
+        {
+            "key": "prose",
+            "field": "scenario",
+            "operator": "contains",
+            "value": "Stay in Chicago",
+            "hard": True,
+        },
+        {"key": "missing", "field": "missing", "operator": "eq", "value": "Chicago"},
+        {"key": "soft", "field": "missing", "value": "Chicago", "hard": False},
+    ]
+    results = _constraint_results(rules, {"region_ids": ["chicago"]})
+    assert all(r["status"] == "unknown" and r["satisfied"] is None for r in results)
+    assert not _disadvantages([], results)
+    assert not _tradeoffs([], results)
+
+
+@pytest.mark.parametrize("other_value", [None, 90000, 130000])
+def test_winner_must_be_verified_but_other_unknown_is_not_global_veto(session, other_value):
+    from backend.career_decisions.schemas import DecisionConstraintInput
+
+    user_id = _seed_user(session)
+    _seed_market(session)
+    _seed_identity(session, user_id)
+    service = _decision_service(session)
+    request = _decision_request()
+    options = [
+        request.options[0],
+        request.options[1].model_copy(
+            update={"scenario": {**request.options[0].scenario, "compensation_min": other_value}}
+        ),
+    ]
+    decision = service.create_decision(
+        user_id, request.model_copy(update={"options": tuple(options)})
+    )
+    rec = service.compare_decision(user_id, decision.decision_id)
+    assert rec.recommended_option_id == decision.options[0].option_id
+    other = rec.fit["options"][1]
+    assert other["constraints"][0]["status"] == (
+        "unknown" if other_value is None else "violated" if other_value < 110000 else "satisfied"
+    )
+    # All options unknown after adding a preserved prose requirement: abstain,
+    # but keep evidence and permit a manual choice without inventing endorsement.
+    prose = DecisionConstraintInput(
+        key="local",
+        field="scenario",
+        operator="contains",
+        value="Stay in Chicago",
+        evaluation_mode="unverified",
+    )
+    from backend.career_decisions.schemas import DecisionUpdateInput
+
+    service.update_decision(
+        user_id,
+        decision.decision_id,
+        DecisionUpdateInput(constraints=(*request.constraints, prose)),
+    )
+    second = service.compare_decision(user_id, decision.decision_id)
+    assert second.recommended_option_id is None
+    assert second.recommendation_status == "abstained"
+    assert second.fit["options"][0]["important_unknowns"]
+    assert not any(c["code"] == "hard_constraint_violation" for c in second.challenges)
+    chosen = service.select_option(
+        user_id, decision.decision_id, OptionSelectInput(option_id=decision.options[0].option_id)
+    )
+    assert chosen.selected_option_id == decision.options[0].option_id
+    assert chosen.recommendation.recommended_option_id is None
+    assert (
+        service.journal(user_id, decision.decision_id)[1].recommendation_snapshot[
+            "recommended_option_id"
+        ]
+        == rec.recommended_option_id
+    )
+
+
+def test_new_unsupported_structured_operator_is_rejected_but_legacy_prose_is_readable():
+    from pydantic import ValidationError
+
+    from backend.career_decisions.schemas import DecisionConstraintInput
+
+    with pytest.raises(ValidationError, match="Unsupported structured constraint operator"):
+        DecisionConstraintInput(
+            key="rule", field="region_ids", operator="contains", value="chicago"
+        )
+    prose = DecisionConstraintInput(
+        key="local", field="scenario", operator="contains", value="Stay in Chicago"
+    )
+    assert prose.value == "Stay in Chicago"
+
+
+def test_earlier_ranked_unknown_candidate_cannot_displace_verified_candidate(session):
+    user_id = _seed_user(session)
+    _seed_market(session)
+    _seed_identity(session, user_id)
+    service = _decision_service(session)
+    request = _decision_request()
+    verified = request.options[0]
+    unknown = verified.model_copy(
+        update={
+            "title": "Earlier unknown",
+            "scenario": {**verified.scenario, "compensation_min": None},
+        }
+    )
+    decision = service.create_decision(
+        user_id, request.model_copy(update={"options": (unknown, verified)})
+    )
+    result = service.compare_decision(user_id, decision.decision_id)
+    assert result.recommended_option_id == decision.options[1].option_id
+    assert result.fit["options"][0]["constraints"][0]["status"] == "unknown"
+    assert result.fit["options"][0]["rank_value"] == result.fit["options"][1]["rank_value"]
+
+
+@pytest.mark.parametrize("company_id", [None, "acme_ai", "not_a_company"])
+def test_application_company_validation_before_durable_write(session, company_id):
+    user_id = _seed_user(session)
+    _seed_market(session)
+    service = _decision_service(session)
+    request = ApplicationCreateInput(role_title="Synthetic company check", company_id=company_id)
+    if company_id == "not_a_company":
+        with pytest.raises(CareerDecisionValidationError, match="existing Company ID"):
+            service.create_application(user_id, request)
+        assert session.query(CareerApplication).count() == 0
+        assert session.query(CareerApplicationTransition).count() == 0
+    else:
+        saved = service.create_application(user_id, request)
+        assert saved.company_id == company_id
+        assert session.query(CareerApplication).count() == 1
+
+
+def test_invalid_company_api_is_actionable_validation_not_outage(api_client):
+    headers = _auth_headers("auth0|batch_b_company")
+    api_client.get("/me", headers=headers)
+    response = api_client.post(
+        "/me/applications",
+        headers=headers,
+        json={"role_title": "Synthetic invalid ID", "company_id": "google"},
+    )
+    assert response.status_code == 422
+    assert "Company ID" in response.json()["error"]["message"]

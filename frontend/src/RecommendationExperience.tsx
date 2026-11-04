@@ -1,3 +1,4 @@
+import { opportunityRole } from "./opportunityContext";
 import type { ReactNode } from "react";
 
 import type {
@@ -208,17 +209,9 @@ function WarningSummary({ strategy }: { strategy: RecommendationStrategyPayload 
   return <section className="recommendation-limitations" aria-label="Recommendation confidence and limitations"><div><p className="eyebrow">Confidence</p><h2>Evidence limitations</h2></div>{material ? <p><strong>{humanText(material.label)}</strong> Review coverage and freshness before acting.</p> : <p>No material evidence limitation was returned.</p>}{(evidenceWarnings.length || uniqueApiWarnings.length) ? <details className="evidence-disclosure"><summary>Review all {evidenceWarnings.length + uniqueApiWarnings.length} qualifications</summary><ul className="recommendation-warning-summary">{uniqueApiWarnings.map((warning) => <li key={warning}>{humanText(warning)}</li>)}{evidenceWarnings.map((warning: StrategyEvidenceWarning, index) => <li key={`${warning.warning_category}:${warning.label}:${index}`}><strong>{label(warning.warning_category)}:</strong> {warning.label}{warning.detail ? ` — ${humanText(warning.detail)}` : ""}</li>)}</ul></details> : null}</section>;
 }
 
-const OPPORTUNITY_ROLES = new Map<string, string>([
-  ["applied_ai", "applied_ai"], ["applied_ai_engineer", "applied_ai"], ["ai_ml", "applied_ai"],
-  ["data_ai", "data_ai"], ["data_science", "data_ai"], ["product", "product_management"],
-  ["product_management", "product_management"], ["technical_product", "product_management"],
-  ["solutions_engineer", "solutions_engineering"], ["solutions_engineering", "solutions_engineering"],
-  ["software_engineer", "software_engineering"], ["software_engineering", "software_engineering"],
-]);
-
 function supportedOpportunityRole(metadata: CareerIdentityPersonalizationMetadata | undefined): string | undefined {
   for (const target of metadata?.role_targets ?? []) {
-    const mapped = OPPORTUNITY_ROLES.get(target.trim().toLocaleLowerCase().replaceAll(" ", "_"));
+    const mapped = opportunityRole(target);
     if (mapped) return mapped;
   }
   return undefined;

@@ -674,6 +674,8 @@ class CareerDecisionService:
                     code="APPLICATION_REGION_UNRESOLVED",
                 )
             canonical_region_id = resolution.region_id
+        if request.company_id and self._company_repo.get(request.company_id) is None:
+            raise CareerDecisionValidationError("Choose an existing Company ID or leave it empty.")
         application = CareerApplication(
             application_id=_new_id("application"),
             user_id=user_id,
@@ -1041,7 +1043,10 @@ class CareerDecisionService:
         eligible = [
             item
             for item in ranked
-            if not item["hard_violations"] and item["assessment"] != FitAssessment.ABSTAIN.value
+            if all(
+                not rule["hard"] or rule["status"] == "satisfied" for rule in item["constraints"]
+            )
+            and item["assessment"] != FitAssessment.ABSTAIN.value
         ]
         recommended = eligible[0] if eligible else None
         sufficiency = _overall_sufficiency(option_results, context_payload)
@@ -1055,7 +1060,7 @@ class CareerDecisionService:
             status = DecisionRecommendationStatus.ABSTAINED.value
             summary = (
                 "Decision recommendation abstained because evidence is insufficient "
-                "or all viable options violate hard constraints."
+                "or no option is verified to satisfy all hard requirements."
             )
             all_challenges.append(
                 _challenge(
@@ -1114,7 +1119,9 @@ class CareerDecisionService:
             self._strategy_fit(option, context, evidence, limitations),
         ]
         constraints = _constraint_results(decision.constraints or [], scenario)
-        hard_violations = [item for item in constraints if item["hard"] and not item["satisfied"]]
+        hard_violations = [
+            item for item in constraints if item["hard"] and item["status"] == "violated"
+        ]
         for violation in hard_violations:
             code = (
                 ChallengeCode.COMPENSATION_MINIMUM_VIOLATION
@@ -1168,8 +1175,15 @@ class CareerDecisionService:
             "disadvantages": _disadvantages(dimensions, constraints),
             "tradeoffs": _tradeoffs(dimensions, constraints),
             "important_unknowns": [
-                item for item in evidence if item["kind"] in {"unavailable", "weak"}
-            ],
+                {
+                    "title": rule.get("label") or rule["key"],
+                    "description": "Requirement not verified",
+                    "status": "unknown",
+                }
+                for rule in constraints
+                if rule["status"] == "unknown"
+            ]
+            + [item for item in evidence if item["kind"] in {"unavailable", "weak"}],
             "evidence": evidence,
             "challenges": challenges,
             "limitations": limitations,
@@ -1951,7 +1965,20 @@ def _constraint_results(
         operator = constraint.get("operator", "equals")
         expected = constraint.get("value")
         actual = _scenario_value(scenario, str(field))
-        satisfied = _constraint_satisfied(actual, operator, expected)
+        unverified = constraint.get("evaluation_mode") == "unverified" or (
+            field == "scenario" and operator == "contains"
+        )
+        supported = operator in {"equals", "eq", "in", "one_of", "gte", ">=", "lte", "<="}
+        satisfied = (
+            None
+            if unverified or not supported or actual is None
+            else _constraint_satisfied(actual, operator, expected)
+        )
+        if operator in {"gte", ">=", "lte", "<="} and (
+            _number(actual) is None or _number(expected) is None
+        ):
+            satisfied = None
+        status = "unknown" if satisfied is None else "satisfied" if satisfied else "violated"
         results.append(
             {
                 "key": constraint.get("key"),
@@ -1961,6 +1988,9 @@ def _constraint_results(
                 "actual": actual,
                 "hard": bool(constraint.get("hard", True)),
                 "satisfied": satisfied,
+                "status": status,
+                "label": constraint.get("label"),
+                "reason": "Requirement not verified" if status == "unknown" else None,
             }
         )
     return results
@@ -2077,7 +2107,7 @@ def _advantages(
     items.extend(
         {"code": "constraint_satisfied", "detail": item["key"]}
         for item in constraints
-        if item["satisfied"]
+        if item["status"] == "satisfied"
     )
     return items
 
@@ -2093,7 +2123,7 @@ def _disadvantages(
     items.extend(
         {"code": "constraint_violated", "detail": item["key"]}
         for item in constraints
-        if not item["satisfied"]
+        if item["status"] == "violated"
     )
     return items
 
@@ -2114,7 +2144,7 @@ def _tradeoffs(
                 "detail": "Some fit dimensions are supported while others remain unknown.",
             }
         )
-    if any(not item["satisfied"] and not item["hard"] for item in constraints):
+    if any(item["status"] == "violated" and not item["hard"] for item in constraints):
         tradeoffs.append(
             {
                 "code": "soft_constraint_tradeoff",

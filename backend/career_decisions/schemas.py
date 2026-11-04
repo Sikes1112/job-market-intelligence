@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -169,6 +169,7 @@ class DecisionConstraintInput(BaseModel):
 
     key: str = Field(min_length=1, max_length=64)
     field: str = Field(min_length=1, max_length=64)
+    evaluation_mode: Literal["structured", "unverified"] = "structured"
     operator: str = Field(default="equals", min_length=1, max_length=32)
     value: Any
     hard: bool = True
@@ -178,6 +179,17 @@ class DecisionConstraintInput(BaseModel):
     @classmethod
     def _clean_strings(cls, value: str | None) -> str | None:
         return _clean_optional(value)
+
+    @model_validator(mode="after")
+    def validate_evaluator(self) -> Self:
+        legacy_prose = self.field == "scenario" and self.operator == "contains"
+        if (
+            self.evaluation_mode == "structured"
+            and not legacy_prose
+            and self.operator not in {"equals", "eq", "in", "one_of", "gte", ">=", "lte", "<="}
+        ):
+            raise ValueError("Unsupported structured constraint operator")
+        return self
 
 
 class DecisionOptionInput(BaseModel):
