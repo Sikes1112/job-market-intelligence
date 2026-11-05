@@ -200,12 +200,23 @@ export default function ExploreComparisonPage({
   const viewed = useRef(new Set<string>());
   const prioritizeButtonRef = useRef<HTMLButtonElement>(null);
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
+  const confirmationRef = useRef<HTMLDialogElement>(null);
+  // Invalidated on context reload/unmount, but never on ordinary dismissal.
+  const priorityRequestLifetime = useRef<{ active: boolean }>({ active: false });
   const closeConfirmation = () => {
+    const trigger = prioritizeButtonRef.current;
     setConfirming(false);
-    window.setTimeout(() => prioritizeButtonRef.current?.focus(), 0);
+    window.setTimeout(() => {
+      if (!confirmationRef.current && trigger?.isConnected && prioritizeButtonRef.current === trigger) trigger.focus();
+    }, 0);
   };
   useEffect(() => {
     if (!confirming) return;
+    const dialog = confirmationRef.current;
+    if (!dialog) return;
+    // The top layer makes the entire background inert, including the app shell.
+    dialog.showModal();
+    dialog.querySelector<HTMLSelectElement>("select")?.focus();
     // Disabling the submitted button can move native keyboard focus to body.
     const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -214,8 +225,19 @@ export default function ExploreComparisonPage({
       closeConfirmation();
     };
     document.addEventListener("keydown", dismissOnEscape, true);
-    return () => document.removeEventListener("keydown", dismissOnEscape, true);
+    return () => {
+      document.removeEventListener("keydown", dismissOnEscape, true);
+      dialog.close();
+    };
   }, [confirming]);
+
+  useEffect(() => {
+    // A disabled submit button can lose native focus. Keep the pending dialog
+    // usable without interfering with Escape or the eventual success heading.
+    if (confirming && prioritizing) {
+      confirmationRef.current?.querySelector<HTMLButtonElement>("button.secondary-button")?.focus();
+    }
+  }, [confirming, prioritizing]);
 
   const authOptions = useMemo<ProtectedRequestOptions>(
     () => ({ getAccessToken: auth.getAccessTokenSilently }),
@@ -226,11 +248,20 @@ export default function ExploreComparisonPage({
   const requestKey = JSON.stringify([savedComparisonId, state.selected, overrides]);
 
   useEffect(() => {
-    if (auth.isLoading) return;
+    // A confirmation belongs to this loaded comparison, including its pending
+    // feedback. The backend mutation continues if navigation replaces the UI.
+    const lifetime = { active: true };
+    priorityRequestLifetime.current = lifetime;
+    setConfirming(false);
+    setPrioritizing(false);
+    setPriorityError(null);
+    setPrioritization(null);
+    setAnnouncement("");
+    if (auth.isLoading) return () => { lifetime.active = false; };
     if (!auth.isAuthenticated) {
       setLoading(false);
       setError("Sign in to compare markets.");
-      return;
+      return () => { lifetime.active = false; };
     }
     let active = true;
     let normalizing = false;
@@ -270,7 +301,7 @@ export default function ExploreComparisonPage({
       })
       .catch((reason) => active && setError(errorMessage(reason)))
       .finally(() => active && !normalizing && setLoading(false));
-    return () => { active = false; };
+    return () => { active = false; lifetime.active = false; };
   // requestKey captures the canonical selected/context state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.isAuthenticated, auth.isLoading, authOptions, reloadNonce, requestKey, savedComparisonId]);
@@ -331,6 +362,7 @@ export default function ExploreComparisonPage({
 
   async function prioritize() {
     if (!result || !priorityTarget || prioritizing) return;
+    const lifetime = priorityRequestLifetime.current;
     setPrioritizing(true);
     setPriorityError(null);
     setPrioritization(null);
@@ -347,6 +379,7 @@ export default function ExploreComparisonPage({
             },
         authOptions,
       );
+      if (!lifetime.active) return;
       const next = envelope.data?.prioritization;
       if (!next) throw new Error("Prioritize returned no Decision.");
       const successAnnouncement = `${next.decision.title} is now active in My Search.`;
@@ -354,9 +387,9 @@ export default function ExploreComparisonPage({
       setConfirming(false);
       setAnnouncement(successAnnouncement);
     } catch (reason) {
-      setPriorityError(`Could not prioritize market: ${errorMessage(reason)}`);
+      if (lifetime.active) setPriorityError(`Could not prioritize market: ${errorMessage(reason)}`);
     } finally {
-      setPrioritizing(false);
+      if (lifetime.active) setPrioritizing(false);
     }
   }
 
@@ -370,12 +403,17 @@ export default function ExploreComparisonPage({
     ? result.winner_region_ids.includes(priorityTarget)
     : null;
   function handleConfirmationKey(event: KeyboardEvent<HTMLElement>) {
-    if (event.key === "Tab") {
-      const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("*")).filter((element) => element.tabIndex >= 0 && !element.matches(":disabled"));
-      const first = controls[0], last = controls.at(-1);
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    }
+    if (event.key !== "Tab") return;
+    // Safari can skip buttons with full keyboard navigation off. Own every
+    // step, rather than only wrapping at the DOM's first and last controls.
+    const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+      "select:not(:disabled), button:not(:disabled)",
+    ));
+    if (!controls.length) return;
+    event.preventDefault();
+    const index = controls.findIndex((control) => control === document.activeElement);
+    const next = index < 0 ? 0 : (index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length;
+    controls[next].focus();
   }
   return (
     <div className="explore-comparison-page">
@@ -434,14 +472,14 @@ export default function ExploreComparisonPage({
       </section>
 
       {confirming ? (
-        <section aria-labelledby="prioritize-title" aria-modal="true" className="prioritize-confirmation" role="dialog" onKeyDown={handleConfirmationKey}>
+        <dialog ref={confirmationRef} aria-labelledby="prioritize-title" aria-modal="true" className="prioritize-confirmation" onCancel={(event) => { event.preventDefault(); closeConfirmation(); }} onKeyDown={handleConfirmationKey}>
           <h2 id="prioritize-title">Choose a market to prioritize</h2>
           <p>Add one market to My Search. The comparison result will remain unchanged.</p>
           <label>Market<select autoFocus onChange={(event) => setPriorityTarget(event.target.value)} value={priorityTarget}><option value="">Select a market</option>{result.compared_markets.filter((market) => market.fit.state !== "hard_constraint_excluded").map((market) => <option key={market.fit.region.region_id} value={market.fit.region.region_id}>{market.fit.region.display_name}</option>)}</select></label>
           {chosen ? <p><strong>Prioritize {chosen.fit.region.display_name}?</strong> This will add it to My Search as an active decision.{result.winner_region_ids.length === 0 ? ` You’re choosing ${chosen.fit.region.display_name} even though the comparison did not recommend a single market.` : recommendationMatches === false ? " Your choice differs from the system recommendation and both will be preserved." : ""}</p> : <p>Select the market you want to pursue.</p>}
           {priorityError ? <p className="error-copy" role="alert">{priorityError} Review your market and try again.</p> : null}
           <div><button disabled={!priorityTarget || prioritizing} onClick={() => void prioritize()} type="button">{prioritizing ? "Prioritizing…" : chosen ? `Prioritize ${chosen.fit.region.display_name}` : "Prioritize"}</button><button className="secondary-button" onClick={closeConfirmation} type="button">Cancel</button></div>
-        </section>
+        </dialog>
       ) : null}
 
       {prioritization ? <section className="comparison-success" role="status"><h2 ref={successHeadingRef} tabIndex={-1}>Added to My Search</h2><p>{prioritization.created ? "A durable active decision was created." : "Your existing equivalent active decision was reused."}</p><div><button onClick={() => onNavigate(mySearchUrl())} type="button">Open My Search</button><button className="secondary-button" onClick={() => onNavigate(decisionsUrl(prioritization.decision_id))} type="button">Open Decision</button></div></section> : null}

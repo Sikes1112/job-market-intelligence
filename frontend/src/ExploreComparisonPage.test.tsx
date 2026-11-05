@@ -1,13 +1,30 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
 import { ApiError } from "./api";
 import ExploreComparisonPage from "./ExploreComparisonPage";
 import type { FrontendAuthContextValue } from "./auth";
 import type { ApiEnvelope, ExploreComparisonResult, ExploreFitResult, ExplorePrioritization } from "./types";
 import type { ExploreUrlState } from "./urlState";
+
+// jsdom has no top layer or native inertness. Stub only the dialog API;
+// browser isolation itself requires the post-deployment Safari regression.
+const showModal = vi.fn(function (this: HTMLDialogElement) { this.open = true; });
+const closeModal = vi.fn(function (this: HTMLDialogElement) { this.open = false; });
+const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
+const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "close");
+beforeAll(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value: showModal });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value: closeModal });
+});
+afterAll(() => {
+  for (const [key, descriptor] of [["showModal", originalShowModal], ["close", originalClose]] as const) {
+    if (descriptor) Object.defineProperty(HTMLDialogElement.prototype, key, descriptor);
+    else Reflect.deleteProperty(HTMLDialogElement.prototype, key);
+  }
+});
 
 const routedAuth = vi.hoisted(() => ({
   getAccessTokenSilently: vi.fn(async () => "token"),
@@ -359,6 +376,160 @@ describe("Layer 42B Explore comparison", () => {
     await waitFor(()=>expect(trigger).toHaveFocus());
     expect(mocks.prioritize).not.toHaveBeenCalled();
   });
+  test("owns every Tab step so Safari cannot skip buttons into background content", async () => {
+    render(<ExploreComparisonPage auth={auth} onNavigate={vi.fn()} state={state} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Prioritize" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.tagName).toBe("DIALOG");
+    expect(dialog).toHaveAttribute("open");
+    expect(showModal).toHaveBeenCalled();
+    const market = screen.getByLabelText("Market");
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    // The old boundary-only trap did not cancel this first Tab, allowing
+    // Safari's reduced Tab order to jump directly to Method and evidence.
+    expect(fireEvent.keyDown(market, { key: "Tab" })).toBe(false);
+    expect(cancel).toHaveFocus();
+    fireEvent.change(market, { target: { value: "greater_boston" } });
+    market.focus();
+    const primary = screen.getByRole("button", { name: "Prioritize Greater Boston" });
+    fireEvent.keyDown(market, { key: "Tab" });
+    expect(primary).toHaveFocus();
+    fireEvent.keyDown(primary, { key: "Tab" });
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, { key: "Tab" });
+    expect(market).toHaveFocus();
+    fireEvent.keyDown(market, { key: "Tab", shiftKey: true });
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, { key: "Tab", shiftKey: true });
+    expect(primary).toHaveFocus();
+    fireEvent.keyDown(primary, { key: "Tab", shiftKey: true });
+    expect(market).toHaveFocus();
+    expect(screen.getByText("Method and evidence").closest("details")).not.toHaveAttribute("open");
+    expect(mocks.prioritize).not.toHaveBeenCalled();
+  });
+
+  test("native cancel closes isolation, restores focus and permits reopening and unmount", async () => {
+    const view = render(<ExploreComparisonPage auth={auth} onNavigate={vi.fn()} state={state} />);
+    const trigger = await screen.findByRole("button", { name: "Prioritize" });
+    fireEvent.click(trigger);
+    const first = screen.getByRole("dialog");
+    fireEvent(first, new Event("cancel", { bubbles: false, cancelable: true }));
+    expect(first).not.toHaveAttribute("open");
+    await waitFor(() => expect(trigger).toHaveFocus());
+    fireEvent.click(trigger);
+    const reopened = screen.getByRole("dialog");
+    expect(reopened).not.toBe(first);
+    expect(reopened).toHaveAttribute("open");
+    expect(screen.getByLabelText("Market")).toHaveFocus();
+    view.unmount();
+    expect(reopened).not.toHaveAttribute("open");
+    expect(closeModal).toHaveBeenCalled();
+    expect(mocks.prioritize).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["success", "loading"], ["failure", "loading"],
+    ["success", "replacement pending"], ["failure", "replacement pending"],
+  ])("history replacement isolates a deferred prior confirmation %s during %s", async (outcome, completionTime) => {
+    let finishOld!: (value: unknown) => void;
+    let failOld!: (reason: Error) => void;
+    let finishComparison!: (value: unknown) => void;
+    let finishNew!: (value: unknown) => void;
+    mocks.prioritize.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      finishOld = resolve;
+      failOld = reject;
+    }));
+    mocks.prioritize.mockImplementationOnce(() => new Promise(resolve => { finishNew = resolve; }));
+    window.history.replaceState(null, "", "/markets/compare?selected=boston,new-york");
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Prioritize" }));
+    const oldDialog = screen.getByRole("dialog");
+    fireEvent.change(screen.getByLabelText("Market"), { target: { value: "greater_boston" } });
+    fireEvent.click(screen.getByRole("button", { name: "Prioritize Greater Boston" }));
+    expect(mocks.prioritize).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+
+    mocks.compare.mockImplementationOnce(() => new Promise(resolve => { finishComparison = resolve; }));
+    act(() => {
+      window.history.pushState(null, "", "/markets/compare?selected=new-york,boston");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(await screen.findByText("Comparing selected markets…")).toBeInTheDocument();
+    await waitFor(() => expect(mocks.compare).toHaveBeenCalledTimes(2));
+    expect(oldDialog).not.toBeInTheDocument();
+    async function completeOld() {
+      await act(async () => {
+        if (outcome === "success") finishOld(envelope({ prioritization: prioritization() }));
+        else failOld(new Error("Obsolete context failure"));
+      });
+    }
+    if (completionTime === "loading") await completeOld();
+    expect(screen.getByText("Comparing selected markets…")).toBeInTheDocument();
+    const replacement = comparison();
+    replacement.comparison_identity = "sha256:replacement";
+    replacement.recommendation_summary = "Replacement comparison context.";
+    await act(async () => { finishComparison(envelope(replacement)); });
+    expect(await screen.findByText("Replacement comparison context.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { hidden: true })).not.toBeInTheDocument();
+    expect(oldDialog).not.toHaveAttribute("open");
+    const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    document.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(false);
+    const trigger = screen.getByRole("button", { name: "Prioritize" });
+    const opens = showModal.mock.calls.length;
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).not.toBe(oldDialog);
+    expect(dialog).toHaveAttribute("open");
+    expect(showModal).toHaveBeenCalledTimes(opens + 1);
+    expect(screen.getByLabelText("Market")).toHaveFocus();
+    fireEvent.change(screen.getByLabelText("Market"), { target: { value: "greater_nyc" } });
+    const primary = screen.getByRole("button", { name: "Prioritize Greater New York" });
+    expect(primary).toBeEnabled();
+    fireEvent.click(primary);
+    expect(primary).toBeDisabled();
+    expect(mocks.prioritize).toHaveBeenCalledTimes(2);
+    expect(mocks.prioritize.mock.calls[1][0]).toMatchObject({ comparison_identity: "sha256:replacement" });
+    if (completionTime === "replacement pending") await completeOld();
+    expect(dialog).toHaveAttribute("open");
+    expect(primary).toBeDisabled();
+    expect(screen.queryByRole("heading", { name: "Added to My Search" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Obsolete context failure/)).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), { key: "Tab" });
+    expect(screen.getByLabelText("Market")).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(trigger).toHaveFocus());
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog")).toHaveAttribute("open");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    await act(async () => { finishNew(envelope({ prioritization: prioritization("greater_nyc") })); });
+    expect(await screen.findByRole("heading", { name: "Added to My Search" })).toHaveFocus();
+    expect(screen.getByText("Prioritize Greater New York is now active in My Search.")).toBeInTheDocument();
+    expect(mocks.prioritize).toHaveBeenCalledTimes(2);
+  });
+
+  test("context reload failure dismisses an unsubmitted dialog and retry can reopen", async () => {
+    const view = render(<ExploreComparisonPage auth={auth} onNavigate={vi.fn()} state={state} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Prioritize" }));
+    const oldDialog = screen.getByRole("dialog");
+    let failReload!: (reason: Error) => void;
+    mocks.getSaved.mockImplementationOnce(() => new Promise((_, reject) => { failReload = reject; }));
+    view.rerender(<ExploreComparisonPage auth={auth} onNavigate={vi.fn()} state={state} savedComparisonId="other" />);
+    expect(screen.getByText("Comparing selected markets…")).toBeInTheDocument();
+    expect(oldDialog).not.toHaveAttribute("open");
+    await act(async () => { failReload(new Error("Reload failed")); });
+    expect(await screen.findByText("Reload failed")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    const trigger = await screen.findByRole("button", { name: "Prioritize" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog")).toHaveAttribute("open");
+    expect(screen.getByLabelText("Market")).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(mocks.prioritize).not.toHaveBeenCalled();
+  });
+
   test("Escape dismisses a pending confirmation without cancelling its result", async () => {
     let finish!: (value: unknown) => void;
     mocks.prioritize.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
@@ -369,6 +540,12 @@ describe("Layer 42B Explore comparison", () => {
     fireEvent.change(screen.getByLabelText("Market"),{target:{value:"greater_boston"}});
     fireEvent.click(screen.getByRole("button",{name:"Prioritize Greater Boston"}));
     expect(mocks.prioritize).toHaveBeenCalledTimes(1);
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, { key: "Tab" });
+    expect(screen.getByLabelText("Market")).toHaveFocus();
+    fireEvent.keyDown(screen.getByLabelText("Market"), { key: "Tab" });
+    expect(cancel).toHaveFocus();
     fireEvent.keyDown(document.body,{key:"Escape"});
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(()=>expect(trigger).toHaveFocus());
